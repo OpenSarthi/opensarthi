@@ -1,0 +1,14 @@
+{
+  "name": "opensarthi",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter desktop dev",
+    "build": "pnpm --filter desktop build",
+    "tauri": "pnpm --filter desktop tauri",
+    "lint": "pnpm --filter desktop lint",
+    "typecheck": "pnpm --filter desktop typecheck",
+    "runtime:dev": "cd runtime && python3 main.py",
+    "runtime:install": "cd runtime && pip install -r requirements.txt"
+  }
+}

@@ -1,0 +1,36 @@
+# Node
+node_modules/
+dist/
+.pnpm-store/
+
+# Rust / Tauri
+target/
+apps/desktop/src-tauri/target/
+
+# Python
+runtime/.venv/
+runtime/__pycache__/
+runtime/**/__pycache__/
+runtime/**/*.pyc
+runtime/.env
+runtime/data/
+runtime/logs/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+apps/desktop/dist/
+*.wasm
