@@ -44,8 +44,38 @@ class Session:
         }
         await self.ws.send_json(msg)
 
-    async def handle_user_message(self, text: str):
-        logger.info("Processing user message", text=text)
+    async def speak_and_send_audio(self, text: str):
+        try:
+            from gtts import gTTS
+            import base64
+            import os
+            
+            # Synthesize premium voice
+            tts = gTTS(text=text, lang='en', tld='com')
+            temp_file = "/tmp/opensarthi_voice.mp3"
+            tts.save(temp_file)
+            
+            # Read and encode to base64
+            with open(temp_file, "rb") as f:
+                audio_bytes = f.read()
+            base64_audio = base64.b64encode(audio_bytes).decode('utf-8')
+            
+            # Send to frontend!
+            await self.send_message("audio_output", {
+                "audio": base64_audio
+            })
+            logger.info("Sent premium base64 audio to frontend")
+            
+            # Clean up
+            try:
+                os.remove(temp_file)
+            except Exception:
+                pass
+        except Exception as e:
+            logger.error("Failed to speak and send audio base64", error=str(e))
+
+    async def handle_user_message(self, text: str, source: str = "text"):
+        logger.info("Processing user message", text=text, source=source)
         
         try:
             import db
@@ -103,9 +133,17 @@ class Session:
                 "timestamp": ast_timestamp
             })
             
-            # Trigger TTS for the response
-            # audio_path = await self.voice_pipeline.speak(result.output)
-            # await self.send_message("audio_state", {"playing": True, "path": audio_path})
+            # Trigger TTS asynchronously from Python when source is voice
+            if source == "voice":
+                import re
+                # Strip markdown elements so the voice engine reads cleanly
+                clean_text = re.sub(r'```[\s\S]*?```', '', result.output)
+                clean_text = re.sub(r'`([^`]+)`', r'\1', clean_text)
+                clean_text = re.sub(r'[*#_\-]', '', clean_text)
+                clean_text = clean_text.strip()
+                
+                if clean_text:
+                    asyncio.create_task(self.voice_pipeline.speak(clean_text))
             
         except Exception as e:
             logger.error("Agent execution failed", error=str(e))
@@ -116,7 +154,7 @@ class Session:
         payload = data.get("payload", {})
 
         if msg_type == "user_message":
-            await self.handle_user_message(payload.get("text", ""))
+            await self.handle_user_message(payload.get("text", ""), source=payload.get("source", "text"))
         elif msg_type == "session_state":
             pass # Keep mic listening for continuous wake word
         elif msg_type == "new_chat":
@@ -127,6 +165,18 @@ class Session:
             import db
             threads = db.get_all_threads()
             await self.send_message("history_response", {"threads": threads})
+        elif msg_type == "speak_text":
+            text = payload.get("text", "")
+            if text:
+                import re
+                # Strip markdown elements so the voice engine reads cleanly
+                clean_text = re.sub(r'```[\s\S]*?```', '', text)
+                clean_text = re.sub(r'`([^`]+)`', r'\1', clean_text)
+                clean_text = re.sub(r'[*#_\-]', '', clean_text)
+                clean_text = clean_text.strip()
+                if clean_text:
+                    logger.info("Replaying speech synthesis via WebSocket request", text=clean_text)
+                    asyncio.create_task(self.voice_pipeline.speak(clean_text))
         elif msg_type == "load_thread":
             import db
             thread_id = payload.get("thread_id")

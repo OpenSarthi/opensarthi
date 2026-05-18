@@ -41,11 +41,8 @@ export function useWebSocket(port: number | null) {
 
         if (voiceState === "idle" || voiceState === "error") {
           const lowerText = text.toLowerCase();
-          const hasWakeWord = 
-            lowerText.includes("sarthi") || 
-            lowerText.includes("sarathi") || 
-            lowerText.includes("sarth") || 
-            lowerText.includes("sarath");
+          const wakeWordRegex = /(?:sarathi|sarthi|sarath|sarth|sorthi|sorathi|sorth|sharthi|sharathi|sharth|sarty|sarathy|sarti)/i;
+          const hasWakeWord = wakeWordRegex.test(lowerText);
           
           if (hasWakeWord) {
             // Play a simple beep natively in browser for "Google Assistant" style feedback
@@ -63,7 +60,7 @@ export function useWebSocket(port: number | null) {
             oscillator.stop(audioCtx.currentTime + 0.2);
             
             const cleanText = text
-              .replace(/(?:hey|hello|hi|he)?\s*(?:sarathi|sarthi|sarath|sarth)/gi, "")
+              .replace(/(?:hey|hello|hi|he)?\s*(?:sarathi|sarthi|sarath|sarth|sorthi|sorathi|sorth|sharthi|sharathi|sharth|sarty|sarathy|sarti)/gi, "")
               .replace(/hey!/gi, "")
               .trim();
             

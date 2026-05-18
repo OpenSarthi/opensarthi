@@ -22,6 +22,7 @@ export const WSMessageTypeSchema = z.enum([
   "get_history",
   "load_thread",
   "new_chat",
+  "speak_text",
 ]);
 export type WSMessageType = z.infer<typeof WSMessageTypeSchema>;
 

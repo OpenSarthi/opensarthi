@@ -30,6 +30,7 @@ runtime/logs/
 # OS
 .DS_Store
 Thumbs.db
+*.db
 
 # Build outputs
 apps/desktop/dist/

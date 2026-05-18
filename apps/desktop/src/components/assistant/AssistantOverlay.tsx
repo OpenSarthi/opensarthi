@@ -28,6 +28,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory }: AssistantOve
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, currentTranscript]);
 
+  const lastSentSourceRef = useRef<"text" | "voice">("text");
+
   const handleVoiceClick = useCallback(() => {
     if (voiceState === "idle" || voiceState === "error") {
       setVoiceState("listening");
@@ -41,6 +43,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory }: AssistantOve
 
   const handleVoiceSend = useCallback((msg: string) => {
     if (!msg || !isConnected) return;
+    lastSentSourceRef.current = "voice";
     addMessage({ id: crypto.randomUUID(), role: "user", content: msg, timestamp: Date.now() });
     wsClient.send("user_message", { text: msg, source: "voice" });
     setTextInput("");
@@ -50,6 +53,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory }: AssistantOve
   const handleTextSend = useCallback(() => {
     const msg = textInput.trim();
     if (!msg || !isConnected) return;
+    lastSentSourceRef.current = "text";
     addMessage({ id: crypto.randomUUID(), role: "user", content: msg, timestamp: Date.now() });
     wsClient.send("user_message", { text: msg, source: "text" });
     setTextInput("");
@@ -74,7 +78,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory }: AssistantOve
         } else {
           setVoiceState("idle");
         }
-      }, (currentTranscript && currentTranscript.trim()) ? 3000 : 5000);
+      }, (currentTranscript && currentTranscript.trim()) ? 1500 : 10000); // 10s wait for STT lag after wake word, 1.5s for snappy speech silence!
     } else {
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);
@@ -86,6 +90,39 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory }: AssistantOve
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     };
   }, [currentTranscript, voiceState, handleVoiceSend, setVoiceState]);
+
+  // Native Text-to-Speech (TTS) for voice input replies
+  useEffect(() => {
+    try {
+      if (messages && messages.length > 0) {
+        const lastMsg = messages[messages.length - 1];
+        if (
+          lastMsg &&
+          lastMsg.role === "assistant" &&
+          lastSentSourceRef.current === "voice" &&
+          lastMsg.content
+        ) {
+          // Strip markdown elements, code blocks, bullet formatting, for crystal clear voice reading
+          const clean = String(lastMsg.content)
+            .replace(/```[\s\S]*?```/g, "")
+            .replace(/`([^`]+)`/g, "$1")
+            .replace(/[*#_\-]/g, "")
+            .trim();
+          
+          if (clean && typeof window !== "undefined" && window.speechSynthesis) {
+            window.speechSynthesis.cancel(); // kill active speaking
+            const utterance = new SpeechSynthesisUtterance(clean);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            window.speechSynthesis.speak(utterance);
+          }
+          lastSentSourceRef.current = "text"; // reset expectation
+        }
+      }
+    } catch (err) {
+      console.error("Speech Synthesis error caught safely:", err);
+    }
+  }, [messages]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleTextSend(); }
