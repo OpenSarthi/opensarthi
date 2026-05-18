@@ -15,21 +15,10 @@ from tools.desktop import DesktopTools
 from tools.system import SystemTools
 
 # Configure LLMs
-local_llm = OpenAIModel(
-    model_name=settings.local_model,
-    provider=OpenAIProvider(
-        base_url='http://localhost:11434/v1',
-        api_key='ollama',
-    )
-)
+from pydantic_ai.models.ollama import OllamaModel
+local_llm = OllamaModel(settings.local_model)
 
-cloud_llm = OpenAIModel(
-    model_name=settings.cloud_model,
-    provider=OpenAIProvider(
-        base_url='http://localhost:11434/v1',
-        api_key='ollama',
-    )
-)
+cloud_llm = local_llm
 
 class AgentDependencies(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)

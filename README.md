@@ -34,7 +34,10 @@ We have successfully engineered and stabilized several premium desktop capabilit
   - `Cyber Sky-White` (Modern Minimalist Light)
   - `Sakura Pink-White` (Warm Soft Light)
 * **Silent Settings Updates**: Refactored settings save handlers to run quietly, removing duplicate notifications and text history logs from the chat overlay.
-* **Production-Safe Settings Destination**: Migrated configuration files to standard home config pathways (`~/.config/opensarthi/.env`) to bypass read-only crashes inside compiled package environments like AppImage mounts.
+* **Production-Safe Settings & SQLite Databases**:
+  - Migrated configuration files to standard home config pathways (`~/.config/opensarthi/.env`) to bypass read-only crashes inside compiled package environments like AppImage mounts.
+  - Relocated the conversation database to a secure, writeable home directory location (`~/.config/opensarthi/opensarthi.db`), eliminating critical SQLite write-lock and directory permissions failures.
+  - Integrated an automatic, zero-data-loss database migration mechanism that automatically copies any existing local development chat history on first run!
 * **API Key Retention Security**: Saving settings with an empty key input will retain the previously saved API key securely, avoiding accidental wipeouts.
 
 ---

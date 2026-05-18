@@ -8,10 +8,12 @@ This is the central "Brain" of the OpenSarthi application. Built in Python using
 
 The runtime operates over a WebSocket connection to stream real-time updates (Voice states, execution plans, logs, and dialog) back to the UI.
 
-### 1. Production-Safe Settings (Hybrid Config Layer)
+### 1. Production-Safe Settings & SQLite Databases
 - Configured [config.py](./config.py) to read and save persistent user settings in the user's home configuration directory: **`~/.config/opensarthi/.env`**.
-- This avoids crash-loop write failures under **read-only AppImage environments** in production.
-- Retains key values on empty form inputs, and gracefully falls back to the local dev `.env` file during development to safeguard API keys.
+- Refactored [db.py](./db.py) to initialize and manage the SQLite conversation database at **`~/.config/opensarthi/opensarthi.db`**.
+- This completely avoids crash-loop directory and write-lock failures under **read-only AppImage mounts** in production.
+- Integrated an automatic, zero-data-loss history migration mechanism: on first run, it automatically copies any existing local development SQLite records into the persistent home configuration directory so you never lose your chats!
+- Retains key values on empty form inputs, and gracefully falls back to the local dev environment during active development.
 
 ### 2. Echo Protection & Silence Handshake Voice Loop
 - **Active Echo Loop Termination**: The STT listening pipeline automatically suspends audio capture while the Text-To-Speech engine is actively speaking (`is_speaking = True`), preventing microphone captures of the speaker output.

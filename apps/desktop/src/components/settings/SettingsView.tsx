@@ -38,6 +38,22 @@ export function SettingsView({
   const [voiceSpeed, setVoiceSpeed] = useState(currentVoiceSpeed);
   const [theme, setTheme] = useState(currentTheme);
 
+  const predefinedOptions = [
+    { value: "gemini-2.5-flash", label: "Google Gemini 2.5 Flash" },
+    { value: "gemini-2.5-pro", label: "Google Gemini 2.5 Pro" },
+    { value: "gpt-4o", label: "OpenAI GPT-4o" },
+    { value: "gpt-4-turbo", label: "OpenAI GPT-4 Turbo" },
+    { value: "claude-3-5-sonnet", label: "Anthropic Claude 3.5 Sonnet" },
+    { value: "claude-3-opus", label: "Anthropic Claude 3 Opus" },
+    { value: "kimi-k2.5:cloud", label: "Kimi K2.5 Cloud (Moonshot AI)" },
+    { value: "deepseek-chat", label: "DeepSeek Chat" }
+  ];
+
+  const hasCurrentModel = predefinedOptions.some(opt => opt.value === cloudModel);
+  const selectOptions = hasCurrentModel 
+    ? predefinedOptions 
+    : [...predefinedOptions, { value: cloudModel, label: `Custom Model: ${cloudModel}` }];
+
   const handleSave = () => {
     onSave(localModel, cloudModel, geminiKey, voiceAccent, voiceSpeed, true, theme);
     onClose();
@@ -123,12 +139,9 @@ export function SettingsView({
                   colorScheme: "dark"
                 }}
               >
-                <option value="gemini-2.5-flash">Google Gemini 2.5 Flash</option>
-                <option value="gemini-2.5-pro">Google Gemini 2.5 Pro</option>
-                <option value="gpt-4o">OpenAI GPT-4o</option>
-                <option value="gpt-4-turbo">OpenAI GPT-4 Turbo</option>
-                <option value="claude-3-5-sonnet">Anthropic Claude 3.5 Sonnet</option>
-                <option value="claude-3-opus">Anthropic Claude 3 Opus</option>
+                {selectOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
             </div>
 

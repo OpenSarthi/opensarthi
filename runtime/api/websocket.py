@@ -104,7 +104,7 @@ class Session:
                     os.environ["GEMINI_API_KEY"] = api_key
                 elif "claude" in model_name:
                     os.environ["ANTHROPIC_API_KEY"] = api_key
-                elif "gpt" in model_name:
+                else:
                     os.environ["OPENAI_API_KEY"] = api_key
 
             if "gemini" in model_name:
@@ -113,46 +113,58 @@ class Session:
             elif "claude" in model_name:
                 from pydantic_ai.models.anthropic import AnthropicModel
                 active_model = AnthropicModel(settings.cloud_model)
-            elif "gpt" in model_name:
-                from pydantic_ai.models.openai import OpenAIModel
-                active_model = OpenAIModel(settings.cloud_model)
-            else:
+            elif "gpt" in model_name or "kimi" in model_name or "moonshot" in model_name or "deepseek" in model_name or "openrouter" in model_name:
                 from pydantic_ai.models.openai import OpenAIModel
                 from pydantic_ai.providers.openai import OpenAIProvider
+                
+                base_url = "https://api.openai.com/v1"
+                if "kimi" in model_name or "moonshot" in model_name:
+                    base_url = "https://api.moonshot.cn/v1"
+                elif "deepseek" in model_name:
+                    base_url = "https://api.deepseek.com/v1"
+                elif "openrouter" in model_name:
+                    base_url = "https://openrouter.ai/api/v1"
+                
                 active_model = OpenAIModel(
-                    model_name=settings.local_model,
+                    model_name=settings.cloud_model,
                     provider=OpenAIProvider(
-                        base_url='http://localhost:11434/v1',
-                        api_key='ollama',
+                        base_url=base_url,
+                        api_key=api_key or "noop",
                     )
                 )
+            else:
+                from pydantic_ai.models.ollama import OllamaModel
+                active_model = OllamaModel(settings.local_model)
 
-            result = await agent.run(text, deps=self.deps, model=active_model)
+            try:
+                result = await agent.run(text, deps=self.deps, model=active_model)
+                prefix_warning = ""
+            except Exception as cloud_err:
+                is_using_cloud = ("gemini" in model_name or "claude" in model_name or "gpt" in model_name or "kimi" in model_name or "moonshot" in model_name or "deepseek" in model_name or "openrouter" in model_name)
+                if not is_using_cloud:
+                    raise cloud_err
+                
+                logger.warning("Cloud agent execution failed, falling back to local model...", error=str(cloud_err))
+                from pydantic_ai.models.ollama import OllamaModel
+                fallback_local_model = OllamaModel(settings.local_model)
+                result = await agent.run(text, deps=self.deps, model=fallback_local_model)
+                prefix_warning = f"⚠️ **Cloud Model Failed** ({str(cloud_err)[:80]}...)\n*Fell back to local model: `{settings.local_model}`*\n\n---\n\n"
+
+            final_output = prefix_warning + result.output
             
             ast_msg_id = str(uuid.uuid4())
             ast_timestamp = int(time.time() * 1000)
-            db.save_message(self.thread_id, ast_msg_id, "assistant", result.output, ast_timestamp)
+            db.save_message(self.thread_id, ast_msg_id, "assistant", final_output, ast_timestamp)
 
             # Send the assistant's response back to the UI
             await self.send_message("assistant_response", {
                 "id": ast_msg_id,
                 "role": "assistant",
-                "content": result.output,
+                "content": final_output,
                 "timestamp": ast_timestamp,
                 "is_voice": source == "voice"
             })
-            
-            # Trigger TTS asynchronously from Python when source is voice
-            if source == "voice":
-                import re
-                # Strip markdown elements so the voice engine reads cleanly
-                clean_text = re.sub(r'```[\s\S]*?```', '', result.output)
-                clean_text = re.sub(r'`([^`]+)`', r'\1', clean_text)
-                clean_text = re.sub(r'[*#_\-]', '', clean_text)
-                clean_text = clean_text.strip()
-                
-                if clean_text:
-                    asyncio.create_task(self.speak(clean_text))
+
             
         except Exception as e:
             logger.error("Agent execution failed", error=str(e))

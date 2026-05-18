@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Get the absolute path to this script's directory
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-# Path to the runtime directory in monorepo
-if [ -d "$DIR/resources/runtime" ]; then
+
+# 1. Resolve the runtime directory inside the AppImage or monorepo
+if [ -d "$DIR/../lib/OpenSarthi/_up_/_up_/_up_/runtime" ]; then
+    # Production AppImage directory path
+    RUNTIME_DIR="$DIR/../lib/OpenSarthi/_up_/_up_/_up_/runtime"
+elif [ -d "$DIR/resources/runtime" ]; then
     RUNTIME_DIR="$DIR/resources/runtime"
 elif [ -d "$DIR/../resources/runtime" ]; then
     RUNTIME_DIR="$DIR/../resources/runtime"
@@ -11,6 +15,34 @@ elif [ -d "$DIR/../../../../../runtime" ]; then
 else
     RUNTIME_DIR="$DIR/../../../../runtime"
 fi
+
+# 2. Coordinate virtual environment selection (Dev workspace fallback vs. Self-bootstrapped user environment)
+DEV_VENV="/mnt/kartik/ai_desktop_agent_assistant/opensarthi/runtime/.venv"
+USER_VENV_DIR="$HOME/.config/opensarthi"
+USER_VENV="$USER_VENV_DIR/.venv"
+
+if [ -d "$DEV_VENV" ]; then
+    ACTIVE_VENV="$DEV_VENV"
+elif [ -d "$RUNTIME_DIR/.venv" ]; then
+    ACTIVE_VENV="$RUNTIME_DIR/.venv"
+elif [ -d "$USER_VENV" ]; then
+    ACTIVE_VENV="$USER_VENV"
+else
+    # Securely auto-bootstrap virtual environment if running outside dev machine
+    echo "Bootstrapping Python virtual environment inside $USER_VENV_DIR..."
+    mkdir -p "$USER_VENV_DIR"
+    python3 -m venv "$USER_VENV"
+    ACTIVE_VENV="$USER_VENV"
+    
+    # Activate and install required sidecar dependencies
+    source "$ACTIVE_VENV/bin/activate"
+    pip install --upgrade pip
+    pip install -r "$RUNTIME_DIR/requirements.txt"
+fi
+
+# Activate the chosen virtual environment
+source "$ACTIVE_VENV/bin/activate"
+
+# 3. Enter the resolved runtime directory and spawn the FastAPI brain
 cd "$RUNTIME_DIR"
-source .venv/bin/activate
 exec python main.py
