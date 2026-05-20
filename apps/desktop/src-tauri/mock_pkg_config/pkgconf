@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Wrapper to override GDK Pixbuf loaders directory on Arch Linux
 if [[ "$*" == *"--variable=gdk_pixbuf_binarydir"* ]]; then
+    mkdir -p /tmp/mock_usr/lib/gdk-pixbuf-2.0/2.10.0/loaders
     echo "/tmp/mock_usr/lib/gdk-pixbuf-2.0/2.10.0"
 elif [[ "$*" == *"--variable=gdk_pixbuf_cache_file"* ]]; then
+    mkdir -p /tmp/mock_usr/lib/gdk-pixbuf-2.0/2.10.0
+    touch /tmp/mock_usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache
     echo "/tmp/mock_usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
 elif [[ "$*" == *"--variable=gdk_pixbuf_moduledir"* ]]; then
+    mkdir -p /tmp/mock_usr/lib/gdk-pixbuf-2.0/2.10.0/loaders
     echo "/tmp/mock_usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"
 else
     # Call real pkgconf or pkg-config

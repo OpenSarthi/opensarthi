@@ -105,10 +105,15 @@ export function useWebSocket(port: number | null) {
         addMessage(message);
         setTranscript(null);
         
+        // Extract and store token usage if present
+        const usage = (msg.payload as any).usage;
+        if (usage) {
+          useAssistantStore.getState().updateTokenUsage(usage);
+        }
+        
         const isVoice = (msg.payload as any).is_voice;
         
         if (isVoice) {
-          // Await speech completion before listening again
           setVoiceState("speaking");
         } else {
           setVoiceState("idle");
@@ -132,17 +137,24 @@ export function useWebSocket(port: number | null) {
       }),
 
       wsClient.on("settings_sync", (msg) => {
-        const { local_model, cloud_model, gemini_api_key, voice_accent, voice_speed, continuous_listening, active_theme } = msg.payload as any;
-        
+        const p = msg.payload as any;
         const store = useAssistantStore.getState();
-        if (local_model && cloud_model) store.setActiveModels(local_model, cloud_model);
-        if (gemini_api_key !== undefined) store.setCloudApiKey(gemini_api_key);
-        if (voice_accent !== undefined && voice_speed !== undefined && continuous_listening !== undefined) {
-          store.setVoiceSettings(voice_accent, voice_speed, continuous_listening);
+
+        if (p.local_model && p.cloud_model) store.setActiveModels(p.local_model, p.cloud_model);
+        if (p.ai_provider) store.setActiveProvider(p.ai_provider);
+        if (p.voice_accent !== undefined && p.voice_speed !== undefined && p.continuous_listening !== undefined) {
+          store.setVoiceSettings(p.voice_accent, p.voice_speed, p.continuous_listening);
         }
-        if (active_theme) {
-          store.setActiveTheme(active_theme);
-        }
+        if (p.active_theme) store.setActiveTheme(p.active_theme);
+        
+        // Sync all per-provider API keys (masked indicator only — show saved/not-saved in UI)
+        store.setAllApiKeys({
+          gemini: p.gemini_api_key || "",
+          openai: p.openai_api_key || "",
+          anthropic: p.anthropic_api_key || "",
+          groq: p.groq_api_key || "",
+          openrouter: p.openrouter_api_key || "",
+        });
       }),
 
       wsClient.on("history_response", (msg) => {

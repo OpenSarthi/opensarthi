@@ -7,6 +7,13 @@ export interface Thread {
   first_message: string;
 }
 
+export interface TokenUsage {
+  requestTokens: number;
+  responseTokens: number;
+  totalTokens: number;
+  sessionTotalTokens: number;
+}
+
 interface AssistantState {
   // Session
   voiceState: VoiceState;
@@ -21,14 +28,24 @@ interface AssistantState {
   currentPlan: Plan | null;
   executingStepIndex: number | null;
 
+  // Model settings
   activeLocalModel: string;
   activeCloudModel: string;
+  activeProvider: string;
   cloudApiKey: string;
+  geminiApiKey: string;
+  openaiApiKey: string;
+  anthropicApiKey: string;
+  groqApiKey: string;
+  openrouterApiKey: string;
   activeTheme: string;
 
   voiceAccent: string;
   voiceSpeed: number;
   continuousListening: boolean;
+
+  // Token tracking
+  tokenUsage: TokenUsage;
 
   // Actions
   setVoiceState: (state: VoiceState) => void;
@@ -43,9 +60,13 @@ interface AssistantState {
   setExecutingStep: (index: number | null) => void;
   addOrUpdateToolAction: (tool: string, description: string, status: "pending" | "running" | "success" | "error" | "skipped", result?: any) => void;
   setActiveModels: (local: string, cloud: string) => void;
+  setActiveProvider: (provider: string) => void;
   setCloudApiKey: (key: string) => void;
+  setAllApiKeys: (keys: { gemini: string; openai: string; anthropic: string; groq: string; openrouter: string }) => void;
   setActiveTheme: (theme: string) => void;
   setVoiceSettings: (accent: string, speed: number, continuous: boolean) => void;
+  updateTokenUsage: (usage: { request_tokens: number; response_tokens: number; total_tokens: number }) => void;
+  resetSessionTokens: () => void;
 }
 
 export const useAssistantStore = create<AssistantState>((set) => ({
@@ -58,11 +79,23 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   executingStepIndex: null,
   activeLocalModel: "qwen2.5-coder:3b",
   activeCloudModel: "gemini-2.5-flash",
+  activeProvider: "google",
   cloudApiKey: "",
+  geminiApiKey: "",
+  openaiApiKey: "",
+  anthropicApiKey: "",
+  groqApiKey: "",
+  openrouterApiKey: "",
   activeTheme: "theme-red-black",
   voiceAccent: "ie",
   voiceSpeed: 1.35,
   continuousListening: false,
+  tokenUsage: {
+    requestTokens: 0,
+    responseTokens: 0,
+    totalTokens: 0,
+    sessionTotalTokens: 0,
+  },
 
   setVoiceState: (voiceState) => set({ voiceState }),
   setConnected: (isConnected) => set({ isConnected }),
@@ -74,14 +107,35 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   setMessages: (messages) => set({ messages }),
   setThreads: (threads) => set({ threads }),
 
-  clearMessages: () => set({ messages: [], currentPlan: null }),
+  clearMessages: () => set({ messages: [], currentPlan: null, tokenUsage: { requestTokens: 0, responseTokens: 0, totalTokens: 0, sessionTotalTokens: 0 } }),
 
   setPlan: (currentPlan) => set({ currentPlan, executingStepIndex: null }),
 
   setActiveModels: (local, cloud) => set({ activeLocalModel: local, activeCloudModel: cloud }),
+  setActiveProvider: (activeProvider) => set({ activeProvider }),
   setCloudApiKey: (cloudApiKey) => set({ cloudApiKey }),
+  setAllApiKeys: (keys) => set({
+    geminiApiKey: keys.gemini,
+    openaiApiKey: keys.openai,
+    anthropicApiKey: keys.anthropic,
+    groqApiKey: keys.groq,
+    openrouterApiKey: keys.openrouter,
+  }),
   setActiveTheme: (activeTheme) => set({ activeTheme }),
   setVoiceSettings: (voiceAccent, voiceSpeed, continuousListening) => set({ voiceAccent, voiceSpeed, continuousListening }),
+
+  updateTokenUsage: (usage) => set((s) => ({
+    tokenUsage: {
+      requestTokens: usage.request_tokens,
+      responseTokens: usage.response_tokens,
+      totalTokens: usage.total_tokens,
+      sessionTotalTokens: s.tokenUsage.sessionTotalTokens + (usage.total_tokens || 0),
+    }
+  })),
+
+  resetSessionTokens: () => set((s) => ({
+    tokenUsage: { ...s.tokenUsage, sessionTotalTokens: 0 }
+  })),
 
   updateStepStatus: (index, update) =>
     set((s) => {
@@ -105,18 +159,13 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       };
     }
 
-    // See if the step exists. PydanticAI streams tools sequentially.
-    // If status is 'running', we create a new step or update the last one if it matches.
     let steps = [...plan.steps];
     
-    // Check if we are updating an existing step
     const existingIndex = steps.findIndex(st => st.tool === tool && st.description === description && st.status === "running");
     
     if (existingIndex >= 0) {
-      // Update existing
       steps[existingIndex] = { ...steps[existingIndex], status, result };
     } else {
-      // Add new step
       steps.push({
         index: steps.length,
         tool,

@@ -6,21 +6,24 @@ import { Waveform } from "./Waveform";
 import { TranscriptView } from "./TranscriptView";
 import { MessageList } from "./ResponseBubble";
 import { ActionLog } from "../execution/ActionLog";
+import { TaskList } from "./TaskList";
 import { useAssistantStore } from "../../stores/assistantStore";
 import { wsClient } from "../../lib/ws";
 
 interface AssistantOverlayProps {
   onOpenSettings: () => void;
   onOpenHistory: () => void;
+  onNewChat?: () => void;
 }
 
-export function AssistantOverlay({ onOpenSettings, onOpenHistory }: AssistantOverlayProps) {
+export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: AssistantOverlayProps) {
   const [textInput, setTextInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const {
     voiceState, isConnected, currentTranscript,
-    messages, currentPlan, activeLocalModel, activeCloudModel,
+    messages, currentPlan, activeLocalModel, activeCloudModel, activeProvider,
+    tokenUsage,
     setVoiceState, addMessage, clearMessages
   } = useAssistantStore();
 
@@ -197,6 +200,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory }: AssistantOve
 
   const handleNewChat = () => {
     clearMessages();
+    onNewChat?.();
     wsClient.send("new_chat", {}); // Let backend generate a new thread
   };
 
@@ -247,17 +251,28 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory }: AssistantOve
         >
           {/* LEFT PANEL */}
           <div style={{ width: `${leftWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-              <div className="hud-panel-title">// TASKS - ACTIVE</div>
+            <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div className="hud-panel-title">// ACTIVE TASKS</div>
               <div style={{ padding: "12px", overflowY: "auto", flex: 1 }}>
-                <ActionLog plan={currentPlan} />
+                <TaskList messages={messages} voiceState={voiceState} hasActivePlan={!!currentPlan} />
               </div>
             </div>
-            <div className="hud-panel" style={{ height: "160px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
+            <div className="hud-panel" style={{ height: "220px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
               <div className="hud-panel-title">// AGENT STATUS & SYSTEMS</div>
               <div style={{ padding: "12px", fontSize: "12px", color: "var(--text-secondary)", flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
+                <div>PROVIDER: <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{activeProvider}</span></div>
                 <div>LOCAL LLM: <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{activeLocalModel}</span></div>
                 <div>CLOUD LLM: <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{activeCloudModel}</span></div>
+                <div style={{ borderTop: "1px dashed rgba(255,255,255,0.08)", marginTop: "4px", paddingTop: "4px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>TOKEN USAGE:</span>
+                    <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{tokenUsage.totalTokens}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", opacity: 0.8 }}>
+                    <span>SESSION TOTAL:</span>
+                    <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{tokenUsage.sessionTotalTokens}</span>
+                  </div>
+                </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: "auto", borderTop: "1px solid var(--border)", paddingTop: "6px" }}>
                   <span>VOICE INPUT:</span>
                   <span style={{ color: voiceState !== "idle" ? "var(--accent)" : "var(--text-secondary)" }}>{voiceState.toUpperCase()}</span>
@@ -375,10 +390,11 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory }: AssistantOve
 
           {/* RIGHT PANEL */}
           <div style={{ width: `${rightWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-              <div className="hud-panel-title">// LIVE ACTIVITY</div>
-              <div style={{ padding: "12px", overflowY: "auto", flex: 1 }}>
+            <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div className="hud-panel-title">// LIVE PLAN & ACTIVITY</div>
+              <div style={{ padding: "12px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "12px" }}>
                 <TranscriptView transcript={currentTranscript} />
+                <ActionLog plan={currentPlan} />
               </div>
             </div>
             <div className="hud-panel" style={{ padding: "12px", display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}>

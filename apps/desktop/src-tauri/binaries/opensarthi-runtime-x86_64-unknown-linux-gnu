@@ -1,48 +1,72 @@
 #!/usr/bin/env bash
 # Get the absolute path to this script's directory
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # 1. Resolve the runtime directory inside the AppImage or monorepo
-if [ -d "$DIR/../lib/OpenSarthi/_up_/_up_/_up_/runtime" ]; then
+if [ -d "$SCRIPT_DIR/../lib/OpenSarthi/_up_/_up_/_up_/runtime" ]; then
     # Production AppImage directory path
-    RUNTIME_DIR="$DIR/../lib/OpenSarthi/_up_/_up_/_up_/runtime"
-elif [ -d "$DIR/resources/runtime" ]; then
-    RUNTIME_DIR="$DIR/resources/runtime"
-elif [ -d "$DIR/../resources/runtime" ]; then
-    RUNTIME_DIR="$DIR/../resources/runtime"
-elif [ -d "$DIR/../../../../../runtime" ]; then
-    RUNTIME_DIR="$DIR/../../../../../runtime"
+    RUNTIME_DIR="$SCRIPT_DIR/../lib/OpenSarthi/_up_/_up_/_up_/runtime"
+elif [ -d "$SCRIPT_DIR/resources/runtime" ]; then
+    RUNTIME_DIR="$SCRIPT_DIR/resources/runtime"
+elif [ -d "$SCRIPT_DIR/../resources/runtime" ]; then
+    RUNTIME_DIR="$SCRIPT_DIR/../resources/runtime"
+elif [ -d "$SCRIPT_DIR/../../../../../runtime" ]; then
+    RUNTIME_DIR="$SCRIPT_DIR/../../../../../runtime"
 else
-    RUNTIME_DIR="$DIR/../../../../runtime"
+    RUNTIME_DIR="$SCRIPT_DIR/../../../../runtime"
 fi
 
-# 2. Coordinate virtual environment selection (Dev workspace fallback vs. Self-bootstrapped user environment)
-DEV_VENV="/mnt/kartik/ai_desktop_agent_assistant/opensarthi/runtime/.venv"
+# 2. Always use the user's home config venv (portable across machines)
 USER_VENV_DIR="$HOME/.config/opensarthi"
 USER_VENV="$USER_VENV_DIR/.venv"
 
-if [ -d "$DEV_VENV" ]; then
-    ACTIVE_VENV="$DEV_VENV"
-elif [ -d "$RUNTIME_DIR/.venv" ]; then
-    ACTIVE_VENV="$RUNTIME_DIR/.venv"
-elif [ -d "$USER_VENV" ]; then
+# Check if the user venv is already set up and valid
+if [ -d "$USER_VENV" ] && [ -f "$USER_VENV/bin/python3" ]; then
     ACTIVE_VENV="$USER_VENV"
+elif [ -d "$RUNTIME_DIR/.venv" ] && [ -f "$RUNTIME_DIR/.venv/bin/python3" ]; then
+    ACTIVE_VENV="$RUNTIME_DIR/.venv"
 else
-    # Securely auto-bootstrap virtual environment if running outside dev machine
+    # Bootstrap: Create a fresh venv in the user's home config folder
     echo "Bootstrapping Python virtual environment inside $USER_VENV_DIR..."
     mkdir -p "$USER_VENV_DIR"
-    python3 -m venv "$USER_VENV"
+    
+    # Find a working Python 3.10+
+    PYTHON_BIN=""
+    for py in python3.12 python3.11 python3.10 python3; do
+        if command -v "$py" &>/dev/null && env -u LD_LIBRARY_PATH "$py" -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" &>/dev/null; then
+            PYTHON_BIN="$py"
+            break
+        fi
+    done
+    
+    if [ -z "$PYTHON_BIN" ]; then
+        echo "ERROR: Python 3.10+ not found on this system. Please install Python 3 first."
+        exit 1
+    fi
+    
+    env -u LD_LIBRARY_PATH "$PYTHON_BIN" -m venv "$USER_VENV"
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to create Python virtual environment."
+        exit 1
+    fi
+    
     ACTIVE_VENV="$USER_VENV"
     
-    # Activate and install required sidecar dependencies
+    # Activate and install sidecar dependencies
     source "$ACTIVE_VENV/bin/activate"
-    pip install --upgrade pip
-    pip install -r "$RUNTIME_DIR/requirements.txt"
+    env -u LD_LIBRARY_PATH pip install --upgrade pip --quiet
+    if [ -f "$RUNTIME_DIR/requirements.txt" ]; then
+        env -u LD_LIBRARY_PATH pip install -r "$RUNTIME_DIR/requirements.txt" --quiet
+        echo "Dependencies installed successfully."
+    else
+        echo "WARNING: requirements.txt not found at $RUNTIME_DIR/requirements.txt"
+    fi
 fi
 
-# Activate the chosen virtual environment
+# 3. Activate the virtual environment
 source "$ACTIVE_VENV/bin/activate"
 
-# 3. Enter the resolved runtime directory and spawn the FastAPI brain
+# 4. Enter the resolved runtime directory and launch the backend
 cd "$RUNTIME_DIR"
-exec python main.py
+exec env -u LD_LIBRARY_PATH python main.py
+

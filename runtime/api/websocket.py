@@ -88,84 +88,165 @@ class Session:
         try:
             import db
             import time
+            import os
             msg_id = str(uuid.uuid4())
             timestamp = int(time.time() * 1000)
             db.save_message(self.thread_id, msg_id, "user", text, timestamp)
 
-            from config import settings
+            from config import settings, get_active_api_key
+            provider = settings.ai_provider.lower()
             model_name = settings.cloud_model.lower()
-            
-            # Use the provided API key (stored in gemini_api_key field generically)
-            api_key = settings.gemini_api_key
-            import os
+            api_key = get_active_api_key()
 
-            if api_key:
-                if "gemini" in model_name:
+            # --- Build the active model based on selected provider ---
+            if provider == "local_llm" or provider == "ollama":
+                from pydantic_ai.models.ollama import OllamaModel
+                active_model = OllamaModel(settings.local_model)
+                is_cloud = False
+            elif provider == "google":
+                if api_key:
                     os.environ["GEMINI_API_KEY"] = api_key
-                elif "claude" in model_name:
-                    os.environ["ANTHROPIC_API_KEY"] = api_key
-                else:
-                    os.environ["OPENAI_API_KEY"] = api_key
-
-            if "gemini" in model_name:
                 from pydantic_ai.models.gemini import GeminiModel
                 active_model = GeminiModel(settings.cloud_model)
-            elif "claude" in model_name:
+                is_cloud = True
+            elif provider == "anthropic":
+                if api_key:
+                    os.environ["ANTHROPIC_API_KEY"] = api_key
                 from pydantic_ai.models.anthropic import AnthropicModel
                 active_model = AnthropicModel(settings.cloud_model)
-            elif "gpt" in model_name or "kimi" in model_name or "moonshot" in model_name or "deepseek" in model_name or "openrouter" in model_name:
+                is_cloud = True
+            elif provider == "groq":
+                if api_key:
+                    os.environ["GROQ_API_KEY"] = api_key
+                # Groq uses the OpenAI-compatible API
                 from pydantic_ai.models.openai import OpenAIModel
                 from pydantic_ai.providers.openai import OpenAIProvider
-                
-                base_url = "https://api.openai.com/v1"
-                if "kimi" in model_name or "moonshot" in model_name:
-                    base_url = "https://api.moonshot.cn/v1"
-                elif "deepseek" in model_name:
-                    base_url = "https://api.deepseek.com/v1"
-                elif "openrouter" in model_name:
-                    base_url = "https://openrouter.ai/api/v1"
-                
                 active_model = OpenAIModel(
                     model_name=settings.cloud_model,
                     provider=OpenAIProvider(
-                        base_url=base_url,
+                        base_url="https://api.groq.com/openai/v1",
                         api_key=api_key or "noop",
                     )
                 )
+                is_cloud = True
+            elif provider == "openai":
+                if api_key:
+                    os.environ["OPENAI_API_KEY"] = api_key
+                from pydantic_ai.models.openai import OpenAIModel
+                from pydantic_ai.providers.openai import OpenAIProvider
+                active_model = OpenAIModel(
+                    model_name=settings.cloud_model,
+                    provider=OpenAIProvider(
+                        base_url="https://api.openai.com/v1",
+                        api_key=api_key or "noop",
+                    )
+                )
+                is_cloud = True
+            elif provider == "openrouter":
+                if api_key:
+                    os.environ["OPENROUTER_API_KEY"] = api_key
+                from pydantic_ai.models.openai import OpenAIModel
+                from pydantic_ai.providers.openai import OpenAIProvider
+                active_model = OpenAIModel(
+                    model_name=settings.cloud_model,
+                    provider=OpenAIProvider(
+                        base_url="https://openrouter.ai/api/v1",
+                        api_key=api_key or "noop",
+                    )
+                )
+                is_cloud = True
             else:
-                from pydantic_ai.models.ollama import OllamaModel
-                active_model = OllamaModel(settings.local_model)
+                # Fallback: try to detect from model name (backward compatibility)
+                if "gemini" in model_name:
+                    if api_key:
+                        os.environ["GEMINI_API_KEY"] = api_key
+                    from pydantic_ai.models.gemini import GeminiModel
+                    active_model = GeminiModel(settings.cloud_model)
+                elif "claude" in model_name:
+                    if api_key:
+                        os.environ["ANTHROPIC_API_KEY"] = api_key
+                    from pydantic_ai.models.anthropic import AnthropicModel
+                    active_model = AnthropicModel(settings.cloud_model)
+                else:
+                    from pydantic_ai.models.ollama import OllamaModel
+                    active_model = OllamaModel(settings.local_model)
+                is_cloud = "gemini" in model_name or "claude" in model_name
 
+            from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart, TextPart
+            
+            # Fetch message history (all messages saved so far in this thread)
+            history_messages = db.get_history(self.thread_id)
+            
+            # Trim to last 20 messages to stay within context limits (skip the current prompt which is last)
+            MAX_HISTORY = 20
+            trimmed_history = history_messages[:-1]
+            if len(trimmed_history) > MAX_HISTORY:
+                trimmed_history = trimmed_history[-MAX_HISTORY:]
+            
+            message_history = []
+            for msg in trimmed_history:
+                if msg["role"] == "user":
+                    message_history.append(ModelRequest(parts=[UserPromptPart(content=msg["content"])]))
+                elif msg["role"] == "assistant":
+                    message_history.append(ModelResponse(parts=[TextPart(content=msg["content"])]))
+
+            prefix_warning = ""
             try:
-                result = await agent.run(text, deps=self.deps, model=active_model)
-                prefix_warning = ""
+                result = await agent.run(text, deps=self.deps, model=active_model, message_history=message_history)
             except Exception as cloud_err:
-                is_using_cloud = ("gemini" in model_name or "claude" in model_name or "gpt" in model_name or "kimi" in model_name or "moonshot" in model_name or "deepseek" in model_name or "openrouter" in model_name)
-                if not is_using_cloud:
+                if not is_cloud:
                     raise cloud_err
                 
                 logger.warning("Cloud agent execution failed, falling back to local model...", error=str(cloud_err))
                 from pydantic_ai.models.ollama import OllamaModel
-                fallback_local_model = OllamaModel(settings.local_model)
-                result = await agent.run(text, deps=self.deps, model=fallback_local_model)
+                from planner.agent import Agent, AgentDependencies
+                
+                # Recreate a simple fallback agent without tools in case tools caused the 400 Bad Request
+                fallback_agent = Agent(
+                    model=OllamaModel(settings.local_model),
+                    deps_type=AgentDependencies,
+                    system_prompt="You are OpenSarthi. Answer the user strictly using plain text. Do not hallucinate tools."
+                )
+                
+                try:
+                    result = await fallback_agent.run(text, deps=self.deps, message_history=message_history)
+                except Exception as local_err:
+                    logger.error("Local agent fallback failed", error=str(local_err))
+                    raise Exception(f"Cloud model failed ({cloud_err}) AND local model fallback failed ({local_err})")
+                
                 prefix_warning = f"⚠️ **Cloud Model Failed** ({str(cloud_err)[:80]}...)\n*Fell back to local model: `{settings.local_model}`*\n\n---\n\n"
 
             final_output = prefix_warning + result.output
+
+            # Extract token usage
+            try:
+                usage = result.usage  # PydanticAI >= 0.0.x changed usage to a property
+                request_tokens = getattr(usage, "request_tokens", 0) or 0
+                response_tokens = getattr(usage, "response_tokens", 0) or 0
+                total_tokens = getattr(usage, "total_tokens", 0) or (request_tokens + response_tokens)
+            except Exception:
+                request_tokens = 0
+                response_tokens = 0
+                total_tokens = 0
             
             ast_msg_id = str(uuid.uuid4())
             ast_timestamp = int(time.time() * 1000)
             db.save_message(self.thread_id, ast_msg_id, "assistant", final_output, ast_timestamp)
 
-            # Send the assistant's response back to the UI
+            # Send the assistant's response back to the UI with token usage
             await self.send_message("assistant_response", {
                 "id": ast_msg_id,
                 "role": "assistant",
                 "content": final_output,
                 "timestamp": ast_timestamp,
-                "is_voice": source == "voice"
+                "is_voice": source == "voice",
+                "usage": {
+                    "request_tokens": request_tokens,
+                    "response_tokens": response_tokens,
+                    "total_tokens": total_tokens,
+                }
             })
 
-            
         except Exception as e:
             logger.error("Agent execution failed", error=str(e))
             await self.send_message("error", {"error": str(e)})
@@ -206,13 +287,23 @@ class Session:
             await self.send_message("thread_loaded", {"thread_id": thread_id, "messages": messages})
         elif msg_type == "update_settings":
             from config import settings, save_settings_to_env
+            import os
             settings.local_model = payload.get("local_model", settings.local_model)
             settings.cloud_model = payload.get("cloud_model", settings.cloud_model)
+            settings.ai_provider = payload.get("ai_provider", settings.ai_provider)
             
-            # API Key Retention: Only update if a non-empty string is provided
-            new_api_key = payload.get("gemini_api_key")
-            if new_api_key and new_api_key.strip():
-                settings.gemini_api_key = new_api_key.strip()
+            # Per-provider API key retention: only update if a non-empty value is provided
+            def _update_key(field: str, env_var: str):
+                new_val = payload.get(field)
+                if new_val and new_val.strip():
+                    setattr(settings, field, new_val.strip())
+                    os.environ[env_var] = new_val.strip()
+            
+            _update_key("gemini_api_key", "GEMINI_API_KEY")
+            _update_key("openai_api_key", "OPENAI_API_KEY")
+            _update_key("anthropic_api_key", "ANTHROPIC_API_KEY")
+            _update_key("groq_api_key", "GROQ_API_KEY")
+            _update_key("openrouter_api_key", "OPENROUTER_API_KEY")
                 
             settings.voice_accent = payload.get("voice_accent", settings.voice_accent)
             settings.voice_speed = float(payload.get("voice_speed", settings.voice_speed))
@@ -220,19 +311,20 @@ class Session:
             settings.active_theme = payload.get("active_theme", settings.active_theme)
             
             save_settings_to_env(
-                settings.local_model, 
-                settings.cloud_model, 
+                settings.local_model,
+                settings.cloud_model,
+                settings.ai_provider,
                 settings.gemini_api_key,
+                settings.openai_api_key,
+                settings.anthropic_api_key,
+                settings.groq_api_key,
+                settings.openrouter_api_key,
                 settings.voice_accent,
                 settings.voice_speed,
                 settings.continuous_listening,
                 settings.active_theme
             )
-            if settings.gemini_api_key:
-                import os
-                os.environ["GEMINI_API_KEY"] = settings.gemini_api_key
-            # Simply save changes in the sidecar environment without pushing entries to the chat history overlay
-            pass
+            logger.info("Settings updated", provider=settings.ai_provider, model=settings.cloud_model)
 
     async def _listen_loop(self):
         """Simulate sending transcript updates."""
@@ -254,7 +346,12 @@ class ConnectionManager:
         await session.send_message("settings_sync", {
             "local_model": settings.local_model,
             "cloud_model": settings.cloud_model,
+            "ai_provider": settings.ai_provider,
             "gemini_api_key": settings.gemini_api_key or "",
+            "openai_api_key": settings.openai_api_key or "",
+            "anthropic_api_key": settings.anthropic_api_key or "",
+            "groq_api_key": settings.groq_api_key or "",
+            "openrouter_api_key": settings.openrouter_api_key or "",
             "voice_accent": settings.voice_accent,
             "voice_speed": settings.voice_speed,
             "continuous_listening": settings.continuous_listening,

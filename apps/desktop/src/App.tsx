@@ -17,26 +17,30 @@ export default function App() {
 
   const { 
     activeLocalModel, 
-    activeCloudModel, 
-    cloudApiKey, 
+    activeCloudModel,
+    activeProvider,
+    geminiApiKey,
+    openaiApiKey,
+    anthropicApiKey,
+    groqApiKey,
+    openrouterApiKey,
     voiceAccent, 
     voiceSpeed, 
     activeTheme,
     setVoiceSettings,
     setActiveTheme,
     setActiveModels,
-    setCloudApiKey
+    setActiveProvider,
+    setAllApiKeys,
+    resetSessionTokens,
   } = useAssistantStore();
 
   // Dynamic Theme application to document.body
   useEffect(() => {
-    // Remove all previous theme classes
     document.body.className = document.body.className
       .split(" ")
       .filter((c) => !c.startsWith("theme-"))
       .join(" ");
-    
-    // Add the active theme class
     document.body.classList.add(activeTheme);
   }, [activeTheme]);
 
@@ -48,28 +52,45 @@ export default function App() {
   // Connect WebSocket once port is known
   useWebSocket(runtimePort);
 
-  const handleSaveSettings = (
-    newLocal: string, 
-    newCloud: string, 
-    newKey: string,
-    newAccent: string,
-    newSpeed: number,
-    newContinuous: boolean,
-    newTheme: string
-  ) => {
-    setActiveModels(newLocal, newCloud);
-    setCloudApiKey(newKey);
-    setVoiceSettings(newAccent, newSpeed, newContinuous);
-    setActiveTheme(newTheme);
-    
+  const handleSaveSettings = (settings: {
+    localModel: string;
+    cloudModel: string;
+    provider: string;
+    geminiKey: string;
+    openaiKey: string;
+    anthropicKey: string;
+    groqKey: string;
+    openrouterKey: string;
+    voiceAccent: string;
+    voiceSpeed: number;
+    continuousListening: boolean;
+    theme: string;
+  }) => {
+    setActiveModels(settings.localModel, settings.cloudModel);
+    setActiveProvider(settings.provider);
+    setAllApiKeys({
+      gemini: settings.geminiKey,
+      openai: settings.openaiKey,
+      anthropic: settings.anthropicKey,
+      groq: settings.groqKey,
+      openrouter: settings.openrouterKey,
+    });
+    setVoiceSettings(settings.voiceAccent, settings.voiceSpeed, settings.continuousListening);
+    setActiveTheme(settings.theme);
+
     wsClient.send("update_settings", {
-      local_model: newLocal,
-      cloud_model: newCloud,
-      gemini_api_key: newKey,
-      voice_accent: newAccent,
-      voice_speed: newSpeed,
-      continuous_listening: newContinuous,
-      active_theme: newTheme
+      local_model: settings.localModel,
+      cloud_model: settings.cloudModel,
+      ai_provider: settings.provider,
+      gemini_api_key: settings.geminiKey,
+      openai_api_key: settings.openaiKey,
+      anthropic_api_key: settings.anthropicKey,
+      groq_api_key: settings.groqKey,
+      openrouter_api_key: settings.openrouterKey,
+      voice_accent: settings.voiceAccent,
+      voice_speed: settings.voiceSpeed,
+      continuous_listening: settings.continuousListening,
+      active_theme: settings.theme,
     });
   };
 
@@ -77,7 +98,8 @@ export default function App() {
     <>
       <AssistantOverlay 
         onOpenSettings={() => setShowSettings(true)} 
-        onOpenHistory={() => setShowHistory(true)} 
+        onOpenHistory={() => setShowHistory(true)}
+        onNewChat={() => resetSessionTokens()}
       />
       <PermissionDialog />
       <AnimatePresence>
@@ -86,7 +108,12 @@ export default function App() {
             onClose={() => setShowSettings(false)}
             currentLocalModel={activeLocalModel}
             currentCloudModel={activeCloudModel}
-            currentGeminiKey={cloudApiKey}
+            currentProvider={activeProvider}
+            currentGeminiKey={geminiApiKey}
+            currentOpenaiKey={openaiApiKey}
+            currentAnthropicKey={anthropicApiKey}
+            currentGroqKey={groqApiKey}
+            currentOpenrouterKey={openrouterApiKey}
             currentVoiceAccent={voiceAccent}
             currentVoiceSpeed={voiceSpeed}
             currentTheme={activeTheme}

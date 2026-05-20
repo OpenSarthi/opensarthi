@@ -40,7 +40,8 @@ agent = Agent(
         "2. To TYPE into another application (like Slack, Chrome), you MUST use the `type_text` tool.\n"
         "3. To press keys like Enter, Return, Tab, etc., use the `press_key` tool.\n"
         "4. When opening an app like 'slack' or 'google-chrome', use `run_shell_command` with an ampersand (e.g. 'slack &') so it doesn't block.\n"
-        "5. If a page or application is loading, use `wait_seconds` to pause execution, then use `take_screenshot` to check the progress. Repeat this in a loop if necessary until the loading completes."
+        "5. If a page or application is loading, use `wait_seconds` to pause execution, then use `take_screenshot` to check the progress. Repeat this in a loop if necessary until the loading completes.\n"
+        "6. NEVER hallucinate or call any tools that have not been explicitly provided to you (e.g., do NOT attempt to use 'brave_search', 'web_search', etc.). If you don't know the answer, just say you don't know or use run_shell_command to search."
     ),
 )
 
