@@ -20,11 +20,19 @@ fi
 USER_VENV_DIR="$HOME/.config/opensarthi"
 USER_VENV="$USER_VENV_DIR/.venv"
 
-# Check if the user venv is already set up and valid
-if [ -d "$USER_VENV" ] && [ -f "$USER_VENV/bin/python3" ]; then
-    ACTIVE_VENV="$USER_VENV"
-elif [ -d "$RUNTIME_DIR/.venv" ] && [ -f "$RUNTIME_DIR/.venv/bin/python3" ]; then
+# Check if a venv has all required packages
+_check_venv() {
+    local venv_python="$1/bin/python3"
+    [ -f "$venv_python" ] && \
+        env -u LD_LIBRARY_PATH -u LD_PRELOAD "$venv_python" \
+            -c "import uvicorn, fastapi, speech_recognition" 2>/dev/null
+}
+
+# Prefer runtime/.venv (dev) then user venv (production), then fallback to bootstrap
+if _check_venv "$RUNTIME_DIR/.venv"; then
     ACTIVE_VENV="$RUNTIME_DIR/.venv"
+elif _check_venv "$USER_VENV"; then
+    ACTIVE_VENV="$USER_VENV"
 else
     # Bootstrap: Create a fresh venv in the user's home config folder
     echo "Bootstrapping Python virtual environment inside $USER_VENV_DIR..."
@@ -32,8 +40,8 @@ else
     
     # Find a working Python 3.10+
     PYTHON_BIN=""
-    for py in python3.12 python3.11 python3.10 python3; do
-        if command -v "$py" &>/dev/null && env -u LD_LIBRARY_PATH "$py" -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" &>/dev/null; then
+    for py in python3.12 python3.11 python3.10 python3 /usr/bin/python3 /bin/python3 /opt/homebrew/bin/python3; do
+        if env -u LD_LIBRARY_PATH "$py" -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" 2>/dev/null; then
             PYTHON_BIN="$py"
             break
         fi
