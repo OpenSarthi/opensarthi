@@ -125,9 +125,17 @@ class AgentRuntime:
                 await self._transition(AgentState.IDLE)
                 return "Execution cancelled by user."
 
-            # 4. Complete
+            # 4. Complete — generate a meaningful summary
             await self._transition(AgentState.COMPLETE)
-            return plan.final_response or "Task completed."
+            if plan.final_response:
+                return plan.final_response
+            
+            # Build summary of what was done
+            step_descriptions = [s.description for s in plan.steps if s.description]
+            if step_descriptions:
+                summary_items = "\n".join(f"✓ {d}" for d in step_descriptions)
+                return f"Task completed successfully:\n{summary_items}"
+            return "Task completed successfully."
 
         except asyncio.CancelledError:
             await self._transition(AgentState.IDLE)
@@ -188,22 +196,30 @@ class AgentRuntime:
 
         if isinstance(raw_output, str):
             text = raw_output.strip()
-            # Try to extract JSON plan block using regex
             import re
+            
+            # Extract and preserve <think> blocks for display, but strip them for JSON parsing
+            think_blocks = re.findall(r'<think>([\s\S]*?)</think>', text)
+            thinking_text = "\n\n".join(b.strip() for b in think_blocks if b.strip())
+            
+            # Strip <think>...</think> from the text for JSON extraction
+            text_for_json = re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
+            
+            # Try to extract JSON plan block using regex
             json_text = None
             
             # Check for ```json ... ``` blocks
-            json_match = re.search(r'```json\s*([\s\S]*?)\s*```', text)
+            json_match = re.search(r'```json\s*([\s\S]*?)\s*```', text_for_json)
             if json_match:
                 json_text = json_match.group(1).strip()
             else:
                 # Check for standard ``` ... ``` with brackets
-                json_match = re.search(r'```\s*(\[[\s\S]*?\]|\{[\s\S]*?\})\s*```', text)
+                json_match = re.search(r'```\s*(\[[\s\S]*?\]|\{[\s\S]*?\})\s*```', text_for_json)
                 if json_match:
                     json_text = json_match.group(1).strip()
                 else:
                     # Fallback to finding the first [ or { matching bracket pair
-                    json_match = re.search(r'(\[[\s\S]*?\]|\{[\s\S]*?\})', text)
+                    json_match = re.search(r'(\[[\s\S]*?\]|\{[\s\S]*?\})', text_for_json)
                     if json_match:
                         json_text = json_match.group(1).strip()
 

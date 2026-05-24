@@ -171,24 +171,25 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
         ) {
           let textToSpeak = String(lastMsg.content);
           
-          // Strip <think>...</think> block
-          const thinkEnd = textToSpeak.indexOf("</think>");
-          if (thinkEnd !== -1) {
-            textToSpeak = textToSpeak.slice(thinkEnd + 8);
-          } else if (textToSpeak.includes("<think>")) {
-            // Still thinking, wait until </think> is reached
+          // Strip <think>...</think> block completely
+          textToSpeak = textToSpeak.replace(/<think>[\s\S]*?<\/think>/g, "");
+          
+          // If there's an unclosed <think>, the model is still thinking — wait
+          if (textToSpeak.includes("<think>")) {
             return;
           }
 
-          // Strip markdown elements, code blocks, bullet formatting, for crystal clear voice reading
+          // Strip markdown code blocks (including JSON plans)
           let clean = textToSpeak.replace(/```[\s\S]*?```/g, "");
           
-          // Strip raw JSON array blocks just in case LLM forgot backticks
+          // Strip raw JSON array blocks (in case LLM output JSON without backticks)
           clean = clean.replace(/\[\s*\{[\s\S]*\}\s*\]/g, "");
           
+          // Strip inline code, markdown formatting
           clean = clean
             .replace(/`([^`]+)`/g, "$1")
             .replace(/[*#_\-]/g, "")
+            .replace(/^\s*[✓✗❌⚠️]+\s*/gm, "")  // Strip status emojis/bullets
             .trim();
           
           if (clean) {
@@ -366,7 +367,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
                 style={{
                   flex: 1, background: "transparent", border: "none", borderBottom: "1px solid var(--border-accent)",
                   color: "var(--text-primary)", fontSize: "14px", fontFamily: "var(--font-mono)",
-                  padding: "8px 4px", outline: "none", textTransform: "uppercase"
+                  padding: "8px 4px", outline: "none"
                 }}
               />
               <button

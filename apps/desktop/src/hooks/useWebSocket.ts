@@ -70,9 +70,12 @@ export function useWebSocket(port: number | null) {
             oscillator.stop(audioCtx.currentTime + 0.2);
             
             const cleanText = text
+              // Remove the wake word and any prefix like "hey", "hello", "hi" before it
               .replace(new RegExp(`(?:hey|hello|hi|he)?\\s*(?:${escapedWakeWords.join('|')})`, 'gi'), "")
               .replace(/hey!/gi, "")
-              .replace(/[,.?!]+$/, "") // clean up trailing punctuation
+              // Clean up leading/trailing punctuation and whitespace artifacts
+              .replace(/^[\s,;:.!?]+/, "")  // strip leading commas, spaces, punctuation
+              .replace(/[\s,;:.!?]+$/, "")  // strip trailing commas, spaces, punctuation
               .trim();
             
             setVoiceState("listening");

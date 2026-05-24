@@ -378,10 +378,14 @@ class Session:
             text = payload.get("text", "")
             if text:
                 import re
+                # Strip <think>...</think> blocks from the text before speaking
+                clean_text = re.sub(r'<think>[\s\S]*?</think>', '', text)
                 # Strip markdown elements so the voice engine reads cleanly
-                clean_text = re.sub(r'```[\s\S]*?```', '', text)
+                clean_text = re.sub(r'```[\s\S]*?```', '', clean_text)
                 clean_text = re.sub(r'`([^`]+)`', r'\1', clean_text)
                 clean_text = re.sub(r'[*#_\-]', '', clean_text)
+                # Strip raw JSON plan blocks
+                clean_text = re.sub(r'\[\s*\{[\s\S]*?\}\s*\]', '', clean_text)
                 clean_text = clean_text.strip()
                 if clean_text:
                     logger.info("Replaying speech synthesis via WebSocket request", text=clean_text)

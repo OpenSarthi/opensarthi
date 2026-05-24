@@ -9,20 +9,29 @@ interface ResponseBubbleProps {
 }
 
 function parseThinking(content: string): { thinking: string; response: string; isComplete: boolean } {
-  const thinkStart = content.indexOf("<think>");
-  if (thinkStart === -1) {
-    return { thinking: "", response: content, isComplete: false };
+  // Collect all <think>...</think> blocks
+  const thinkBlocks: string[] = [];
+  let remaining = content;
+  
+  // Extract all complete <think>...</think> blocks
+  const completePattern = /<think>([\s\S]*?)<\/think>/g;
+  let match;
+  while ((match = completePattern.exec(content)) !== null) {
+    thinkBlocks.push(match[1].trim());
   }
-
-  const thinkEnd = content.indexOf("</think>");
-  if (thinkEnd === -1) {
-    const thinking = content.slice(thinkStart + 7);
-    return { thinking, response: "", isComplete: false };
+  remaining = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  
+  // Check for unclosed <think> tag (still thinking)
+  const unclosedIdx = remaining.indexOf("<think>");
+  if (unclosedIdx !== -1) {
+    const partialThinking = remaining.slice(unclosedIdx + 7);
+    thinkBlocks.push(partialThinking.trim());
+    remaining = remaining.slice(0, unclosedIdx).trim();
+    return { thinking: thinkBlocks.join("\n\n"), response: remaining, isComplete: false };
   }
-
-  const thinking = content.slice(thinkStart + 7, thinkEnd);
-  const response = content.slice(thinkEnd + 8);
-  return { thinking, response, isComplete: true };
+  
+  const thinking = thinkBlocks.join("\n\n");
+  return { thinking, response: remaining, isComplete: thinkBlocks.length > 0 };
 }
 
 function ThinkingBlock({ thinking, isComplete }: { thinking: string; isComplete: boolean }) {
