@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Send, Settings, Activity, History, MessageSquarePlus } from "lucide-react";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
+import { ParticleBackground } from "./ParticleBackground";
 import { TranscriptView } from "./TranscriptView";
 import { MessageList } from "./ResponseBubble";
 import { ActionLog } from "../execution/ActionLog";
@@ -18,6 +19,7 @@ interface AssistantOverlayProps {
 
 export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: AssistantOverlayProps) {
   const [textInput, setTextInput] = useState("");
+  const [statusIdx, setStatusIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -43,7 +45,10 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
 
   const resizeLeft = useCallback((e: MouseEvent) => {
     if (!isDraggingLeft.current) return;
-    const newWidth = Math.max(180, Math.min(450, e.clientX - 12)); // bounds: min 180px, max 450px
+    if (!containerRef.current) return;
+    const containerWidth = containerRef.current.clientWidth;
+    const maxAllowed = Math.floor(containerWidth * 0.4);
+    const newWidth = Math.max(250, Math.min(maxAllowed, e.clientX - 12)); // bounds: min 250px, max 40% of container
     setLeftWidth(newWidth);
   }, []);
 
@@ -64,7 +69,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
     if (!isDraggingRight.current) return;
     if (!containerRef.current) return;
     const containerWidth = containerRef.current.clientWidth;
-    const newWidth = Math.max(160, Math.min(400, containerWidth - e.clientX - 12)); // bounds: min 160px, max 400px
+    const maxAllowed = Math.floor(containerWidth * 0.35);
+    const newWidth = Math.max(230, Math.min(maxAllowed, containerWidth - e.clientX - 12)); // bounds: min 230px, max 35% of container
     setRightWidth(newWidth);
   }, []);
 
@@ -80,6 +86,23 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
     document.addEventListener("mousemove", resizeRight);
     document.addEventListener("mouseup", stopResizeRight);
   }, [resizeRight, stopResizeRight]);
+
+  // Handle window resizing to dynamically constrain sidepanels
+  useEffect(() => {
+    const handleWindowResize = () => {
+      if (!containerRef.current) return;
+      const w = containerRef.current.clientWidth;
+      setLeftWidth(prev => Math.max(250, Math.min(prev, Math.floor(w * 0.38))));
+      setRightWidth(prev => Math.max(230, Math.min(prev, Math.floor(w * 0.33))));
+    };
+    window.addEventListener("resize", handleWindowResize);
+    // Debounce/delay initial call slightly to ensure DOM is fully ready
+    const timer = setTimeout(handleWindowResize, 60);
+    return () => {
+      window.removeEventListener("resize", handleWindowResize);
+      clearTimeout(timer);
+    };
+  }, []);
 
   // Clean up global listeners on unmount
   useEffect(() => {
@@ -263,6 +286,23 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
 
   const isTaskRunning = !!currentPlan;
 
+  const STATUS_LINES = [
+    "SYSTEM READY",
+    "NEURAL CORE ONLINE",
+    "ALL SYSTEMS NOMINAL",
+    "AWAITING YOUR COMMAND",
+    "AGENT PROTOCOLS ACTIVE",
+    "VOICE INTERFACE STANDBY",
+    "AI ENGINE INITIALIZED",
+  ];
+
+  useEffect(() => {
+    if (messages.length > 0 || !isConnected) return;
+    const t = setInterval(() => setStatusIdx((i) => (i + 1) % STATUS_LINES.length), 2200);
+    return () => clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length, isConnected]);
+
   return (
     <div
       style={{
@@ -285,17 +325,85 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
           <span style={{ fontSize: "14px", fontWeight: "bold", letterSpacing: "0.1em", display: "flex", gap: "8px" }}>
             // OPENSARTHI - AN AI POWERED DESKTOP ASSISTANT AND AGENT
           </span>
+          {/* State badge */}
+          {voiceState === "listening" && (
+            <span className="os-listen-ear" title="Listening" />
+          )}
+          {(voiceState === "processing" || isTaskRunning) && voiceState !== "listening" && (
+            <span className="os-badge-pulse" style={{ fontSize: "10px", color: "var(--accent)", letterSpacing: "0.1em" }}>
+              {isTaskRunning ? "AGENT ACTIVE" : "PROCESSING"}
+            </span>
+          )}
         </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button onClick={onOpenHistory} title="Past Threads" style={{ padding: "4px 8px" }}>
-            <History size={14} />
-          </button>
-          <button onClick={handleNewThread} title="New Thread" style={{ padding: "4px 8px" }}>
-            <MessageSquarePlus size={14} />
-          </button>
-          <button onClick={onOpenSettings} title="Settings" style={{ padding: "4px 8px" }}>
-            <Settings size={14} />
-          </button>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <motion.button
+            onClick={onOpenHistory}
+            title="Past Threads"
+            whileHover={{ scale: 1.08, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              width: "32px",
+              height: "32px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "4px",
+              background: "rgba(0,0,0,0.3)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+              transition: "border-color 0.2s, color 0.2s"
+            }}
+          >
+            <motion.div whileHover={{ rotate: -15 }}>
+              <History size={15} />
+            </motion.div>
+          </motion.button>
+
+          <motion.button
+            onClick={handleNewThread}
+            title="New Thread"
+            whileHover={{ scale: 1.08, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              width: "32px",
+              height: "32px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "4px",
+              background: "rgba(0,0,0,0.3)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+              transition: "border-color 0.2s, color 0.2s"
+            }}
+          >
+            <motion.div whileHover={{ scale: 1.15, y: -1 }}>
+              <MessageSquarePlus size={15} />
+            </motion.div>
+          </motion.button>
+
+          <motion.button
+            onClick={onOpenSettings}
+            title="Settings"
+            whileHover={{ scale: 1.08, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              width: "32px",
+              height: "32px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "4px",
+              background: "rgba(0,0,0,0.3)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+              transition: "border-color 0.2s, color 0.2s"
+            }}
+          >
+            <motion.div whileHover={{ rotate: 90 }} transition={{ type: "spring", stiffness: 200 }}>
+              <Settings size={15} />
+            </motion.div>
+          </motion.button>
         </div>
       </div>
 
@@ -306,7 +414,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: "auto", opacity: 1, flex: 1 }}
           exit={{ height: 0, opacity: 0 }}
-          style={{ display: "flex", gap: "0px", overflow: "hidden", flex: 1, position: "relative" }}
+          style={{ display: "flex", gap: "0px", overflow: "visible", flex: 1, position: "relative", minHeight: 0 }}
         >
           {/* LEFT PANEL */}
           <div style={{ width: `${leftWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -384,20 +492,68 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
 
           {/* CENTER PANEL */}
           <div className="hud-panel" style={{ flex: "1 1 0%", minWidth: "320px", display: "flex", flexDirection: "column" }}>
-            <div className="hud-panel-title">{getThreadTitle()}</div>
-            <div style={{
-              position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-              opacity: 0.05, pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center"
-            }}>
-              <Activity size={180} color="var(--accent)" />
+            <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getThreadTitle()}</span>
+              {isTaskRunning && (
+                <span className="animate-pulse" style={{ fontSize: "10px", color: "var(--accent)", fontWeight: "bold", flexShrink: 0 }}>● ACTIVE</span>
+              )}
             </div>
-            
+            <ParticleBackground voiceState={voiceState} />
+            {/* Slow scan line sweep across the panel */}
+            <div className="os-scan-line" />
+
             <div style={{ flex: 1, overflowY: "auto", padding: "16px", zIndex: 1 }} ref={chatScrollRef}>
               {messages.length === 0 && (
-                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.6 }}>
-                  <p style={{ color: "var(--text-secondary)", letterSpacing: "0.1em", whiteSpace: "pre-line", textAlign: "center" }}>
-                    {isConnected ? "// OPENSARTHI INITIALIZED\nWAITING FOR COMMAND //" : "// INITIALIZING OPENSARTHI PROTOCOL..."}
-                  </p>
+                <div style={{
+                  height: "100%", display: "flex", flexDirection: "column",
+                  alignItems: "center", justifyContent: "center", gap: "28px",
+                  userSelect: "none",
+                }}>
+                  {/* Orbital loader — used for both connected and connecting states */}
+                  <div
+                    className="os-orbital-loader"
+                    style={isConnected ? {} : { opacity: 0.45, animationDuration: "1.4s" }}
+                  />
+
+                  {/* Glitch title */}
+                  <div
+                    className="os-glitch"
+                    data-text="OPENSARTHI"
+                    style={{ fontSize: "15px" }}
+                  >
+                    OPENSARTHI
+                  </div>
+
+                  {/* Cycling status line */}
+                  <div style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "11px",
+                    color: "var(--text-secondary)",
+                    letterSpacing: "0.15em",
+                    textAlign: "center",
+                    lineHeight: 1.8,
+                  }}>
+                    {isConnected ? (
+                      <span key={statusIdx} className="os-status-fade">
+                        // {STATUS_LINES[statusIdx]}
+                      </span>
+                    ) : (
+                      <span className="os-proc-dots">// INITIALIZING PROTOCOL</span>
+                    )}
+                  </div>
+
+                  {/* Subtle divider + hint */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", opacity: 0.55 }}>
+                    <div style={{ width: "80px", height: "1px", background: "var(--accent)" }} />
+                    <span style={{
+                      fontSize: "9px",
+                      color: "var(--accent)",
+                      letterSpacing: "0.22em",
+                      opacity: 0.7,
+                    }}>
+                      SPEAK OR TYPE TO BEGIN
+                    </span>
+                  </div>
                 </div>
               )}
               <MessageList
@@ -470,16 +626,36 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
                     opacity: isTaskRunning ? 0.4 : 1,
                   }}
                 />
-                <button
+                <motion.button
                   onClick={handleTextSend}
                   disabled={!textInput.trim() || !isConnected || isTaskRunning}
+                  whileHover={textInput.trim() && isConnected && !isTaskRunning ? { scale: 1.08, boxShadow: "0 0 10px var(--accent)" } : {}}
+                  whileTap={textInput.trim() && isConnected && !isTaskRunning ? { scale: 0.94 } : {}}
                   style={{
-                    padding: "8px 16px", background: "var(--accent)", color: "#000", border: "none",
-                    fontWeight: "bold", opacity: (!textInput.trim() || !isConnected || isTaskRunning) ? 0.4 : 1
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: "38px",
+                    height: "38px",
+                    borderRadius: "50%",
+                    background: textInput.trim() && isConnected && !isTaskRunning ? "var(--accent)" : "rgba(255,255,255,0.05)",
+                    color: textInput.trim() && isConnected && !isTaskRunning ? "#000" : "var(--text-muted)",
+                    border: `1.5px solid ${textInput.trim() && isConnected && !isTaskRunning ? "var(--accent)" : "var(--border)"}`,
+                    transition: "background 0.2s, color 0.2s, border-color 0.2s",
+                    cursor: (!textInput.trim() || !isConnected || isTaskRunning) ? "not-allowed" : "pointer",
+                    position: "relative",
+                    overflow: "hidden",
+                    flexShrink: 0,
                   }}
                 >
-                  <Send size={16} />
-                </button>
+                  <motion.div
+                    animate={textInput.trim() && isConnected && !isTaskRunning ? { x: [0, 2, 0], y: [0, -2, 0] } : {}}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >
+                    <Send size={15} style={{ transform: "rotate(-15deg)" }} />
+                  </motion.div>
+                </motion.button>
               </div>
             </div>
           </div>
