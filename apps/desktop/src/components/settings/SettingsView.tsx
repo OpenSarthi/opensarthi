@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, Save, Volume2, Palette, Cpu, ChevronRight, CheckCircle2, AlertCircle } from "lucide-react";
+import { X, Save, Volume2, Palette, Cpu, ChevronRight, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 // Provider → models mapping
@@ -182,7 +182,6 @@ export function SettingsView({
   const [saved, setSaved] = useState(false);
 
   const providerInfo = PROVIDER_LABELS[provider] || PROVIDER_LABELS.google;
-  const modelOptions = PROVIDER_MODELS[provider] || [];
   const isLocal = provider === "ollama";
 
   // When provider changes, reset to first model of new provider
@@ -275,7 +274,18 @@ export function SettingsView({
     >
       <div
         className="hud-panel"
-        style={{ width: "480px", maxHeight: "88vh", display: "flex", flexDirection: "column", gap: "0", overflow: "hidden" }}
+        style={{
+          width: "840px",
+          maxHeight: "85vh",
+          display: "flex",
+          flexDirection: "column",
+          gap: "0",
+          overflow: "hidden",
+          background: "rgba(0, 0, 0, 0.4)",
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
+          boxShadow: "0 10px 40px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(255,255,255,0.02)"
+        }}
       >
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px", borderBottom: "1px solid var(--border)" }}>
@@ -287,268 +297,262 @@ export function SettingsView({
           </button>
         </div>
 
-        {/* Scrollable content */}
-        <div style={{ overflowY: "auto", flex: 1, padding: "18px 20px", display: "flex", flexDirection: "column", gap: "20px" }}>
+        {/* Scrollable content in 2 Columns */}
+        <div style={{ overflowY: "auto", flex: 1, padding: "20px 24px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px" }}>
+          
+          {/* Column 1: AI Provider & Model Config */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px", borderRight: "1px solid rgba(255,255,255,0.06)", paddingRight: "24px" }}>
+            <div style={sectionStyle}>
+              <SectionHeader icon={<Cpu size={12} color="var(--accent)" />} title="[ AI PROVIDER & MODEL ]" />
 
-          {/* ── AI PROVIDER SECTION ── */}
-          <div style={sectionStyle}>
-            <SectionHeader icon={<Cpu size={12} color="var(--accent)" />} title="[ AI PROVIDER & MODEL ]" />
-
-            {/* Step 1: Provider */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-              <label style={labelStyle}>1. SELECT AI PROVIDER</label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
-                {Object.entries(PROVIDER_LABELS).map(([key, info]) => (
-                  <button
-                    key={key}
-                    onClick={() => setProvider(key)}
-                    style={{
-                      padding: "8px 10px",
-                      background: provider === key ? "var(--accent-glow)" : "rgba(0,0,0,0.3)",
-                      border: `1px solid ${provider === key ? "var(--border-accent)" : "var(--border)"}`,
-                      borderRadius: "4px",
-                      color: provider === key ? "var(--accent)" : "var(--text-secondary)",
-                      fontSize: "11px",
-                      fontFamily: "var(--font-mono)",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      fontWeight: provider === key ? "bold" : "normal",
-                      letterSpacing: "0.03em",
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    <span>{info.icon}</span>
-                    <span>{info.label}</span>
-                  </button>
-                ))}
+              {/* Step 1: Provider */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                <label style={labelStyle}>1. SELECT AI PROVIDER</label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+                  {Object.entries(PROVIDER_LABELS).map(([key, info]) => (
+                    <button
+                      key={key}
+                      onClick={() => setProvider(key)}
+                      style={{
+                        padding: "8px 10px",
+                        background: provider === key ? "var(--accent-glow)" : "rgba(0,0,0,0.3)",
+                        border: `1px solid ${provider === key ? "var(--border-accent)" : "var(--border)"}`,
+                        borderRadius: "4px",
+                        color: provider === key ? "var(--accent)" : "var(--text-secondary)",
+                        fontSize: "11px",
+                        fontFamily: "var(--font-mono)",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontWeight: provider === key ? "bold" : "normal",
+                        letterSpacing: "0.03em",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <span>{info.icon}</span>
+                      <span>{info.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            {/* Step 2: Model */}
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={provider}
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.15 }}
-                style={{ display: "flex", flexDirection: "column", gap: "5px" }}
-              >
-                {isLocal ? (
-                  <>
-                    <label style={labelStyle}>
-                      <ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />
-                      2. LOCAL MODEL NAME (Ollama)
-                    </label>
-                    <input
-                      value={localModel}
-                      onChange={(e) => setLocalModel(e.target.value)}
-                      placeholder="e.g. qwen2.5-coder:3b, llama3.2:3b"
-                      style={inputStyle}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <label style={labelStyle}>
-                      <ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />
-                      2. SELECT MODEL
-                    </label>
-                    {modelOptions.length > 0 ? (
-                      <select value={cloudModel} onChange={(e) => setCloudModel(e.target.value)} style={selectStyle}>
-                        {modelOptions.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        value={cloudModel}
-                        onChange={(e) => setCloudModel(e.target.value)}
-                        placeholder="Enter model name..."
-                        style={inputStyle}
-                      />
-                    )}
-                  </>
-                )}
-              </motion.div>
-            </AnimatePresence>
-
-            {/* Step 3: API Key */}
-            {!isLocal && (
+              {/* Step 2: Model */}
               <AnimatePresence mode="wait">
                 <motion.div
-                  key={`${provider}-key`}
+                  key={provider}
                   initial={{ opacity: 0, y: -6 }}
                   animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
                   transition={{ duration: 0.15 }}
                   style={{ display: "flex", flexDirection: "column", gap: "5px" }}
                 >
-                  <label style={{ ...labelStyle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span>
-                      <ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />
-                      3. {providerInfo.apiKeyLabel}
-                    </span>
-                    {hasSavedKey && (
-                      <span style={{ color: "var(--success)", fontSize: "10px", display: "flex", alignItems: "center", gap: "3px" }}>
-                        <CheckCircle2 size={10} /> KEY SAVED
-                      </span>
-                    )}
-                    {!hasSavedKey && (
-                      <span style={{ color: "var(--danger)", fontSize: "10px", display: "flex", alignItems: "center", gap: "3px" }}>
-                        <AlertCircle size={10} /> NO KEY
-                      </span>
-                    )}
-                  </label>
-                  <input
-                    value={getCurrentKeyInput()}
-                    onChange={(e) => setCurrentKeyInput(e.target.value)}
-                    type="password"
-                    placeholder={hasSavedKey ? "•••••••••• (leave blank to keep)" : providerInfo.apiKeyPlaceholder}
-                    style={inputStyle}
-                  />
-                  {providerInfo.docsUrl && (
-                    <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
-                      Get your key at: <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{providerInfo.docsUrl}</span>
-                    </span>
+                  {isLocal ? (
+                    <>
+                      <label style={labelStyle}>
+                        <ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />
+                        2. LOCAL MODEL NAME (Ollama)
+                      </label>
+                      <input
+                        value={localModel}
+                        onChange={(e) => setLocalModel(e.target.value)}
+                        placeholder="e.g. qwen2.5-coder:3b, llama3.2:3b"
+                        style={inputStyle}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <label style={labelStyle}>
+                        <ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />
+                        2. SELECT MODEL
+                      </label>
+                      <select
+                        value={cloudModel}
+                        onChange={(e) => setCloudModel(e.target.value)}
+                        style={selectStyle}
+                      >
+                        {PROVIDER_MODELS[provider]?.map((m) => (
+                          <option key={m.value} value={m.value}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                    </>
                   )}
                 </motion.div>
               </AnimatePresence>
-            )}
 
-            {/* Save AI Settings */}
-            <button
-              onClick={handleSaveAI}
-              style={{
-                background: saved ? "var(--success)" : "var(--accent)",
-                color: "#000",
-                border: "none",
-                padding: "9px 16px",
-                fontWeight: "bold",
-                fontSize: "12px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "8px",
-                cursor: "pointer",
-                borderRadius: "4px",
-                letterSpacing: "0.05em",
-                transition: "background 0.3s",
-                alignSelf: "flex-start",
-              }}
-            >
-              {saved ? <><CheckCircle2 size={14} /> SAVED!</> : <><Save size={14} /> SAVE AI SETTINGS</>}
-            </button>
-          </div>
-
-          {/* ── THEME SECTION ── */}
-          <div style={sectionStyle}>
-            <SectionHeader icon={<Palette size={12} color="var(--accent)" />} title="[ INTERFACE THEME ]" />
-            <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-              <label style={labelStyle}>ACTIVE STYLING MATRIX</label>
-              <select value={theme} onChange={(e) => setTheme(e.target.value)} style={selectStyle}>
-                <option value="theme-red-black">🔴 Dark Crimson (HUD Default)</option>
-                <option value="theme-green-black">🟢 Dark Forest (Matrix Green)</option>
-                <option value="theme-purple-black">🟣 Dark Nebula (Cyberpunk Purple)</option>
-                <option value="theme-blue-black">🌊 Dark Ocean (Neon Cyan)</option>
-                <option value="theme-light-sakura">🌸 Light Sakura (Pink &amp; White)</option>
-                <option value="theme-light-slate">🏙️ Light Slate (Sky Blue &amp; Gray)</option>
-                <option value="theme-light-clean">⬜ Light Clean (Pure White)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* ── VOICE SECTION ── */}
-          <div style={{ paddingBottom: "8px", display: "flex", flexDirection: "column", gap: "12px" }}>
-            <SectionHeader icon={<Volume2 size={12} color="var(--accent)" />} title="[ VOICE & INTERACTION ]" />
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-              <label style={labelStyle}>VOICE CHARACTER / ACCENT</label>
-              <select value={voiceAccent} onChange={(e) => setVoiceAccent(e.target.value)} style={selectStyle}>
-                <optgroup label="English Accents">
-                  <option value="ie">🍀 F.R.I.D.A.Y. Accent (Irish Female)</option>
-                  <option value="com">🇺🇸 Google Accent (US Female)</option>
-                  <option value="co.uk">🇬🇧 British Accent (UK Female)</option>
-                  <option value="co.in">🇮🇳 Indian Accent (IN Female)</option>
-                  <option value="com.au">🇦🇺 Australian Accent (AU Female)</option>
-                  <option value="ca">🇨🇦 Canadian Accent (CA Female)</option>
-                </optgroup>
-                <optgroup label="International Languages">
-                  <option value="fr">🇫🇷 French / Français</option>
-                  <option value="es">🇪🇸 Spanish / Español</option>
-                  <option value="de">🇩🇪 German / Deutsch</option>
-                  <option value="hi">🇮🇳 Hindi / हिन्दी</option>
-                  <option value="ja">🇯🇵 Japanese / 日本語</option>
-                  <option value="pt">🇧🇷 Portuguese / Português</option>
-                </optgroup>
-              </select>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-              <label style={labelStyle}>PLAYBACK SPEECH SPEED ({voiceSpeed.toFixed(2)}x)</label>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <input
-                  type="range"
-                  min="0.8" max="2.0" step="0.05"
-                  value={voiceSpeed}
-                  onChange={(e) => setVoiceSpeed(parseFloat(e.target.value))}
-                  style={{ flex: 1, accentColor: "var(--accent)", cursor: "pointer" }}
-                />
-                <span style={{ fontSize: "13px", fontFamily: "var(--font-mono)", color: "var(--accent)", minWidth: "42px", textAlign: "right" }}>
-                  {voiceSpeed.toFixed(2)}x
-                </span>
-              </div>
-            </div>
-
-            {/* Wake Word Detection Options */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "8px", paddingTop: "12px", borderTop: "1px dashed rgba(255,255,255,0.07)" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <label style={{ ...labelStyle, marginBottom: 0, cursor: "pointer" }} htmlFor="wake-word-enabled">
-                  ENABLE WAKE WORD DETECTION
-                </label>
-                <input
-                  id="wake-word-enabled"
-                  type="checkbox"
-                  checked={wakeWordEnabled}
-                  onChange={(e) => setWakeWordEnabled(e.target.checked)}
-                  style={{ width: "16px", height: "16px", accentColor: "var(--accent)", cursor: "pointer" }}
-                />
-              </div>
-
-              {wakeWordEnabled && (
-                <>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                    <label style={labelStyle}>CUSTOM WAKE WORDS (COMMA SEPARATED)</label>
+              {/* Step 3: API Key */}
+              {!isLocal && (
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={`${provider}-key`}
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.15 }}
+                    style={{ display: "flex", flexDirection: "column", gap: "5px", marginTop: "4px" }}
+                  >
+                    <label style={{ ...labelStyle, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>{providerInfo.apiKeyLabel}</span>
+                      {hasSavedKey && (
+                        <span style={{ fontSize: "9px", color: "var(--success)", display: "flex", alignItems: "center", gap: "3px" }}>
+                          <CheckCircle2 size={10} /> KEY SAVED
+                        </span>
+                      )}
+                    </label>
                     <input
-                      value={wakeWordsInput}
-                      onChange={(e) => setWakeWordsInput(e.target.value)}
-                      placeholder="e.g. hey sarthi, hello sarthi, hi computer"
+                      value={getCurrentKeyInput()}
+                      onChange={(e) => setCurrentKeyInput(e.target.value)}
+                      type="password"
+                      placeholder={hasSavedKey ? "•••••••••• (leave blank to keep)" : providerInfo.apiKeyPlaceholder}
                       style={inputStyle}
                     />
-                    <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
-                      Add multiple phrases separated by commas.
-                    </span>
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                    <label style={labelStyle}>DETECTION THRESHOLD / SENSITIVITY ({wakeWordThreshold.toFixed(2)})</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <input
-                        type="range"
-                        min="0.1" max="0.9" step="0.05"
-                        value={wakeWordThreshold}
-                        onChange={(e) => setWakeWordThreshold(parseFloat(e.target.value))}
-                        style={{ flex: 1, accentColor: "var(--accent)", cursor: "pointer" }}
-                      />
-                      <span style={{ fontSize: "13px", fontFamily: "var(--font-mono)", color: "var(--accent)", minWidth: "42px", textAlign: "right" }}>
-                        {wakeWordThreshold.toFixed(2)}
+                    {providerInfo.docsUrl && (
+                      <span style={{ fontSize: "10px", color: "var(--text-secondary)", opacity: 0.8 }}>
+                        Get your key at: <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{providerInfo.docsUrl}</span>
                       </span>
-                    </div>
-                  </div>
-                </>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
               )}
+
+              {/* Save AI Settings */}
+              <button
+                onClick={handleSaveAI}
+                style={{
+                  background: saved ? "var(--success)" : "var(--accent)",
+                  color: "#000",
+                  border: "none",
+                  padding: "9px 16px",
+                  fontWeight: "bold",
+                  fontSize: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  cursor: "pointer",
+                  borderRadius: "4px",
+                  letterSpacing: "0.05em",
+                  transition: "background 0.3s",
+                  alignSelf: "flex-start",
+                  marginTop: "8px"
+                }}
+              >
+                {saved ? <><CheckCircle2 size={14} /> SAVED!</> : <><Save size={14} /> SAVE AI SETTINGS</>}
+              </button>
             </div>
           </div>
+
+          {/* Column 2: Theme & Interaction settings */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {/* ── THEME SECTION ── */}
+            <div style={sectionStyle}>
+              <SectionHeader icon={<Palette size={12} color="var(--accent)" />} title="[ INTERFACE THEME ]" />
+              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                <label style={labelStyle}>ACTIVE STYLING MATRIX</label>
+                <select value={theme} onChange={(e) => setTheme(e.target.value)} style={selectStyle}>
+                  <option value="theme-red-black">🔴 Dark Crimson (HUD Default)</option>
+                  <option value="theme-green-black">🟢 Dark Forest (Matrix Green)</option>
+                  <option value="theme-purple-black">🟣 Dark Nebula (Cyberpunk Purple)</option>
+                  <option value="theme-blue-black">🌊 Dark Ocean (Neon Cyan)</option>
+                  <option value="theme-light-sakura">🌸 Light Sakura (Pink &amp; White)</option>
+                  <option value="theme-light-slate">🏙️ Light Slate (Sky Blue &amp; Gray)</option>
+                  <option value="theme-light-clean">⬜ Light Clean (Pure White)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* ── VOICE SECTION ── */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <SectionHeader icon={<Volume2 size={12} color="var(--accent)" />} title="[ VOICE & INTERACTION ]" />
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                <label style={labelStyle}>VOICE CHARACTER / ACCENT</label>
+                <select value={voiceAccent} onChange={(e) => setVoiceAccent(e.target.value)} style={selectStyle}>
+                  <optgroup label="English Accents">
+                    <option value="ie">🍀 F.R.I.D.A.Y. Accent (Irish Female)</option>
+                    <option value="com">🇺🇸 Google Accent (US Female)</option>
+                    <option value="co.uk">🇬🇧 British Accent (UK Female)</option>
+                    <option value="co.in">🇮🇳 Indian Accent (IN Female)</option>
+                    <option value="com.au">🇦🇺 Australian Accent (AU Female)</option>
+                    <option value="ca">🇨🇦 Canadian Accent (CA Female)</option>
+                  </optgroup>
+                  <optgroup label="International Languages">
+                    <option value="fr">🇫🇷 French / Français</option>
+                    <option value="es">🇪🇸 Spanish / Español</option>
+                    <option value="de">🇩🇪 German / Deutsch</option>
+                    <option value="hi">🇮🇳 Hindi / हिन्दी</option>
+                    <option value="ja">🇯🇵 Japanese / 日本語</option>
+                    <option value="pt">🇧🇷 Portuguese / Português</option>
+                  </optgroup>
+                </select>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                <label style={labelStyle}>PLAYBACK SPEECH SPEED ({voiceSpeed.toFixed(2)}x)</label>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <input
+                    type="range"
+                    min="0.8" max="2.0" step="0.05"
+                    value={voiceSpeed}
+                    onChange={(e) => setVoiceSpeed(parseFloat(e.target.value))}
+                    style={{ flex: 1, accentColor: "var(--accent)", cursor: "pointer" }}
+                  />
+                  <span style={{ fontSize: "13px", fontFamily: "var(--font-mono)", color: "var(--accent)", minWidth: "42px", textAlign: "right" }}>
+                    {voiceSpeed.toFixed(2)}x
+                  </span>
+                </div>
+              </div>
+
+              {/* Wake Word Detection Options */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "4px", paddingTop: "12px", borderTop: "1px dashed rgba(255,255,255,0.07)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <label style={{ ...labelStyle, marginBottom: 0, cursor: "pointer" }} htmlFor="wake-word-enabled">
+                    ENABLE WAKE WORD DETECTION
+                  </label>
+                  <input
+                    id="wake-word-enabled"
+                    type="checkbox"
+                    checked={wakeWordEnabled}
+                    onChange={(e) => setWakeWordEnabled(e.target.checked)}
+                    style={{ width: "16px", height: "16px", accentColor: "var(--accent)", cursor: "pointer" }}
+                  />
+                </div>
+
+                {wakeWordEnabled && (
+                  <>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                      <label style={labelStyle}>CUSTOM WAKE WORDS (COMMA SEPARATED)</label>
+                      <input
+                        value={wakeWordsInput}
+                        onChange={(e) => setWakeWordsInput(e.target.value)}
+                        placeholder="e.g. hey sarthi, hello sarthi"
+                        style={inputStyle}
+                      />
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                      <label style={labelStyle}>DETECTION THRESHOLD / SENSITIVITY ({wakeWordThreshold.toFixed(2)})</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <input
+                          type="range"
+                          min="0.1" max="0.9" step="0.05"
+                          value={wakeWordThreshold}
+                          onChange={(e) => setWakeWordThreshold(parseFloat(e.target.value))}
+                          style={{ flex: 1, accentColor: "var(--accent)", cursor: "pointer" }}
+                        />
+                        <span style={{ fontSize: "13px", fontFamily: "var(--font-mono)", color: "var(--accent)", minWidth: "42px", textAlign: "right" }}>
+                          {wakeWordThreshold.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
         </div>
 
         {/* Footer — Save theme+voice */}

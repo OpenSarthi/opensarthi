@@ -192,7 +192,7 @@ export function TaskList({
                 <div style={{ display: "flex", alignItems: "center", gap: "7px", fontWeight: "bold", fontSize: "11px", color: "var(--text-primary)" }}>
                   <span>{task.icon}</span>
                   <span style={{ letterSpacing: "0.04em" }}>{task.title}</span>
-                  <span style={{ fontSize: "9px", color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontWeight: "normal", opacity: 0.8 }}>
+                  <span style={{ fontSize: "9px", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontWeight: "normal", opacity: 0.85 }}>
                     [{new Date(task.timestamp ?? Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}]
                   </span>
                 </div>

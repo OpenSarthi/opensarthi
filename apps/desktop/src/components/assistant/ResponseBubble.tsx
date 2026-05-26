@@ -47,10 +47,12 @@ function ThinkingBlock({ thinking, isComplete, timestamp }: { thinking: string; 
   return (
     <div style={{
       border: "1px solid var(--border)",
-      background: "rgba(255,255,255,0.02)",
+      background: "rgba(255,255,255,0.01)",
       borderRadius: "var(--radius-md)",
       marginBottom: "8px",
-      overflow: "hidden"
+      overflow: "hidden",
+      backdropFilter: "blur(6px)",
+      WebkitBackdropFilter: "blur(6px)"
     }}>
       <style>{`
         @keyframes pulseDot {
@@ -62,7 +64,7 @@ function ThinkingBlock({ thinking, isComplete, timestamp }: { thinking: string; 
         onClick={() => setIsOpen(!isOpen)}
         style={{
           padding: "8px 12px",
-          background: "rgba(0,0,0,0.2)",
+          background: "rgba(0,0,0,0.15)",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -86,7 +88,7 @@ function ThinkingBlock({ thinking, isComplete, timestamp }: { thinking: string; 
           <span style={{ opacity: 0.8, display: "flex", alignItems: "center", gap: "4px" }}>
             {isComplete ? "THINKING PROCESS" : "THINKING..."}
             {timestamp && (
-              <span style={{ fontSize: "9px", color: "var(--text-muted)", fontWeight: "normal", fontFamily: "var(--font-mono)", opacity: 0.8 }}>
+              <span style={{ fontSize: "9px", color: "var(--text-secondary)", fontWeight: "normal", fontFamily: "var(--font-mono)", opacity: 0.8 }}>
                 [{new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}]
               </span>
             )}
@@ -107,7 +109,7 @@ function ThinkingBlock({ thinking, isComplete, timestamp }: { thinking: string; 
               color: "var(--text-secondary)",
               borderTop: "1px solid var(--border)",
               whiteSpace: "pre-wrap",
-              background: "rgba(0,0,0,0.15)",
+              background: "rgba(0,0,0,0.1)",
               lineHeight: 1.5,
               maxHeight: "150px",
               overflowY: "auto"
@@ -170,7 +172,7 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
           <pre
             key={index}
             style={{
-              background: "rgba(0,0,0,0.6)",
+              background: "rgba(0, 0, 0, 0.4)",
               border: "1px solid var(--border)",
               padding: "10px",
               borderRadius: "var(--radius-md)",
@@ -181,6 +183,8 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
               margin: "6px 0",
               whiteSpace: "pre-wrap",
               wordBreak: "break-all",
+              backdropFilter: "blur(4px)",
+              WebkitBackdropFilter: "blur(4px)",
             }}
           >
             {lang && (
@@ -225,12 +229,13 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
           width: "28px",
           height: "28px",
           borderRadius: "var(--radius-full)",
-          background: isUser ? "var(--bg-tertiary)" : "var(--accent)",
+          background: isUser ? "rgba(255, 255, 255, 0.08)" : "var(--accent-glow)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
-          border: "1px solid var(--border)",
+          border: `1px solid ${isUser ? "rgba(255, 255, 255, 0.2)" : "var(--border-accent)"}`,
+          boxShadow: isUser ? "none" : "0 0 8px var(--accent-glow)",
         }}
       >
         {isUser ? <User size={14} /> : <Bot size={14} />}
@@ -245,17 +250,18 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
           borderRadius: isUser
             ? "var(--radius-lg) var(--radius-sm) var(--radius-lg) var(--radius-lg)"
             : "var(--radius-sm) var(--radius-lg) var(--radius-lg) var(--radius-lg)",
-          background: isUser ? "var(--bg-tertiary)" : "var(--bg-glass)",
-          border: `1px solid ${isUser ? "var(--border)" : "var(--border-accent)"}`,
+          background: isUser ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.35)",
+          border: `1px solid ${isUser ? "rgba(255, 255, 255, 0.12)" : "var(--border-accent)"}`,
           fontSize: "13.5px",
           lineHeight: 1.6,
           color: "var(--text-primary)",
-          backdropFilter: isUser ? "none" : "var(--blur-glass)",
-          WebkitBackdropFilter: isUser ? "none" : "var(--blur-glass)",
+          backdropFilter: "blur(12px) saturate(120%)",
+          WebkitBackdropFilter: "blur(12px) saturate(120%)",
           wordBreak: "break-word",
           display: "flex",
           flexDirection: "column",
           gap: "8px",
+          boxShadow: isUser ? "none" : "0 4px 20px rgba(0, 0, 0, 0.2)",
         }}
       >
         {thinking && (
@@ -267,7 +273,7 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
         )}
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: "4px", gap: "10px" }}>
-          <span style={{ fontSize: "9px", color: "var(--text-muted)", opacity: 0.75, fontFamily: "var(--font-mono)", letterSpacing: "0.03em" }}>
+          <span style={{ fontSize: "9px", color: "var(--text-secondary)", opacity: 0.85, fontFamily: "var(--font-mono)", letterSpacing: "0.03em" }}>
             [ {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })} ]
           </span>
           {!isUser && response && (

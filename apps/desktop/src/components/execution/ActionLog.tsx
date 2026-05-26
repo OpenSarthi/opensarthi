@@ -170,7 +170,7 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
                   {statusText}
                 </span>
                 {action.timestamp && (
-                  <span style={{ fontSize: "9px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                  <span style={{ fontSize: "9px", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", opacity: 0.85 }}>
                     [{new Date(action.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}]
                   </span>
                 )}

@@ -43,7 +43,8 @@ export function HistoryView({ onClose }: HistoryViewProps) {
         position: "fixed",
         top: 0, left: 0, right: 0, bottom: 0,
         background: "var(--bg-glass)",
-        backdropFilter: "blur(10px)",
+        backdropFilter: "blur(24px)",
+        WebkitBackdropFilter: "blur(24px)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -52,10 +53,19 @@ export function HistoryView({ onClose }: HistoryViewProps) {
     >
       <div
         className="hud-panel"
-        style={{ width: "450px", height: "500px", padding: "24px", display: "flex", flexDirection: "column", gap: "20px" }}
+        style={{
+          width: "680px",
+          height: "580px",
+          padding: "24px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "20px",
+          background: "rgba(0, 0, 0, 0.4)",
+          boxShadow: "0 10px 40px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(255,255,255,0.02)"
+        }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ fontSize: "16px", color: "var(--accent)", letterSpacing: "0.1em", fontWeight: "bold" }}>
+          <h2 style={{ fontSize: "16px", color: "var(--accent)", letterSpacing: "0.1em", fontWeight: "bold", margin: 0 }}>
             // PAST THREADS
           </h2>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -77,80 +87,86 @@ export function HistoryView({ onClose }: HistoryViewProps) {
                 <Trash2 size={18} />
               </button>
             )}
-            <button onClick={onClose} style={{ color: "var(--text-secondary)", background: "transparent", border: "none", cursor: "pointer" }}>
+            <button onClick={onClose} style={{ color: "var(--text-secondary)", background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center" }}>
               <X size={18} />
             </button>
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", paddingRight: "4px" }}>
           {threads.length === 0 ? (
             <div style={{ color: "var(--text-secondary)", fontSize: "13px", textAlign: "center", marginTop: "40px" }}>
               NO PAST THREADS FOUND
             </div>
           ) : (
-            threads.map((thread) => (
-              <div
-                key={thread.id}
-                onClick={() => handleLoadThread(thread.id)}
-                onMouseEnter={() => setHoveredThreadId(thread.id)}
-                onMouseLeave={() => setHoveredThreadId(null)}
-                style={{
-                  padding: "12px",
-                  background: "rgba(0,0,0,0.3)",
-                  border: "1px solid var(--border)",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "12px",
-                  position: "relative",
-                  transition: "border-color 0.2s"
-                }}
-                onFocus={() => setHoveredThreadId(thread.id)}
-                onBlur={() => setHoveredThreadId(null)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  handleDeleteThread(e as any, thread.id);
-                }}
-              >
-                <MessageSquare size={16} style={{ color: "var(--accent)", marginTop: "2px" }} />
-                <div style={{ flex: 1, minWidth: 0, paddingRight: "24px" }}>
-                  <div style={{ fontSize: "13px", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {thread.first_message || "Empty Conversation"}
+            threads.map((thread) => {
+              const isHovered = hoveredThreadId === thread.id;
+              return (
+                <div
+                  key={thread.id}
+                  onClick={() => handleLoadThread(thread.id)}
+                  onMouseEnter={() => setHoveredThreadId(thread.id)}
+                  onMouseLeave={() => setHoveredThreadId(null)}
+                  style={{
+                    padding: "14px 18px",
+                    background: isHovered ? "var(--accent-glow)" : "rgba(0,0,0,0.3)",
+                    border: `1px solid ${isHovered ? "var(--border-accent)" : "var(--border)"}`,
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "16px",
+                    position: "relative",
+                    transform: isHovered ? "translateY(-1px)" : "none",
+                    boxShadow: isHovered ? "0 4px 12px var(--accent-glow)" : "none",
+                    transition: "all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)"
+                  }}
+                  onFocus={() => setHoveredThreadId(thread.id)}
+                  onBlur={() => setHoveredThreadId(null)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    handleDeleteThread(e as any, thread.id);
+                  }}
+                >
+                  <MessageSquare size={16} style={{ color: isHovered ? "var(--accent)" : "var(--text-secondary)", flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0, paddingRight: "28px" }}>
+                    <div style={{ fontSize: "13px", color: isHovered ? "var(--text-primary)" : "var(--text-secondary)", fontWeight: "500", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {thread.first_message || "Empty Conversation"}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "var(--text-secondary)", opacity: 0.85, marginTop: "4px", fontFamily: "var(--font-mono)" }}>
+                      {new Date(thread.created_at).toLocaleString()}
+                    </div>
                   </div>
-                  <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "4px" }}>
-                    {new Date(thread.created_at).toLocaleString()}
-                  </div>
-                </div>
 
-                {hoveredThreadId === thread.id && (
-                  <button
-                    className="delete-thread-btn"
-                    onClick={(e) => handleDeleteThread(e, thread.id)}
-                    title="Delete thread"
-                    style={{
-                      position: "absolute",
-                      right: "12px",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      color: "var(--text-secondary)",
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: "4px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      transition: "color 0.2s"
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = "var(--red)"}
-                    onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                )}
-              </div>
-            ))
+                  {isHovered && (
+                    <button
+                      className="delete-thread-btn"
+                      onClick={(e) => handleDeleteThread(e, thread.id)}
+                      title="Delete thread"
+                      style={{
+                        position: "absolute",
+                        right: "16px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: "var(--text-secondary)",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: "4px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "color 0.2s"
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = "var(--red)"}
+                      onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       </div>
