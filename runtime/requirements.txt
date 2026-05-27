@@ -11,7 +11,8 @@ faster-whisper>=1.1
 openwakeword
 kokoro
 mss>=9.0
-PyGObject>=3.50
+PyGObject>=3.50; sys_platform == 'linux'
+pyautogui>=0.9; sys_platform == 'win32'
 pytesseract>=0.3
 opencv-python-headless>=4.10
 aiosqlite>=0.20
@@ -21,4 +22,5 @@ structlog>=24.4
 psutil>=6.0
 sounddevice>=0.5
 torchaudio>=2.0
+
 

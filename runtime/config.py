@@ -1,10 +1,16 @@
 from pathlib import Path
 import os
+import platform
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Define standard writable user config directories
+# Define standard writable user config directories (platform-aware)
 LOCAL_DEV_ENV = os.path.join(os.path.dirname(__file__), ".env")
-USER_CONFIG_DIR = Path.home() / ".config" / "opensarthi"
+
+if platform.system() == "Windows":
+    USER_CONFIG_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "opensarthi"
+else:
+    USER_CONFIG_DIR = Path.home() / ".config" / "opensarthi"
+
 USER_CONFIG_ENV = USER_CONFIG_DIR / ".env"
 
 # Ensure the config folder exists

@@ -100,10 +100,11 @@ class Session:
             from gtts import gTTS
             import base64
             import os
+            import tempfile
             
             # Synthesize premium voice
             tts = gTTS(text=text, lang='en', tld='com')
-            temp_file = "/tmp/opensarthi_voice.mp3"
+            temp_file = os.path.join(tempfile.gettempdir(), "opensarthi_voice.mp3")
             tts.save(temp_file)
             
             # Read and encode to base64

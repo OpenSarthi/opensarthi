@@ -2,11 +2,21 @@ import asyncio
 import time
 import subprocess
 import shutil
+import platform
 from dataclasses import dataclass, field
 from typing import Optional
 import mss
 from PIL import Image
-from providers.linux.accessibility import AccessibilityProvider
+
+# Platform-conditional accessibility provider
+if platform.system() == "Linux":
+    from providers.linux.accessibility import AccessibilityProvider
+else:
+    # Stub for non-Linux platforms
+    class AccessibilityProvider:
+        available = False
+        def get_focused_element(self): return None
+        def get_tree_summary(self, max_elements=30): return ""
 
 @dataclass
 class DesktopSnapshot:
@@ -18,7 +28,7 @@ class DesktopSnapshot:
     focused_element_text: Optional[str] = None
     screen_text_summary: Optional[str] = None   # OCR on visible area
     accessibility_tree: Optional[dict] = None    # AT-SPI tree (when available)
-    screenshot_path: Optional[str] = None        # Saved to /tmp for LLM vision
+    screenshot_path: Optional[str] = None        # Saved to temp dir for LLM vision
     error: Optional[str] = None
 
     def to_prompt_context(self) -> str:
@@ -36,13 +46,17 @@ class DesktopSnapshot:
 class DesktopObserver:
     """
     Collects desktop state snapshots. Uses:
-    - wmctrl/xdotool for active window info (X11)
-    - AT-SPI for accessibility tree (when available)
-    - mss + pytesseract for screenshot OCR (fallback)
+    - Linux: wmctrl/xdotool for active window info (X11), AT-SPI for accessibility tree
+    - Windows: PowerShell for active window info
+    - All: mss + pytesseract for screenshot OCR (fallback)
     """
 
     def __init__(self):
-        self._display = self._detect_display()
+        self._platform = platform.system()
+        if self._platform == "Linux":
+            self._display = self._detect_display()
+        else:
+            self._display = "windows"
         self._a11y = AccessibilityProvider()
 
     def _detect_display(self) -> str:
@@ -60,7 +74,7 @@ class DesktopObserver:
         except Exception as e:
             snap.error = f"window_title: {e}"
 
-        # 2. AT-SPI focused element (primary — fast)
+        # 2. AT-SPI focused element (primary — fast, Linux only)
         if self._a11y.available:
             try:
                 focused = self._a11y.get_focused_element()
@@ -85,7 +99,22 @@ class DesktopObserver:
         return snap
 
     async def _get_active_window_title(self) -> Optional[str]:
-        if self._display == "x11":
+        if self._platform == "Windows":
+            # Use PowerShell to get active window title
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "powershell", "-Command",
+                    "(Get-Process | Where-Object {$_.MainWindowHandle -eq "
+                    "(Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow();' "
+                    "-Name Win32 -Namespace Temp -PassThru)::GetForegroundWindow()}).MainWindowTitle",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=3)
+                return stdout.decode().strip() or None
+            except Exception:
+                return None
+        elif self._display == "x11":
             proc = await asyncio.create_subprocess_exec(
                 "xdotool", "getactivewindow", "getwindowname",
                 stdout=asyncio.subprocess.PIPE,

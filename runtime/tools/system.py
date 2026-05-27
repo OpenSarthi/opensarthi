@@ -1,11 +1,12 @@
 import asyncio
 import re
+import platform
 from tools.base import BaseTool, RiskLevel
 from planner.schemas import ToolResult, ToolResultConfidence
 
 class ShellTool(BaseTool):
     name = "shell"
-    description = "Execute a shell command inside a bubblewrap sandbox. Use for read-only operations. Args: command (string)"
+    description = "Execute a shell command. Use for read-only operations. Args: command (string)"
     risk_level = RiskLevel.DANGEROUS
 
     # Blocked patterns — never execute these
@@ -16,6 +17,8 @@ class ShellTool(BaseTool):
         r":\(\)\{.*\}",  # fork bomb
         r"chmod\s+-R\s+777\s+/",
         r">\s*/dev/sd",
+        r"format\s+[a-zA-Z]:",  # Windows format drive
+        r"del\s+/[sS]\s+/[qQ]",  # Windows recursive delete
     ]
 
     async def execute(self, args: dict, permission_manager = None) -> ToolResult:
@@ -44,8 +47,14 @@ class ShellTool(BaseTool):
                 )
 
         try:
+            # Use platform-appropriate shell
+            if platform.system() == "Windows":
+                shell_cmd = ["cmd.exe", "/c", command]
+            else:
+                shell_cmd = ["bash", "-c", command]
+
             proc = await asyncio.create_subprocess_exec(
-                "bash", "-c", command,
+                *shell_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )

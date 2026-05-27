@@ -1,5 +1,6 @@
 import asyncio
 import time
+import platform
 from typing import Callable, Optional, Any
 
 class TimeoutError(Exception):
@@ -49,12 +50,20 @@ async def wait_for_window(
     """
     async def check():
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "xdotool", "search", "--name", title_contains,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=1)
+            if platform.system() == "Windows":
+                proc = await asyncio.create_subprocess_exec(
+                    "powershell", "-Command",
+                    f"Get-Process | Where-Object {{$_.MainWindowTitle -like '*{title_contains}*'}} | Select-Object -First 1 -ExpandProperty MainWindowTitle",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
+            else:
+                proc = await asyncio.create_subprocess_exec(
+                    "xdotool", "search", "--name", title_contains,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2)
             return bool(stdout.decode().strip())
         except Exception:
             return False
@@ -105,12 +114,19 @@ async def wait_for_process(
     Wait until a process with the given name is running.
     """
     async def check():
-        proc = await asyncio.create_subprocess_exec(
-            "pgrep", "-x", process_name,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=1)
+        if platform.system() == "Windows":
+            proc = await asyncio.create_subprocess_exec(
+                "tasklist", "/FI", f"IMAGENAME eq {process_name}.exe",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+        else:
+            proc = await asyncio.create_subprocess_exec(
+                "pgrep", "-x", process_name,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2)
         return bool(stdout.decode().strip())
 
     return await poll_until(

@@ -5,6 +5,8 @@ import threading
 import time
 import shutil
 import os
+import platform
+import tempfile
 import numpy as np
 import speech_recognition as sr
 from typing import AsyncGenerator
@@ -132,7 +134,10 @@ class VoicePipeline:
         """Immediately interrupt any active speech playback."""
         self.current_playback_id = ""
         import os
-        os.system("killall -9 mpg123 mpv paplay aplay >/dev/null 2>&1")
+        if platform.system() == "Windows":
+            os.system("taskkill /F /IM wmplayer.exe >NUL 2>&1")
+        else:
+            os.system("killall -9 mpg123 mpv paplay aplay >/dev/null 2>&1")
         self.is_speaking = False
         self.last_speech_stop_time = time.time()
         # Drain queue
@@ -144,7 +149,7 @@ class VoicePipeline:
         logger.info("Interrupted and stopped speech synthesis")
 
     async def speak(self, text: str) -> str:
-        """Synthesize and speak text using the best available Linux voice engine, awaiting completion."""
+        """Synthesize and speak text using the best available voice engine, awaiting completion."""
         import subprocess
         import shutil
         import os
@@ -191,8 +196,11 @@ class VoicePipeline:
                     playback_id = str(uuid.uuid4())
                     self.current_playback_id = playback_id
                     
-                    # Instantly terminate any active terminal audio players to interrupt speech immediately
-                    os.system("killall -9 mpg123 mpv paplay aplay >/dev/null 2>&1")
+                    # Instantly terminate any active audio players to interrupt speech immediately
+                    if platform.system() == "Windows":
+                        os.system("taskkill /F /IM wmplayer.exe >NUL 2>&1")
+                    else:
+                        os.system("killall -9 mpg123 mpv paplay aplay >/dev/null 2>&1")
                     
                     from config import settings
                     voice_config = getattr(settings, "voice_accent", "ie")
@@ -219,8 +227,9 @@ class VoicePipeline:
                         return "none"
                         
                     downloaded = [False] * len(sentences)
-                    mp3_paths = [f"/tmp/opensarthi_voice_{i}.mp3" for i in range(len(sentences))]
-                    wav_paths = [f"/tmp/opensarthi_voice_{i}.wav" for i in range(len(sentences))]
+                    _tmpdir = tempfile.gettempdir()
+                    mp3_paths = [os.path.join(_tmpdir, f"opensarthi_voice_{i}.mp3") for i in range(len(sentences))]
+                    wav_paths = [os.path.join(_tmpdir, f"opensarthi_voice_{i}.wav") for i in range(len(sentences))]
                     
                     # sequential downloader background thread
                     def download_worker(p_id):
@@ -253,7 +262,7 @@ class VoicePipeline:
                                 if not os.path.exists(mp3_path):
                                     continue
                                     
-                                speedup_mp3_path = f"/tmp/opensarthi_voice_fast_{idx}.mp3"
+                                speedup_mp3_path = os.path.join(_tmpdir, f"opensarthi_voice_fast_{idx}.mp3")
                                 if shutil.which("ffmpeg"):
                                     try:
                                         if os.system(f"ffmpeg -y -i {mp3_path} -filter:a 'atempo={speed}' {speedup_mp3_path} >/dev/null 2>&1") == 0:

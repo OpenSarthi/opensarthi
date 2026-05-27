@@ -2,6 +2,8 @@ import os
 import asyncio
 import subprocess
 import shutil
+import platform
+import tempfile
 from typing import Protocol, Optional
 from tools.base import BaseTool, RiskLevel
 from planner.schemas import ToolResult, ToolResultConfidence
@@ -14,8 +16,7 @@ class DesktopProvider(Protocol):
 
 class XdotoolProvider:
     async def capture_screen(self) -> str:
-        # Placeholder/implementation
-        return "/tmp/opensarthi_screen.png"
+        return os.path.join(tempfile.gettempdir(), "opensarthi_screen.png")
 
     async def type_text(self, text: str) -> bool:
         proc = await asyncio.create_subprocess_exec(
@@ -47,7 +48,7 @@ class XdotoolProvider:
 
 class YdotoolProvider:
     async def capture_screen(self) -> str:
-        return "/tmp/opensarthi_screen.png"
+        return os.path.join(tempfile.gettempdir(), "opensarthi_screen.png")
 
     async def type_text(self, text: str) -> bool:
         proc = await asyncio.create_subprocess_exec(
@@ -70,8 +71,50 @@ class YdotoolProvider:
     async def click(self, x: int, y: int, button: str = "left") -> bool:
         return True
 
+
+class PyAutoGUIProvider:
+    """Windows desktop automation provider using pyautogui."""
+    async def capture_screen(self) -> str:
+        import pyautogui
+        path = os.path.join(tempfile.gettempdir(), "opensarthi_screen.png")
+        screenshot = pyautogui.screenshot()
+        screenshot.save(path)
+        return path
+
+    async def type_text(self, text: str) -> bool:
+        import pyautogui
+        pyautogui.typewrite(text, interval=0.05) if text.isascii() else pyautogui.write(text)
+        return True
+
+    async def press_key(self, key: str) -> bool:
+        import pyautogui
+        # Map common key names to pyautogui key names
+        key_map = {
+            "Return": "enter", "Enter": "enter", "Tab": "tab",
+            "Escape": "escape", "BackSpace": "backspace",
+            "Delete": "delete", "space": "space",
+            "Up": "up", "Down": "down", "Left": "left", "Right": "right",
+            "super": "win", "Super_L": "win", "Super_R": "win",
+            "ctrl+c": ["ctrl", "c"], "ctrl+v": ["ctrl", "v"],
+            "ctrl+a": ["ctrl", "a"], "ctrl+z": ["ctrl", "z"],
+        }
+        mapped = key_map.get(key, key.lower())
+        if isinstance(mapped, list):
+            pyautogui.hotkey(*mapped)
+        else:
+            pyautogui.press(mapped)
+        return True
+
+    async def click(self, x: int, y: int, button: str = "left") -> bool:
+        import pyautogui
+        pyautogui.click(x, y, button=button)
+        return True
+
+
 # Helper to check display environment and select provider
 def get_desktop_provider() -> DesktopProvider:
+    if platform.system() == "Windows":
+        return PyAutoGUIProvider()
     wayland_display = os.environ.get("WAYLAND_DISPLAY")
     if wayland_display:
         return YdotoolProvider()
