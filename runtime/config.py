@@ -41,7 +41,12 @@ class Settings(BaseSettings):
     voice_speed: float = 1.35
     continuous_listening: bool = False
     active_theme: str = "theme-red-black"
-    
+
+    # User personalization
+    user_name: str = ""
+    user_skills: list[str] = ["general", "desktop_automation", "developer", "home_user"]
+    custom_prompt: str = ""
+
     model_config = SettingsConfigDict(env_file=env_file_path)
 
 settings = Settings()
@@ -61,7 +66,10 @@ def save_settings_to_env(
     active_theme: str,
     wake_words: list[str],
     wake_word_enabled: bool,
-    wake_word_threshold: float
+    wake_word_threshold: float,
+    user_name: str = "",
+    user_skills: list[str] = None,
+    custom_prompt: str = "",
 ):
     import json
     # Always write to the writable user's home configuration directory (safe for read-only AppImage filesystems!)
@@ -86,6 +94,12 @@ def save_settings_to_env(
         f.write(f"WAKE_WORDS={json.dumps(wake_words)}\n")
         f.write(f"WAKE_WORD_ENABLED={'True' if wake_word_enabled else 'False'}\n")
         f.write(f"WAKE_WORD_THRESHOLD={wake_word_threshold}\n")
+        if user_name:
+            f.write(f"USER_NAME={user_name}\n")
+        if user_skills:
+            f.write(f"USER_SKILLS={json.dumps(user_skills)}\n")
+        if custom_prompt:
+            f.write(f"CUSTOM_PROMPT={custom_prompt}\n")
 
 def get_active_api_key() -> str | None:
     """Returns the API key for the currently active provider."""

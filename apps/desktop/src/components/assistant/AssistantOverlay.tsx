@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench } from "lucide-react";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
@@ -28,10 +28,11 @@ const getBuildTarget = (): string => {
 interface AssistantOverlayProps {
   onOpenSettings: () => void;
   onOpenHistory: () => void;
+  onOpenCustomizer: () => void;
   onNewChat?: () => void;
 }
 
-export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: AssistantOverlayProps) {
+export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomizer, onNewChat }: AssistantOverlayProps) {
   const [textInput, setTextInput] = useState("");
   const [statusIdx, setStatusIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -43,10 +44,37 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
     setVoiceState, addMessage, clearMessages
   } = useAssistantStore();
 
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const setupListener = async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const appWindow = getCurrentWindow();
+        const max = await appWindow.isMaximized();
+        setIsMaximized(max);
+
+        const unsub = await appWindow.onResized(async () => {
+          const m = await appWindow.isMaximized();
+          setIsMaximized(m);
+        });
+        unlisten = unsub;
+      } catch (err) {
+        console.warn("Failed to check or listen to window maximized state", err);
+      }
+    };
+    setupListener();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   // Ref map: message id → DOM element for scroll-to
   const messageRefsMap = useRef<Record<string, HTMLDivElement | null>>({});
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [showJsonImport, setShowJsonImport] = useState(false);
   const taskRefsMap = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Leetcode-style Draggable Panel Resizing State
@@ -350,73 +378,109 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
           )}
         </div>
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          {/* Customise Persona Button */}
           <motion.button
-            onClick={onOpenHistory}
-            title="Past Threads"
-            whileHover={{ scale: 1.08, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            onClick={onOpenCustomizer}
+            title="Customise Persona"
+            whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
             whileTap={{ scale: 0.95 }}
             style={{
-              width: "32px",
               height: "32px",
+              width: isMaximized ? "auto" : "32px",
+              padding: isMaximized ? "0 12px" : "0",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              gap: isMaximized ? "6px" : "0",
               borderRadius: "4px",
               background: "rgba(0,0,0,0.3)",
               border: "1px solid var(--border)",
               color: "var(--text-secondary)",
-              transition: "border-color 0.2s, color 0.2s"
+              transition: "all 0.2s"
             }}
           >
-            <motion.div whileHover={{ rotate: -15 }}>
-              <History size={15} />
+            <motion.div whileHover={{ rotate: 30 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Wrench size={14} />
             </motion.div>
+            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Customise</span>}
+          </motion.button>
+
+          <motion.button
+            onClick={onOpenHistory}
+            title="Past Threads"
+            whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              height: "32px",
+              width: isMaximized ? "auto" : "32px",
+              padding: isMaximized ? "0 12px" : "0",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: isMaximized ? "6px" : "0",
+              borderRadius: "4px",
+              background: "rgba(0,0,0,0.3)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+              transition: "all 0.2s"
+            }}
+          >
+            <motion.div whileHover={{ rotate: -15 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <History size={14} />
+            </motion.div>
+            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Past Threads</span>}
           </motion.button>
 
           <motion.button
             onClick={handleNewThread}
             title="New Thread"
-            whileHover={{ scale: 1.08, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
             whileTap={{ scale: 0.95 }}
             style={{
-              width: "32px",
               height: "32px",
+              width: isMaximized ? "auto" : "32px",
+              padding: isMaximized ? "0 12px" : "0",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              gap: isMaximized ? "6px" : "0",
               borderRadius: "4px",
               background: "rgba(0,0,0,0.3)",
               border: "1px solid var(--border)",
               color: "var(--text-secondary)",
-              transition: "border-color 0.2s, color 0.2s"
+              transition: "all 0.2s"
             }}
           >
-            <motion.div whileHover={{ scale: 1.15, y: -1 }}>
-              <MessageSquarePlus size={15} />
+            <motion.div whileHover={{ scale: 1.15, y: -1 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <MessageSquarePlus size={14} />
             </motion.div>
+            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>New Thread</span>}
           </motion.button>
 
           <motion.button
             onClick={onOpenSettings}
             title="Settings"
-            whileHover={{ scale: 1.08, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
             whileTap={{ scale: 0.95 }}
             style={{
-              width: "32px",
               height: "32px",
+              width: isMaximized ? "auto" : "32px",
+              padding: isMaximized ? "0 12px" : "0",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              gap: isMaximized ? "6px" : "0",
               borderRadius: "4px",
               background: "rgba(0,0,0,0.3)",
               border: "1px solid var(--border)",
               color: "var(--text-secondary)",
-              transition: "border-color 0.2s, color 0.2s"
+              transition: "all 0.2s"
             }}
           >
-            <motion.div whileHover={{ rotate: 90 }} transition={{ type: "spring", stiffness: 200 }}>
-              <Settings size={15} />
+            <motion.div whileHover={{ rotate: 90 }} transition={{ type: "spring", stiffness: 200 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Settings size={14} />
             </motion.div>
+            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Settings</span>}
           </motion.button>
         </div>
       </div>
@@ -433,7 +497,25 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
           {/* LEFT PANEL */}
           <div style={{ width: `${leftWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
             <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <div className="hud-panel-title">// AGENT TASKS</div>
+              <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>// AGENT TASKS</span>
+                <button
+                  id="json-import-btn"
+                  title="Import JSON Task Plan"
+                  onClick={() => setShowJsonImport(true)}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 20, height: 20, borderRadius: 4,
+                    background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
+                    color: "rgba(255,255,255,0.5)", cursor: "pointer",
+                    padding: 0, transition: "all 0.15s",
+                  }}
+                  onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.14)"; e.currentTarget.style.color = "white"; }}
+                  onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.07)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+              </div>
               <div style={{ padding: "10px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
                 <TaskList
                   messages={messages}
@@ -443,6 +525,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onNewChat }: A
                   selectedTaskId={selectedTaskId}
                   setSelectedTaskId={setSelectedTaskId}
                   taskRefsMap={taskRefsMap}
+                  showJsonImport={showJsonImport}
+                  setShowJsonImport={setShowJsonImport}
                   onScrollToMessage={(msgId) => {
                     const el = messageRefsMap.current[msgId];
                     if (el) {

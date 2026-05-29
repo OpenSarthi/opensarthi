@@ -190,8 +190,8 @@ export function useWebSocket(port: number | null) {
           store.setWakeWordSettings(p.wake_word_enabled, p.wake_word_threshold, p.wake_words);
         }
         if (p.active_theme) store.setActiveTheme(p.active_theme);
-        
-        // Sync all per-provider API keys (masked indicator only — show saved/not-saved in UI)
+
+        // Sync all per-provider API keys
         store.setAllApiKeys({
           gemini: p.gemini_api_key || "",
           openai: p.openai_api_key || "",
@@ -199,6 +199,15 @@ export function useWebSocket(port: number | null) {
           groq: p.groq_api_key || "",
           openrouter: p.openrouter_api_key || "",
         });
+
+        // Sync personalization
+        if (p.user_name !== undefined || p.user_skills !== undefined || p.custom_prompt !== undefined) {
+          store.setPersonalization(
+            p.user_name || store.userName,
+            p.user_skills || store.userSkills,
+            p.custom_prompt || store.customPrompt,
+          );
+        }
       }),
 
       wsClient.on("history_response", (msg) => {

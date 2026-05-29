@@ -1,8 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.ollama import OllamaModel
-from pydantic_ai.models.openai import OpenAIModel
-from typing import Any, Optional
+from typing import Any, Optional, List
 import os
 
 os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -13,104 +12,139 @@ from tools.system import ShellTool
 from tools.wait_tools import WaitForWindowTool, WaitForTextTool
 from observation import DesktopSnapshot
 
-# Configure LLMs
 local_llm = OllamaModel(settings.local_model)
-cloud_llm = local_llm
 
 class AgentDependencies(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     require_cloud: bool = False
     log_action: Any = None
+    # Personalization (read from settings at run time)
+    skills: List[str] = []
+    user_name: str = ""
+    custom_prompt: str = ""
 
-SYSTEM_PROMPT = """
-You are OpenSarthi, an AI-powered Linux desktop agent.
+# ─── Skill-aware system prompt builder ───────────────────────────────────────
 
-CRITICAL RESPONSE FORMAT:
-1. If you have any reasoning, planning, or internal thoughts, wrap them in <think>...</think> tags FIRST.
-2. After </think>, write ONLY the final response — no preamble, no explanation of what you're about to do.
-3. NEVER start your response with explanations like "Since the user said..." or "There's no task to perform...". Just respond directly.
+def build_system_prompt(skills: list, user_name: str, custom_prompt: str) -> str:
+    has_desktop  = "desktop_automation" in skills
+    has_dev      = "developer" in skills
+    has_admin    = "system_admin" in skills
+    has_media    = "media" in skills
+    has_writing  = "writing" in skills
+    has_research = "research" in skills
+    has_web      = "web" in skills
+    has_privacy  = "privacy" in skills
 
-CLASSIFICATION RULES:
-- CHAT (no tools): Greetings, general questions, explanations, writing code snippets, explaining concepts, calculations, or showing code inside the assistant chat window. If the user only asks to write, show, explain, or generate code/text inside this chat, respond directly as a CHAT response (using markdown code blocks if needed). Do NOT call tools to write code in an external editor or open Konsole unless the user explicitly requests to perform an action on their desktop screen.
-- TASK (needs tools): Performing physical actions on the host OS desktop, such as launching apps, clicking, typing text inside external window input fields, running terminal/shell commands, or manipulating files on the system.
+    name_clause = f"The user's name is {user_name}. Address them by name occasionally." if user_name else ""
+    custom_clause = f"\n\nUSER CUSTOM INSTRUCTIONS:\n{custom_prompt}" if custom_prompt else ""
 
-FOR CHAT RESPONSES:
-<think>reasoning here</think>
-Your direct answer here. No prefix explanations.
+    # Base identity
+    base = f"""You are OpenSarthi, an intelligent AI assistant for Linux.
+{name_clause}{custom_clause}
 
-FOR TASK RESPONSES:
-<think>planning steps here</think>
-```json
-[
-  {"tool": "tool_name", "args": {"key": "value"}, "description": "What this does"}
-]
-```
+RESPONSE FORMAT RULES:
+1. If you reason internally, wrap it in <think>...</think> FIRST.
+2. Write ONLY the final response after </think> — no preamble.
+3. NEVER start with "Since the user said..." or "There's no task...". Respond directly.
+"""
+
+    # Classification differs based on whether desktop automation is enabled
+    if has_desktop:
+        classification = """
+CLASSIFICATION:
+- CHAT: Greetings, questions, explanations, generating code/text INSIDE this chat window.
+- TASK: Physical desktop actions — launch apps, click, type in external windows, run shell commands, file operations.
+
+FOR CHAT: <think>reasoning</think>\nDirect answer here.
+
+FOR TASK: <think>plan</think>\n```json\n[\n  {"tool": "tool_name", "args": {"key": "value"}, "description": "What this does"}\n]\n```
+"""
+    else:
+        classification = """
+CLASSIFICATION:
+- Respond conversationally. You do NOT have desktop automation tools.
+- Use markdown for code, tables, and structured content.
+- Be concise and helpful.
+"""
+
+    # Skill-specific context sections
+    skill_context = ""
+    if has_dev:
+        skill_context += "\nDEVELOPER MODE: Emphasize code quality, best practices, debugging. Use proper code blocks with language identifiers. Prefer terminal commands for dev tasks.\n"
+    if has_admin:
+        skill_context += "\nSYSTEM ADMIN MODE: You are comfortable with system administration. Prefer direct shell commands. Always explain what dangerous commands do before running them.\n"
+    if has_media:
+        skill_context += "\nMEDIA MODE: Help with Spotify, YouTube, media players, and entertainment. Use desktop automation for media controls.\n"
+    if has_writing:
+        skill_context += "\nWRITING MODE: Help with drafting, editing, and improving text. Use clear, engaging language. Offer multiple variants when helpful.\n"
+    if has_research:
+        skill_context += "\nRESEARCH MODE: Provide thorough analysis, cite sources when possible, summarize complex topics clearly.\n"
+    if has_web:
+        skill_context += "\nWEB MODE: Help automate browser tasks. Use open_app → wait_for_window → type_text for browser navigation.\n"
+    if has_privacy:
+        skill_context += "\nPRIVACY MODE: Prefer local processing. Minimize data exposure. Remind user if a task would send data externally.\n"
+
+    # Tool rules only if desktop automation enabled
+    tool_rules = ""
+    if has_desktop:
+        tool_rules = """
+TOOL RULES:
+- NEVER use tools not in the AVAILABLE TOOLS section.
+- For desktop tasks: open_app → wait_for_window → interact.
+- If a window is already open but not in focus, use focus_window first.
+- Use shell tool for terminal commands.
+- For dangerous tools (shell), describe the full command in "description".
 
 EXAMPLES:
-User: "Hello"
-Response: "<think>User is greeting me, this is a chat.</think>Hello! How can I help you today?"
-
-User: "How are you?"
-Response: "<think>Conversational greeting.</think>I'm doing well, thank you! What can I assist you with?"
-
-User: "Write a python code for binary search"
-Response: "<think>The user wants to see a Python code snippet for binary search. This is a conversational request (CHAT) because they did not ask to open an editor or run it on their system.</think>Here is the Python implementation of binary search:\n\n```python\ndef binary_search(arr, x):\n    # ...\n```"
-
 User: "Open Chrome and search for YouTube"
-Response:
-<think>This is a desktop task. I need to open Chrome, wait for it, then navigate.</think>
+<think>Desktop task — open Chrome, wait, navigate.</think>
 ```json
 [
   {"tool": "open_app", "args": {"app": "google-chrome"}, "description": "Open Google Chrome"},
-  {"tool": "wait_for_window", "args": {"title": "Chrome"}, "description": "Wait for Chrome to load"},
-  {"tool": "type_text", "args": {"text": "youtube.com"}, "description": "Type youtube.com in address bar"},
-  {"tool": "press_key", "args": {"key": "Return"}, "description": "Press Enter to navigate"}
+  {"tool": "wait_for_window", "args": {"title": "Chrome"}, "description": "Wait for Chrome"},
+  {"tool": "type_text", "args": {"text": "youtube.com"}, "description": "Type URL"},
+  {"tool": "press_key", "args": {"key": "Return"}, "description": "Navigate"}
 ]
 ```
 
 User: "Run garuda-update"
-Response:
-<think>System command — use shell tool directly.</think>
+<think>Shell command.</think>
 ```json
-[
-  {"tool": "shell", "args": {"command": "garuda-update", "timeout": 120}, "description": "Run garuda-update"}
-]
+[{"tool": "shell", "args": {"command": "garuda-update", "timeout": 120}, "description": "Run garuda-update"}]
 ```
-
-TOOL RULES:
-- NEVER use tools not in the AVAILABLE TOOLS section (no brave_search, web_search, etc.)
-- For desktop tasks: open_app → wait_for_window → interact
-- If a window/app is already open but not in the foreground, use focus_window to bring it to the front before interacting
-- Use shell tool for terminal commands directly
 """
+
+    return base + classification + skill_context + tool_rules
+
 
 agent = Agent(
     model=local_llm,
     deps_type=AgentDependencies,
-    system_prompt=SYSTEM_PROMPT,
 )
 
+@agent.system_prompt
+def dynamic_system_prompt(ctx: RunContext[AgentDependencies]) -> str:
+    return build_system_prompt(
+        skills=ctx.deps.skills or [],
+        user_name=ctx.deps.user_name or "",
+        custom_prompt=ctx.deps.custom_prompt or ""
+    )
+
+
 def _args_hint(tool) -> str:
-    """Generate a short argument description for tools."""
-    if tool.name == "click":
-        return "x: int, y: int, button?: str"
-    elif tool.name == "type_text":
-        return "text: str"
-    elif tool.name == "press_key":
-        return "key: str"
-    elif tool.name == "open_app":
-        return "app: str"
-    elif tool.name == "click_element":
-        return "role: str, name: str"
-    elif tool.name == "focus_window":
-        return "title: str"
-    elif tool.name == "shell":
-        return "command: str"
-    elif tool.name == "wait_for_window":
-        return "title: str, timeout?: float"
-    elif tool.name == "wait_for_text":
-        return "text: str, timeout?: float"
-    return "..."
+    hints = {
+        "click": "x: int, y: int, button?: str",
+        "type_text": "text: str",
+        "press_key": "key: str",
+        "open_app": "app: str",
+        "click_element": "role: str, name: str",
+        "focus_window": "title: str",
+        "shell": "command: str",
+        "wait_for_window": "title: str, timeout?: float",
+        "wait_for_text": "text: str, timeout?: float",
+    }
+    return hints.get(tool.name, "...")
+
 
 def build_structured_context(
     goal: str,
@@ -118,16 +152,15 @@ def build_structured_context(
     history: list,
     current_step: int = 0,
     total_steps: int = 0,
-    previous_actions: list[str] = None,
-    failed_actions: list[str] = None,
+    previous_actions: list = None,
+    failed_actions: list = None,
     retry_count: int = 0,
+    skills: list = None,
 ) -> str:
-    """
-    Build the structured context string injected before every agent call.
-    This replaces loose conversational history as the agent's primary input.
-    """
+    """Build the structured context string injected before every agent call."""
 
-    # Desktop state section
+    has_desktop = skills is None or "desktop_automation" in (skills or [])
+
     desktop_state_lines = []
     if snapshot.active_window_title:
         desktop_state_lines.append(f"  Active Window: {snapshot.active_window_title}")
@@ -142,39 +175,18 @@ def build_structured_context(
         desktop_state_lines.append(f"  Screen Text: {snapshot.screen_text_summary[:200]}")
     desktop_state = "\n".join(desktop_state_lines) or "  (not available)"
 
-    # Execution context section
     execution_lines = []
     if total_steps > 0:
         execution_lines.append(f"  Step: {current_step + 1} of {total_steps}")
     if previous_actions:
-        for action in previous_actions[-5:]:  # Last 5 actions
+        for action in previous_actions[-5:]:
             execution_lines.append(f"  ✓ {action}")
     if failed_actions:
-        for action in failed_actions[-3:]:  # Last 3 failures
+        for action in failed_actions[-3:]:
             execution_lines.append(f"  ✗ FAILED: {action}")
     if retry_count > 0:
         execution_lines.append(f"  Retry Count: {retry_count}")
     execution_ctx = "\n".join(execution_lines) or "  (none)"
-
-    # Tools section
-    from tools.registry import all_tools
-    tools = all_tools()
-    tool_lines = [
-        f"  • {t.name}({_args_hint(t)}) — {t.description}"
-        for t in tools
-    ]
-    tools_section = "\n".join(tool_lines)
-
-    # Permissions section
-    from tools.base import RiskLevel
-    safe = [t.name for t in tools if t.risk_level == RiskLevel.SAFE]
-    confirm = [t.name for t in tools if t.risk_level == RiskLevel.DANGEROUS]
-    perm_lines = []
-    if safe:
-        perm_lines.append(f"  SAFE (no confirmation): {', '.join(safe)}")
-    if confirm:
-        perm_lines.append(f"  REQUIRES CONFIRMATION: {', '.join(confirm)}")
-    permissions = "\n".join(perm_lines) or "  (all safe)"
 
     context = f"""OPENSARTHI AGENT CONTEXT
 ════════════════════════════════════════════════
@@ -187,7 +199,25 @@ CURRENT DESKTOP STATE:
 
 EXECUTION CONTEXT:
 {execution_ctx}
+"""
 
+    if has_desktop:
+        from tools.registry import all_tools
+        from tools.base import RiskLevel
+        tools = all_tools()
+        tool_lines = [f"  • {t.name}({_args_hint(t)}) — {t.description}" for t in tools]
+        tools_section = "\n".join(tool_lines)
+
+        safe = [t.name for t in tools if t.risk_level == RiskLevel.SAFE]
+        confirm = [t.name for t in tools if t.risk_level == RiskLevel.DANGEROUS]
+        perm_lines = []
+        if safe:
+            perm_lines.append(f"  SAFE (no confirmation): {', '.join(safe)}")
+        if confirm:
+            perm_lines.append(f"  REQUIRES CONFIRMATION: {', '.join(confirm)}")
+        permissions = "\n".join(perm_lines) or "  (all safe)"
+
+        context += f"""
 AVAILABLE TOOLS:
 {tools_section}
 
@@ -196,13 +226,15 @@ PERMISSIONS:
 
 CONSTRAINTS:
   • Only call tools listed above — do NOT invent tools like brave_search
-  • After open_app, always use wait_for_window before interacting with it
-  • After each click or type, describe what you expect to happen next
-  • If a step fails twice with the same error, report it and stop
-  • For dangerous tools (shell), describe the full command before executing
+  • After open_app, always use wait_for_window before interacting
+  • If a step fails twice with the same error, report and stop
+"""
 
+    context += """
 ════════════════════════════════════════════════
 Based on the above context, generate the next action or respond to the user.
-If this requires multiple steps, output a JSON plan array.
 """
+    if has_desktop:
+        context += "If this requires multiple steps, output a JSON plan array.\n"
+
     return context

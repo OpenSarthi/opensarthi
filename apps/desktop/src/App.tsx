@@ -4,6 +4,7 @@ import { PermissionDialog } from "./components/permissions/PermissionDialog";
 import { InputDialog } from "./components/permissions/InputDialog";
 import { SettingsView } from "./components/settings/SettingsView";
 import { HistoryView } from "./components/settings/HistoryView";
+import { OnboardingView } from "./components/onboarding/OnboardingView";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useAssistantStore } from "./stores/assistantStore";
@@ -15,9 +16,10 @@ export default function App() {
   const [runtimePort, setRuntimePort] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showCustomizer, setShowCustomizer] = useState(false);
 
-  const { 
-    activeLocalModel, 
+  const {
+    activeLocalModel,
     activeCloudModel,
     activeProvider,
     geminiApiKey,
@@ -25,8 +27,8 @@ export default function App() {
     anthropicApiKey,
     groqApiKey,
     openrouterApiKey,
-    voiceAccent, 
-    voiceSpeed, 
+    voiceAccent,
+    voiceSpeed,
     activeTheme,
     wakeWords,
     wakeWordEnabled,
@@ -38,6 +40,9 @@ export default function App() {
     setActiveProvider,
     setAllApiKeys,
     resetSessionTokens,
+    onboardingCompleted,
+    setPersonalization,
+    setOnboardingCompleted,
   } = useAssistantStore();
 
   // Dynamic Theme application to document.body
@@ -106,11 +111,42 @@ export default function App() {
     });
   };
 
+  const handleOnboardingComplete = (data: { skills: string[]; userName: string; customPrompt: string }) => {
+    setPersonalization(data.userName, data.skills, data.customPrompt);
+    setOnboardingCompleted(true);
+    // Send to backend when WS is ready (may not be connected yet — send via wsClient when available)
+    const sendPersonalization = () => {
+      wsClient.send("update_settings", {
+        user_name: data.userName,
+        user_skills: data.skills,
+        custom_prompt: data.customPrompt,
+      });
+    };
+    // Delay slightly to allow WS to connect if this is the very first launch
+    setTimeout(sendPersonalization, 2000);
+  };
+
   return (
     <>
+      <AnimatePresence>
+        {!onboardingCompleted && (
+          <OnboardingView onComplete={handleOnboardingComplete} />
+        )}
+        {showCustomizer && (
+          <OnboardingView
+            isEdit
+            onClose={() => setShowCustomizer(false)}
+            onComplete={(data) => {
+              handleOnboardingComplete(data);
+              setShowCustomizer(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
       <AssistantOverlay 
         onOpenSettings={() => setShowSettings(true)} 
         onOpenHistory={() => setShowHistory(true)}
+        onOpenCustomizer={() => setShowCustomizer(true)}
         onNewChat={() => resetSessionTokens()}
       />
       <PermissionDialog />

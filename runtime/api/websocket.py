@@ -29,7 +29,10 @@ class Session:
             })
 
         self.deps = AgentDependencies(
-            log_action=log_action_cb
+            log_action=log_action_cb,
+            skills=list(getattr(__import__('config').settings, 'user_skills', ['general', 'desktop_automation'])),
+            user_name=getattr(__import__('config').settings, 'user_name', ''),
+            custom_prompt=getattr(__import__('config').settings, 'custom_prompt', ''),
         )
         import db
         self.thread_id = db.create_thread()
@@ -95,6 +98,39 @@ class Session:
         finally:
             await self.send_message("speech_completed", {})
 
+    async def handle_json_plan(self, steps: list, goal: str):
+        """Execute a pre-built JSON plan directly (JSON import feature)."""
+        try:
+            import db, time, uuid
+            msg_id = str(uuid.uuid4())
+            timestamp = int(time.time() * 1000)
+            db.save_message(self.thread_id, msg_id, "user", f"[JSON Plan] {goal}", timestamp)
+
+            from agent_runtime import AgentRuntime
+            from observation import DesktopObserver
+            from planner.agent import agent
+            runtime = AgentRuntime(ws_handler=self, agent=agent, observer=DesktopObserver(), deps=self.deps)
+            self._current_runtime = runtime
+
+            final_output = await runtime.run_plan_directly(steps, goal)
+
+            ast_id = str(uuid.uuid4())
+            ast_ts = int(time.time() * 1000)
+            db.save_message(self.thread_id, ast_id, "assistant", final_output, ast_ts)
+            db.accumulate_thread_tokens(self.thread_id, 0, 0, 0)
+
+            await self.send_message("assistant_response", {
+                "id": ast_id,
+                "role": "assistant",
+                "content": final_output,
+                "timestamp": ast_ts,
+                "is_voice": False,
+                "usage": {"request_tokens": 0, "response_tokens": 0, "total_tokens": 0}
+            })
+        except Exception as e:
+            logger.error("JSON plan execution failed", error=str(e))
+            await self.send_message("error", {"error": str(e)})
+
     async def speak_and_send_audio(self, text: str):
         try:
             from gtts import gTTS
@@ -128,16 +164,17 @@ class Session:
 
     async def handle_user_message(self, text: str, source: str = "text"):
         logger.info("Processing user message", text=text, source=source)
-        
         try:
-            import db
-            import time
-            import os
+            import db, time, os
             msg_id = str(uuid.uuid4())
             timestamp = int(time.time() * 1000)
             db.save_message(self.thread_id, msg_id, "user", text, timestamp)
 
             from config import settings, get_active_api_key
+            # Refresh deps with current settings at run-time
+            self.deps.skills = list(getattr(settings, 'user_skills', ['general', 'desktop_automation']))
+            self.deps.user_name = getattr(settings, 'user_name', '')
+            self.deps.custom_prompt = getattr(settings, 'custom_prompt', '')
             provider = settings.ai_provider.lower()
             model_name = settings.cloud_model.lower()
             api_key = get_active_api_key()
@@ -275,7 +312,11 @@ class Session:
         msg_type = data.get("type")
         payload = data.get("payload", {})
 
-        if msg_type == "user_message":
+        if msg_type == "run_json_plan":
+            steps = payload.get("steps", [])
+            goal = payload.get("goal", "Custom JSON Task")
+            asyncio.create_task(self.handle_json_plan(steps, goal))
+        elif msg_type == "user_message":
             await self.handle_user_message(payload.get("text", ""), source=payload.get("source", "text"))
         elif msg_type == "session_state":
             pass # Keep mic listening for continuous wake word
@@ -427,9 +468,26 @@ class Session:
                 settings.active_theme,
                 settings.wake_words,
                 settings.wake_word_enabled,
-                settings.wake_word_threshold
+                settings.wake_word_threshold,
+                settings.user_name,
+                settings.user_skills,
+                settings.custom_prompt,
             )
             
+            # Update personalization fields
+            settings.user_name = payload.get("user_name", settings.user_name)
+            raw_skills = payload.get("user_skills")
+            if raw_skills is not None:
+                if isinstance(raw_skills, list):
+                    settings.user_skills = raw_skills
+                elif isinstance(raw_skills, str):
+                    import json as _json
+                    try:
+                        settings.user_skills = _json.loads(raw_skills)
+                    except Exception:
+                        settings.user_skills = [s.strip() for s in raw_skills.split(",") if s.strip()]
+            settings.custom_prompt = payload.get("custom_prompt", settings.custom_prompt)
+
             # Propagate to running voice pipeline
             if hasattr(self, 'voice_pipeline') and self.voice_pipeline:
                 try:
@@ -437,7 +495,7 @@ class Session:
                     self.voice_pipeline.wake_detector.threshold = settings.wake_word_threshold
                 except Exception as ve:
                     logger.warning("Failed to propagate wake word updates to pipeline", error=str(ve))
-            
+
             logger.info("Settings updated", provider=settings.ai_provider, model=settings.cloud_model)
 
     async def _listen_loop(self):
@@ -480,7 +538,10 @@ class ConnectionManager:
             "active_theme": getattr(settings, "active_theme", "theme-red-black"),
             "wake_words": getattr(settings, "wake_words", ["hey sarthi", "hello sarthi"]),
             "wake_word_enabled": getattr(settings, "wake_word_enabled", True),
-            "wake_word_threshold": getattr(settings, "wake_word_threshold", 0.5)
+            "wake_word_threshold": getattr(settings, "wake_word_threshold", 0.5),
+            "user_name": getattr(settings, "user_name", ""),
+            "user_skills": getattr(settings, "user_skills", ["general", "desktop_automation", "developer", "home_user"]),
+            "custom_prompt": getattr(settings, "custom_prompt", ""),
         })
         
         asyncio.create_task(session._listen_loop())

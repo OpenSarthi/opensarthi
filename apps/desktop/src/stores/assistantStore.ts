@@ -51,6 +51,12 @@ interface AssistantState {
   // Token tracking
   tokenUsage: TokenUsage;
 
+  // Personalization
+  userName: string;
+  userSkills: string[];
+  customPrompt: string;
+  onboardingCompleted: boolean;
+
   // Actions
   setVoiceState: (state: VoiceState) => void;
   setConnected: (connected: boolean) => void;
@@ -73,6 +79,8 @@ interface AssistantState {
   updateTokenUsage: (usage: { request_tokens: number; response_tokens: number; total_tokens: number }) => void;
   resetSessionTokens: () => void;
   restoreThreadTokens: (usage: { request_tokens: number; response_tokens: number; total_tokens: number }) => void;
+  setPersonalization: (userName: string, userSkills: string[], customPrompt: string) => void;
+  setOnboardingCompleted: (done: boolean) => void;
   setTaskPaused: (paused: boolean) => void;
 }
 
@@ -107,6 +115,10 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     totalTokens: 0,
     sessionTotalTokens: 0,
   },
+  userName: "",
+  userSkills: ["general", "desktop_automation", "developer", "home_user"],
+  customPrompt: "",
+  onboardingCompleted: typeof window !== "undefined" && localStorage.getItem("opensarthi_onboarding_done") === "1",
 
   setVoiceState: (voiceState) => set({ voiceState }),
   setConnected: (isConnected) => set({ isConnected }),
@@ -149,7 +161,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     tokenUsage: { ...s.tokenUsage, sessionTotalTokens: 0 }
   })),
 
-  restoreThreadTokens: (usage: { request_tokens: number; response_tokens: number; total_tokens: number }) => set(() => ({
+  restoreThreadTokens: (usage) => set(() => ({
     tokenUsage: {
       requestTokens: usage.request_tokens,
       responseTokens: usage.response_tokens,
@@ -157,6 +169,16 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       sessionTotalTokens: usage.total_tokens,
     }
   })),
+
+  setPersonalization: (userName, userSkills, customPrompt) => set({ userName, userSkills, customPrompt }),
+
+  setOnboardingCompleted: (done) => {
+    if (typeof window !== "undefined") {
+      if (done) localStorage.setItem("opensarthi_onboarding_done", "1");
+      else localStorage.removeItem("opensarthi_onboarding_done");
+    }
+    set({ onboardingCompleted: done });
+  },
 
   updateStepStatus: (index, update) =>
     set((s) => {
