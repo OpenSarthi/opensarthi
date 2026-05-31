@@ -1,10 +1,10 @@
-# AI Desktop Agent+Assistant — Implementation Plan
+# OpenSarthi Desktop Agent & Assistant
 # Part 1: Frontend Shell, Desktop Core & UI/UX
 
 ---
 
-> [!IMPORTANT]
-> This is a **planning document only** — no code implementation yet. The agent name is TBD; all references use "AI Desktop Agent+Assistant".
+> [!NOTE]
+> This document describes the architecture, layout, and IPC protocol design of OpenSarthi, updated to match the latest implementation.
 
 ---
 
@@ -148,18 +148,34 @@ interface WSMessage {
 }
 
 type WSMessageType =
-  | 'user_message'        // User text input
-  | 'transcript_update'   // STT partial/final transcript
-  | 'plan_created'        // Planner output
-  | 'tool_started'        // Tool execution began
-  | 'tool_completed'      // Tool execution finished
-  | 'tool_error'          // Tool execution failed
-  | 'observation'         // Screenshot/accessibility state
-  | 'assistant_response'  // Final AI response
-  | 'permission_request'  // Dangerous action needs approval
-  | 'permission_response' // User approved/denied
-  | 'session_state'       // Voice session active/inactive
-  | 'error';              // System error
+  // Incoming Messages (Client -> Server)
+  | 'run_json_plan'        // Request to execute pre-built JSON plan directly
+  | 'user_message'         // User text/voice prompt
+  | 'session_state'        // Voice session active/inactive toggle
+  | 'voice_state'          // Manual/automatic voice listening states
+  | 'new_chat'             // Trigger a new chat thread
+  | 'cancel_execution'     // Request cancellation of active agent task
+  | 'pause_execution'      // Request pausing of active execution
+  | 'resume_execution'     // Request resuming of paused execution
+  | 'permission_response'  // User response to permission dialog
+  | 'input_response'       // User response providing text input (like sudo password)
+  | 'get_history'          // Query chat history list
+  | 'delete_thread'        // Delete a specific chat thread
+
+  // Outgoing Messages (Server -> Client)
+  | 'agent_state'          // Agent state broadcast (e.g. idle, planning, executing)
+  | 'tool_action'          // Real-time tool action execution state update
+  | 'permission_request'   // Request approval for dangerous operations
+  | 'input_request'        // Request arbitrary input from the user (e.g. sudo password)
+  | 'speech_started'       // Event signifying TTS playback started
+  | 'speech_completed'     // Event signifying TTS playback completed
+  | 'assistant_response'   // Final completion response with token usage
+  | 'plan_created'         // Plan steps outline event
+  | 'tool_terminated'      // Triggered when plan steps are aborted/cancelled
+  | 'task_paused'          // Confirmation of paused state
+  | 'task_resumed'         // Confirmation of resumed state
+  | 'history_response'     // Historical conversation list payload
+  | 'error';               // Error reporting event
 ```
 
 ### 4.3 Rust ↔ Python (Audio Streaming)

@@ -36,6 +36,8 @@ class Session:
         )
         import db
         self.thread_id = db.create_thread()
+        self._message_task = None
+        self._current_runtime = None
 
     async def send_message(self, msg_type: str, payload: dict):
         msg = {
@@ -109,7 +111,16 @@ class Session:
             from agent_runtime import AgentRuntime
             from observation import DesktopObserver
             from planner.agent import agent
-            runtime = AgentRuntime(ws_handler=self, agent=agent, observer=DesktopObserver(), deps=self.deps)
+            from memory import MemoryManager
+
+            memory_manager = MemoryManager(self.thread_id)
+            runtime = AgentRuntime(
+                ws_handler=self,
+                agent=agent,
+                observer=DesktopObserver(),
+                deps=self.deps,
+                memory_manager=memory_manager
+            )
             self._current_runtime = runtime
 
             final_output = await runtime.run_plan_directly(steps, goal)
@@ -176,64 +187,11 @@ class Session:
             self.deps.user_name = getattr(settings, 'user_name', '')
             self.deps.custom_prompt = getattr(settings, 'custom_prompt', '')
             provider = settings.ai_provider.lower()
-            model_name = settings.cloud_model.lower()
+            model_name = settings.local_model if provider == "ollama" else settings.cloud_model
             api_key = get_active_api_key()
 
-            is_cloud = True
-            # --- Build the active model based on selected provider ---
-            if provider == "ollama":
-                from pydantic_ai.models.ollama import OllamaModel
-                active_model = OllamaModel(settings.local_model)
-                is_cloud = False
-            elif provider == "google":
-                if api_key:
-                    os.environ["GEMINI_API_KEY"] = api_key
-                from pydantic_ai.models.gemini import GeminiModel
-                active_model = GeminiModel(settings.cloud_model)
-            elif provider == "anthropic":
-                if api_key:
-                    os.environ["ANTHROPIC_API_KEY"] = api_key
-                from pydantic_ai.models.anthropic import AnthropicModel
-                active_model = AnthropicModel(settings.cloud_model)
-            elif provider == "groq":
-                if api_key:
-                    os.environ["GROQ_API_KEY"] = api_key
-                # Groq uses the OpenAI-compatible API
-                from pydantic_ai.models.openai import OpenAIModel
-                from pydantic_ai.providers.openai import OpenAIProvider
-                active_model = OpenAIModel(
-                    model_name=settings.cloud_model,
-                    provider=OpenAIProvider(
-                        base_url="https://api.groq.com/openai/v1",
-                        api_key=api_key or "noop",
-                    )
-                )
-            elif provider == "openai":
-                if api_key:
-                    os.environ["OPENAI_API_KEY"] = api_key
-                from pydantic_ai.models.openai import OpenAIModel
-                from pydantic_ai.providers.openai import OpenAIProvider
-                active_model = OpenAIModel(
-                    model_name=settings.cloud_model,
-                    provider=OpenAIProvider(
-                        base_url="https://api.openai.com/v1",
-                        api_key=api_key or "noop",
-                    )
-                )
-            elif provider == "openrouter":
-                if api_key:
-                    os.environ["OPENROUTER_API_KEY"] = api_key
-                from pydantic_ai.models.openai import OpenAIModel
-                from pydantic_ai.providers.openai import OpenAIProvider
-                active_model = OpenAIModel(
-                    model_name=settings.cloud_model,
-                    provider=OpenAIProvider(
-                        base_url="https://openrouter.ai/api/v1",
-                        api_key=api_key or "noop",
-                    )
-                )
-            else:
-                raise Exception(f"Unsupported AI provider: {provider}")
+            from llm import build_model
+            active_model = build_model(provider, model_name, api_key)
 
             from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart, TextPart
             
@@ -255,9 +213,17 @@ class Session:
 
             from agent_runtime import AgentRuntime
             from observation import DesktopObserver
+            from memory import MemoryManager
 
             observer = DesktopObserver()
-            runtime = AgentRuntime(ws_handler=self, agent=agent, observer=observer, deps=self.deps)
+            memory_manager = MemoryManager(self.thread_id)
+            runtime = AgentRuntime(
+                ws_handler=self,
+                agent=agent,
+                observer=observer,
+                deps=self.deps,
+                memory_manager=memory_manager
+            )
             self._current_runtime = runtime
 
             prefix_warning = ""
@@ -315,9 +281,11 @@ class Session:
         if msg_type == "run_json_plan":
             steps = payload.get("steps", [])
             goal = payload.get("goal", "Custom JSON Task")
-            asyncio.create_task(self.handle_json_plan(steps, goal))
+            self._message_task = asyncio.create_task(self.handle_json_plan(steps, goal))
         elif msg_type == "user_message":
-            await self.handle_user_message(payload.get("text", ""), source=payload.get("source", "text"))
+            self._message_task = asyncio.create_task(
+                self.handle_user_message(payload.get("text", ""), source=payload.get("source", "text"))
+            )
         elif msg_type == "session_state":
             pass # Keep mic listening for continuous wake word
         elif msg_type == "voice_state":
@@ -339,15 +307,17 @@ class Session:
         elif msg_type == "cancel_execution":
             if hasattr(self, '_current_runtime') and self._current_runtime:
                 self._current_runtime.request_cancel()
-                await self.send_message("agent_state", {
-                    "state": "idle",
-                    "goal": None,
-                    "step": 0,
-                    "step_description": None,
-                    "total_steps": 0,
-                    "retry_count": 0,
-                    "error": None
-                })
+            if hasattr(self, '_message_task') and self._message_task and not self._message_task.done():
+                self._message_task.cancel()
+            await self.send_message("agent_state", {
+                "state": "idle",
+                "goal": None,
+                "step": 0,
+                "step_description": None,
+                "total_steps": 0,
+                "retry_count": 0,
+                "error": None
+            })
         elif msg_type == "pause_execution":
             if hasattr(self, '_current_runtime') and self._current_runtime:
                 self._current_runtime.pause()

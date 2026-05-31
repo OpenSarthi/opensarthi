@@ -156,6 +156,7 @@ def build_structured_context(
     failed_actions: list = None,
     retry_count: int = 0,
     skills: list = None,
+    recalled_memories: list = None,
 ) -> str:
     """Build the structured context string injected before every agent call."""
 
@@ -193,7 +194,16 @@ def build_structured_context(
 
 GOAL:
   {goal}
+"""
 
+    if recalled_memories:
+        memory_lines = [f"  • {m.content[:200]} (source: {m.source})" for m in recalled_memories]
+        context += f"""
+RELEVANT PAST CONTEXT / MEMORIES:
+{"\n".join(memory_lines)}
+"""
+
+    context += f"""
 CURRENT DESKTOP STATE:
 {desktop_state}
 

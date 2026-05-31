@@ -13,11 +13,12 @@ class AgentRuntime:
     Supports immediate cancellation of both LLM inference and tool execution.
     """
 
-    def __init__(self, ws_handler, agent: Agent, observer: DesktopObserver, deps=None):
+    def __init__(self, ws_handler, agent: Agent, observer: DesktopObserver, deps=None, memory_manager=None):
         self.ws = ws_handler
         self.agent = agent
         self.observer = observer
         self.deps = deps
+        self.memory = memory_manager
         self.state = AgentStateContext()
         self._cancel_requested = False
         self._paused = False
@@ -96,6 +97,10 @@ class AgentRuntime:
 
                 await self._transition(AgentState.PLANNING)
 
+                recalled = []
+                if self.memory:
+                    recalled = await self.memory.recall(goal, top_k=3)
+
                 from planner.agent import build_structured_context
                 context = build_structured_context(
                     goal=goal,
@@ -107,6 +112,7 @@ class AgentRuntime:
                     failed_actions=failed_actions,
                     retry_count=replanning_attempts,
                     skills=getattr(self.deps, 'skills', None),
+                    recalled_memories=recalled,
                 )
 
                 try:
@@ -120,6 +126,12 @@ class AgentRuntime:
 
                 if plan is None:
                     response = text_response or "I couldn't generate a plan or a response."
+                    if self.memory:
+                        await self.memory.store(
+                            content=f"Goal: {goal}\nOutcome: {response}",
+                            source="agent",
+                            importance=0.8
+                        )
                     await self._transition(AgentState.COMPLETE)
                     return self._format_final_response(response, completed_actions, failed_actions)
 
@@ -242,14 +254,19 @@ Failed: {failed_actions}
 Explain to the user why the task could not be completed. Do NOT output a JSON plan."""
             try:
                 result = await self._agent_run(final_error_context, deps=self.deps, model=model, message_history=message_history)
-                return self._format_final_response(result.output, completed_actions, failed_actions)
+                response = result.output
             except asyncio.CancelledError:
-                return self._format_final_response("Execution cancelled by user.", completed_actions, failed_actions)
-            except Exception:
-                return self._format_final_response(
-                    "❌ Failed to complete the task.",
-                    completed_actions, failed_actions
+                response = "Execution cancelled by user."
+            except Exception as e:
+                response = f"❌ Failed to complete the task: {str(e)}"
+
+            if self.memory:
+                await self.memory.store(
+                    content=f"Goal: {goal}\nOutcome (Failed): {response}\nCompleted: {completed_actions}\nFailed: {failed_actions}",
+                    source="agent",
+                    importance=0.7
                 )
+            return self._format_final_response(response, completed_actions, failed_actions)
 
         except asyncio.CancelledError:
             await self._transition(AgentState.IDLE)
