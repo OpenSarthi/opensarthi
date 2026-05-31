@@ -28,6 +28,8 @@ interface AssistantState {
   currentPlan: Plan | null;
   executingStepIndex: number | null;
   taskPaused: boolean;
+  isOverlayMode: boolean;
+  snapAlign: "left" | "right" | "none";
 
   // Model settings
   activeLocalModel: string;
@@ -82,6 +84,8 @@ interface AssistantState {
   setPersonalization: (userName: string, userSkills: string[], customPrompt: string) => void;
   setOnboardingCompleted: (done: boolean) => void;
   setTaskPaused: (paused: boolean) => void;
+  setOverlayMode: (val: boolean) => void;
+  setSnapAlign: (align: "left" | "right" | "none") => void;
 }
 
 export const useAssistantStore = create<AssistantState>((set) => ({
@@ -93,6 +97,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   currentPlan: null,
   executingStepIndex: null,
   taskPaused: false,
+  isOverlayMode: false,
+  snapAlign: "right",
   activeLocalModel: "qwen2.5-coder:3b",
   activeCloudModel: "gemini-2.5-flash",
   activeProvider: "google",
@@ -224,4 +230,6 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   }),
 
   setTaskPaused: (taskPaused) => set({ taskPaused }),
+  setOverlayMode: (isOverlayMode) => set({ isOverlayMode }),
+  setSnapAlign: (snapAlign) => set({ snapAlign }),
 }));

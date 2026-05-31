@@ -40,7 +40,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const {
     voiceState, isConnected, currentTranscript,
     messages, currentPlan, activeLocalModel, activeCloudModel, activeProvider,
-    tokenUsage, taskPaused,
+    tokenUsage, taskPaused, isOverlayMode, snapAlign,
     setVoiceState, addMessage, clearMessages
   } = useAssistantStore();
 
@@ -344,6 +344,155 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     return () => clearInterval(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, isConnected]);
+
+  if (isOverlayMode) {
+    return (
+      <div
+        className="hud-panel animate-fade-in"
+        style={{
+          width: "100vw",
+          height: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          background: "var(--bg-glass)",
+          backdropFilter: "var(--blur-glass)",
+          WebkitBackdropFilter: "var(--blur-glass)",
+          border: "1.5px solid var(--border-accent)",
+          padding: "12px",
+          gap: "10px",
+          overflow: "hidden",
+          borderTopLeftRadius: snapAlign === "right" || snapAlign === "none" ? "16px" : "0px",
+          borderBottomLeftRadius: snapAlign === "right" || snapAlign === "none" ? "16px" : "0px",
+          borderTopRightRadius: snapAlign === "left" || snapAlign === "none" ? "16px" : "0px",
+          borderBottomRightRadius: snapAlign === "left" || snapAlign === "none" ? "16px" : "0px",
+        }}
+      >
+        {/* Drag handle header / top bar */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexShrink: 0,
+            cursor: "grab",
+            paddingBottom: "8px",
+            borderBottom: "1px solid var(--border)",
+            userSelect: "none",
+          }}
+          onMouseDown={async () => {
+            try {
+              const { getCurrentWindow } = await import("@tauri-apps/api/window");
+              getCurrentWindow().startDragging();
+            } catch (err) {
+              console.warn("Drag error:", err);
+            }
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--accent)" }}>
+            <Activity size={14} className="animate-glow" />
+            <span style={{ fontSize: "12px", fontWeight: "bold", letterSpacing: "0.08em" }}>
+              SARTHI ACTIVE
+            </span>
+          </div>
+
+          <div style={{ display: "flex", gap: "6px", alignItems: "center" }} onMouseDown={(e) => e.stopPropagation()}>
+            {/* Expand / Restore Button */}
+            <button
+              onClick={() => useAssistantStore.getState().setOverlayMode(false)}
+              title="Expand to Full View"
+              style={{
+                width: "24px",
+                height: "24px",
+                borderRadius: "3px",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid var(--border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              {/* Maximize/Expand Icon */}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Plan / Execution Steps View */}
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", minHeight: 0 }}>
+          <div className="hud-panel-title" style={{ fontSize: "11px", borderBottom: "none", padding: "2px 4px" }}>
+            // PROGRESS & ACTIVITY
+          </div>
+
+          {currentPlan ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "4px" }}>
+              {/* Goal */}
+              <div style={{ fontSize: "12px", color: "var(--text-primary)", fontWeight: "bold", borderBottom: "1px dashed rgba(255,255,255,0.08)", paddingBottom: "6px" }}>
+                GOAL: <span className="selectable" style={{ color: "var(--accent)", textTransform: "none" }}>{currentPlan.goal}</span>
+              </div>
+
+              {/* Execution action log timeline */}
+              <ActionLog plan={currentPlan} selectedTaskId={null} messages={messages} />
+            </div>
+          ) : (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", fontSize: "12px", textAlign: "center", padding: "16px" }}>
+              Waiting for tasks to execute...
+            </div>
+          )}
+        </div>
+
+        {/* Live Audio / TTS visualizer visual */}
+        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--border)", paddingTop: "8px" }}>
+          {isTaskRunning && (
+            <div style={{ display: "flex", gap: "8px" }}>
+              {/* Pause/Resume button */}
+              <button
+                onClick={() => {
+                  if (taskPaused) {
+                    wsClient.send("resume_execution", {});
+                  } else {
+                    wsClient.send("pause_execution", {});
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  padding: "6px",
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                  borderColor: taskPaused ? "var(--success)" : "var(--warning)",
+                  color: taskPaused ? "var(--success)" : "var(--warning)",
+                }}
+              >
+                {taskPaused ? "▶ RESUME" : "⏸ PAUSE"}
+              </button>
+
+              {/* Stop/Cancel button */}
+              <button
+                onClick={() => {
+                  wsClient.send("cancel_execution", {});
+                }}
+                style={{
+                  flex: 1,
+                  padding: "6px",
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                  borderColor: "var(--danger)",
+                  color: "var(--danger)",
+                }}
+              >
+                ■ STOP
+              </button>
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", color: "var(--text-secondary)" }}>
+            <span>ONLINE: <span style={{ color: isConnected ? "var(--accent)" : "var(--text-muted)", fontWeight: "bold" }}>{isConnected ? "YES" : "NO"}</span></span>
+            <span style={{ fontFamily: "var(--font-mono)" }}>{getFormattedTime()}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

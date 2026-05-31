@@ -479,5 +479,20 @@ pnpm dev                      # Starts Tauri dev + Python sidecar
 
 ---
 
+## 11. Window Overlay & Snapping Transition
+
+To improve user experience on single-monitor setups during automation, OpenSarthi features a dynamic, translucent window overlay mode that collapses during active execution:
+
+### 11.1 Transition Behavior
+- **Auto-Collapse**: When an agent task begins execution, the main window stores its current size, position, and maximization state, then transitions into a compact overlay window (`340x560` logical pixels) set to `alwaysOnTop = true` and `decorations = false` (transparent borderless glass).
+- **Auto-Restore**: Once the task is completed, paused, or canceled, the window automatically restores its original position, dimensions, and maximization state, returning focus to the chat HUD.
+- **Manual Control**: An expand icon button is available in the compact view header to manually restore full window dimensions at any point.
+
+### 11.2 Native Dragging & Edge Snapping
+- **Native OS Dragging**: Dragging is initiated via Tauri's `appWindow.startDragging()`, letting the native OS handle the drag-and-drop mechanics smoothly.
+- **Edge Snapping**: Position changes are tracked via the `onMoved` event listener. When dragging stops (debounced by 300ms) within a `100px` threshold of the left or right monitor boundaries, the window automatically snaps/docks to the corresponding edge (`x = 8` or `x = monitorWidth - windowWidth - 8`).
+
+---
+
 > [!TIP]
 > **Next:** See **Part 2** for the Python runtime, AI orchestration, automation layer, voice pipeline, security model, memory system, and backend development priorities.

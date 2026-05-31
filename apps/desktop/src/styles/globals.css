@@ -209,6 +209,10 @@ body {
   letter-spacing: 0.05em;
 }
 
+body.overlay-mode {
+  background: transparent !important;
+}
+
 .selectable { 
   user-select: text; 
   text-transform: none;

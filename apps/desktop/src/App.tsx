@@ -7,6 +7,7 @@ import { HistoryView } from "./components/settings/HistoryView";
 import { OnboardingView } from "./components/onboarding/OnboardingView";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { useWindowOverlay } from "./hooks/useWindowOverlay";
 import { useAssistantStore } from "./stores/assistantStore";
 import { TAURI_EVENTS } from "./lib/constants";
 import { wsClient } from "./lib/ws";
@@ -17,6 +18,9 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
+
+  // Invoke window overlay and snapping logic
+  useWindowOverlay();
 
   const {
     activeLocalModel,

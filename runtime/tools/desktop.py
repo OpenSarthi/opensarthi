@@ -19,8 +19,9 @@ class XdotoolProvider:
         return os.path.join(tempfile.gettempdir(), "opensarthi_screen.png")
 
     async def type_text(self, text: str) -> bool:
+        await asyncio.sleep(0.3)
         proc = await asyncio.create_subprocess_exec(
-            "xdotool", "type", "--delay", "50", text,
+            "xdotool", "type", "--clearmodifiers", "--delay", "50", text,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -51,6 +52,7 @@ class YdotoolProvider:
         return os.path.join(tempfile.gettempdir(), "opensarthi_screen.png")
 
     async def type_text(self, text: str) -> bool:
+        await asyncio.sleep(0.3)
         proc = await asyncio.create_subprocess_exec(
             "ydotool", "type", text,
             stdout=asyncio.subprocess.PIPE,
@@ -82,6 +84,7 @@ class PyAutoGUIProvider:
         return path
 
     async def type_text(self, text: str) -> bool:
+        await asyncio.sleep(0.3)
         import pyautogui
         pyautogui.typewrite(text, interval=0.05) if text.isascii() else pyautogui.write(text)
         return True
