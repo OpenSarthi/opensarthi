@@ -1,10 +1,10 @@
-# AI Desktop Agent+Assistant — Implementation Plan
+# OpenSarthi Desktop Agent & Assistant
 # Part 2: Python Runtime, AI, Automation, Voice & Infrastructure
 
 ---
 
-> [!IMPORTANT]
-> Planning document only — no code yet. See **Part 1** for frontend/shell/UI.
+> [!NOTE]
+> This document describes the design and implementation details of OpenSarthi's Python backend runtime, updated to match the latest implementation.
 
 ---
 
@@ -452,6 +452,8 @@ BLOCKED_PATTERNS = [
 
 > [!NOTE]
 > **Changed from original spec:** LanceDB replaces the SQLite→PostgreSQL→pgvector migration path. LanceDB is embedded (like SQLite), handles larger-than-RAM datasets, and supports multimodal data natively. No server to manage.
+> 
+> **Graceful Degradation:** To support portable execution and ease local configuration, if `lancedb` or `sentence-transformers` package dependencies are missing, the long-term memory engine gracefully falls back to a local SQLite keyword substring similarity query, preventing runtime crashes while keeping memory functional out-of-the-box.
 
 ---
 

@@ -7,6 +7,7 @@ import structlog
 
 from api.routes import router as api_router
 from api.websocket import router as ws_router
+from mcp import mcp_router
 
 logger = structlog.get_logger()
 
@@ -14,6 +15,7 @@ app = FastAPI(title="OpenSarthi Runtime")
 
 app.include_router(api_router)
 app.include_router(ws_router)
+app.include_router(mcp_router)
 
 def get_free_port() -> int:
     """Get a random free port from the OS."""

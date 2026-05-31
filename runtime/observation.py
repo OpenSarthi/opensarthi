@@ -52,27 +52,16 @@ class DesktopObserver:
     """
 
     def __init__(self):
-        self._platform = platform.system()
-        if self._platform == "Linux":
-            self._display = self._detect_display()
-        else:
-            self._display = "windows"
+        from observer.pipeline import ObserverPipeline
         self._a11y = AccessibilityProvider()
-
-    def _detect_display(self) -> str:
-        import os
-        if os.environ.get("WAYLAND_DISPLAY"):
-            return "wayland"
-        return "x11"
+        self._pipeline = ObserverPipeline(use_ocr=True, use_vision=False)
 
     async def snapshot(self) -> DesktopSnapshot:
         snap = DesktopSnapshot()
 
-        # 1. Active window
-        try:
-            snap.active_window_title = await self._get_active_window_title()
-        except Exception as e:
-            snap.error = f"window_title: {e}"
+        # Execute unified observer pipeline
+        obs_res = await self._pipeline.observe()
+        snap.active_window_title = obs_res.active_window
 
         # 2. AT-SPI focused element (primary — fast, Linux only)
         if self._a11y.available:
@@ -89,71 +78,8 @@ class DesktopObserver:
             except Exception:
                 pass
 
-        # 3. OCR fallback (only if AT-SPI gave us nothing useful and tesseract is available)
+        # 3. OCR fallback (only if AT-SPI gave us nothing useful)
         if not snap.focused_element_text:
-            try:
-                snap.screen_text_summary = await self._ocr_active_region()
-            except Exception:
-                pass
+            snap.screen_text_summary = obs_res.ocr_text
 
         return snap
-
-    async def _get_active_window_title(self) -> Optional[str]:
-        if self._platform == "Windows":
-            # Use PowerShell to get active window title
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    "powershell", "-Command",
-                    "(Get-Process | Where-Object {$_.MainWindowHandle -eq "
-                    "(Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow();' "
-                    "-Name Win32 -Namespace Temp -PassThru)::GetForegroundWindow()}).MainWindowTitle",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.DEVNULL
-                )
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=3)
-                return stdout.decode().strip() or None
-            except Exception:
-                return None
-        elif self._display == "x11":
-            proc = await asyncio.create_subprocess_exec(
-                "xdotool", "getactivewindow", "getwindowname",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2)
-            return stdout.decode().strip() or None
-        return None  # Wayland: implement via D-Bus portal later
-
-    async def _ocr_active_region(self) -> Optional[str]:
-        """Capture center 800x600 of screen and run OCR."""
-        if not shutil.which("tesseract"):
-            return None # Tesseract is not installed
-
-        try:
-            import pytesseract
-        except ImportError:
-            return None
-
-        with mss.mss() as sct:
-            monitor = sct.monitors[1]  # Primary display
-            # Capture center region only (faster than full screen)
-            region = {
-                "left": monitor["left"] + monitor["width"] // 4,
-                "top": monitor["top"] + monitor["height"] // 4,
-                "width": monitor["width"] // 2,
-                "height": monitor["height"] // 2,
-            }
-            img = sct.grab(region)
-            pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
-
-        # Run OCR in thread pool to avoid blocking
-        loop = asyncio.get_event_loop()
-        text = await loop.run_in_executor(
-            None,
-            pytesseract.image_to_string,
-            pil_img,
-            "eng"  # language
-        )
-        # Clean up whitespace and truncate
-        cleaned = " ".join(text.split())[:500]
-        return cleaned if cleaned else None
