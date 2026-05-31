@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus, Wrench } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu } from "lucide-react";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
@@ -15,7 +15,7 @@ import pkg from "../../../package.json";
 const getBuildTarget = (): string => {
   const userAgent = window.navigator.userAgent.toLowerCase();
   const platform = window.navigator.platform?.toLowerCase() || "";
-  
+
   if (userAgent.includes("win") || platform.includes("win")) return "WINDOWS BUILD";
   if (userAgent.includes("mac") || platform.includes("mac")) return "MACOS BUILD";
   if (userAgent.includes("android")) return "ANDROID BUILD";
@@ -29,10 +29,12 @@ interface AssistantOverlayProps {
   onOpenSettings: () => void;
   onOpenHistory: () => void;
   onOpenCustomizer: () => void;
+  onOpenMcpSettings: () => void;
+  onOpenJsonImport: () => void;
   onNewChat?: () => void;
 }
 
-export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomizer, onNewChat }: AssistantOverlayProps) {
+export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomizer, onOpenMcpSettings, onOpenJsonImport, onNewChat }: AssistantOverlayProps) {
   const [textInput, setTextInput] = useState("");
   const [statusIdx, setStatusIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -74,13 +76,12 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const messageRefsMap = useRef<Record<string, HTMLDivElement | null>>({});
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [showJsonImport, setShowJsonImport] = useState(false);
   const taskRefsMap = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Leetcode-style Draggable Panel Resizing State
   const [leftWidth, setLeftWidth] = useState(260); // Default Left panel width in px
   const [rightWidth, setRightWidth] = useState(240); // Default Right panel width in px
-  
+
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingLeft = useRef(false);
   const isDraggingRight = useRef(false);
@@ -241,10 +242,10 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           lastMsg.content
         ) {
           let textToSpeak = String(lastMsg.content);
-          
+
           // Strip <think>...</think> block completely
           textToSpeak = textToSpeak.replace(/<think>[\s\S]*?<\/think>/g, "");
-          
+
           // If there's an unclosed <think>, the model is still thinking — wait
           if (textToSpeak.includes("<think>")) {
             return;
@@ -252,17 +253,17 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
           // Strip markdown code blocks (including JSON plans)
           let clean = textToSpeak.replace(/```[\s\S]*?```/g, "");
-          
+
           // Strip raw JSON array blocks (in case LLM output JSON without backticks)
           clean = clean.replace(/\[\s*\{[\s\S]*\}\s*\]/g, "");
-          
+
           // Strip inline code, markdown formatting
           clean = clean
             .replace(/`([^`]+)`/g, "$1")
             .replace(/[*#_\-]/g, "")
             .replace(/^\s*[✓✗❌⚠️]+\s*/gm, "")  // Strip status emojis/bullets
             .trim();
-          
+
           if (clean) {
             wsClient.send("speak_text", { text: clean });
           }
@@ -342,7 +343,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     if (messages.length > 0 || !isConnected) return;
     const t = setInterval(() => setStatusIdx((i) => (i + 1) % STATUS_LINES.length), 2200);
     return () => clearInterval(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, isConnected]);
 
   if (isOverlayMode) {
@@ -413,7 +414,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               }}
             >
               {/* Maximize/Expand Icon */}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
             </button>
           </div>
         </div>
@@ -527,6 +528,60 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           )}
         </div>
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          {/* New Thread Button */}
+          <motion.button
+            onClick={handleNewThread}
+            title="New Thread"
+            whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              height: "32px",
+              width: isMaximized ? "auto" : "32px",
+              padding: isMaximized ? "0 12px" : "0",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: isMaximized ? "6px" : "0",
+              borderRadius: "4px",
+              background: "rgba(0,0,0,0.3)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+              transition: "all 0.2s"
+            }}
+          >
+            <motion.div whileHover={{ scale: 1.15, y: -1 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <MessageSquarePlus size={14} />
+            </motion.div>
+            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>New Thread</span>}
+          </motion.button>
+
+          {/* History Button */}
+          <motion.button
+            onClick={onOpenHistory}
+            title="Past Threads"
+            whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              height: "32px",
+              width: isMaximized ? "auto" : "32px",
+              padding: isMaximized ? "0 12px" : "0",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: isMaximized ? "6px" : "0",
+              borderRadius: "4px",
+              background: "rgba(0,0,0,0.3)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+              transition: "all 0.2s"
+            }}
+          >
+            <motion.div whileHover={{ rotate: -15 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <History size={14} />
+            </motion.div>
+            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Past Threads</span>}
+          </motion.button>
+
           {/* Customise Persona Button */}
           <motion.button
             onClick={onOpenCustomizer}
@@ -554,9 +609,10 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Customise</span>}
           </motion.button>
 
+          {/* MCP Settings Button */}
           <motion.button
-            onClick={onOpenHistory}
-            title="Past Threads"
+            onClick={onOpenMcpSettings}
+            title="MCP Settings"
             whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
             whileTap={{ scale: 0.95 }}
             style={{
@@ -574,38 +630,13 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               transition: "all 0.2s"
             }}
           >
-            <motion.div whileHover={{ rotate: -15 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <History size={14} />
+            <motion.div whileHover={{ scale: 1.15 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Cpu size={14} />
             </motion.div>
-            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Past Threads</span>}
+            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>MCP Settings</span>}
           </motion.button>
 
-          <motion.button
-            onClick={handleNewThread}
-            title="New Thread"
-            whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
-            whileTap={{ scale: 0.95 }}
-            style={{
-              height: "32px",
-              width: isMaximized ? "auto" : "32px",
-              padding: isMaximized ? "0 12px" : "0",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: isMaximized ? "6px" : "0",
-              borderRadius: "4px",
-              background: "rgba(0,0,0,0.3)",
-              border: "1px solid var(--border)",
-              color: "var(--text-secondary)",
-              transition: "all 0.2s"
-            }}
-          >
-            <motion.div whileHover={{ scale: 1.15, y: -1 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <MessageSquarePlus size={14} />
-            </motion.div>
-            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>New Thread</span>}
-          </motion.button>
-
+          {/* Settings Button */}
           <motion.button
             onClick={onOpenSettings}
             title="Settings"
@@ -651,7 +682,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 <button
                   id="json-import-btn"
                   title="Import JSON Task Plan"
-                  onClick={() => setShowJsonImport(true)}
+                  onClick={onOpenJsonImport}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center",
                     width: 20, height: 20, borderRadius: 4,
@@ -662,7 +693,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.14)"; e.currentTarget.style.color = "white"; }}
                   onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.07)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}
                 >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 </button>
               </div>
               <div style={{ padding: "10px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
@@ -674,8 +705,6 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   selectedTaskId={selectedTaskId}
                   setSelectedTaskId={setSelectedTaskId}
                   taskRefsMap={taskRefsMap}
-                  showJsonImport={showJsonImport}
-                  setShowJsonImport={setShowJsonImport}
                   onScrollToMessage={(msgId) => {
                     const el = messageRefsMap.current[msgId];
                     if (el) {
@@ -811,7 +840,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 onSelectMessage={(msgId) => {
                   const idx = messages.findIndex(m => m.id === msgId);
                   if (idx === -1) return;
-                  
+
                   let userMsgId = "";
                   if (messages[idx].role === "user") {
                     userMsgId = messages[idx].id;

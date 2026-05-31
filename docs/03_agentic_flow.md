@@ -4,7 +4,37 @@ This document describes the complete execution lifecycle of OpenSarthi from user
 
 ---
 
-## 1. Top-Level Message Flow
+## 1. Packaged App Bootstrap & Startup Flow
+
+This flowchart describes the boot sequence when executing the packaged AppImage/executable on a target system.
+
+```mermaid
+flowchart TD
+    START([User runs AppImage / .exe]) --> TAURI[Tauri Shell Launches]
+    TAURI --> SPAWN[Spawn sidecar bootstrap launcher]
+    
+    SPAWN --> PATH_CHECK{Check ~/.config/opensarthi/venv}
+    PATH_CHECK -->|Venv exists| IMPORT_CHECK{Validate package imports\nfastapi, pydantic_ai, etc.}
+    PATH_CHECK -->|Venv missing| SETUP_VENV[Use bundled 'uv' to download\nstandalone Python 3.12]
+    
+    IMPORT_CHECK -->|Imports succeed| BOOT_FASTAPI[Launch FastAPI via Uvicorn]
+    IMPORT_CHECK -->|Imports fail| SETUP_VENV
+    
+    SETUP_VENV --> VENV_CREATE[Create virtual environment]
+    VENV_CREATE --> PIP_INSTALL[Run 'uv pip install -r requirements.txt']
+    PIP_INSTALL --> BOOT_FASTAPI
+    
+    BOOT_FASTAPI --> PORT_NEG[Bind to free OS port\nPrint 'PORT:xxxxx' to stdout]
+    PORT_NEG --> RUST_READ[Rust sidecar manager reads port]
+    RUST_READ --> WEBVIEW[Tauri WebView UI loads]
+    WEBVIEW --> WS_CONNECT[Connect WebSocket to ws://127.0.0.1:xxxxx]
+    WS_CONNECT --> SYNC_SETTINGS[Sync configuration\nRestore active thread & token count]
+    SYNC_SETTINGS --> READY([OpenSarthi ready for input])
+```
+
+---
+
+## 2. Top-Level Message Flow
 
 ```mermaid
 flowchart TD
@@ -28,7 +58,7 @@ flowchart TD
 
 ---
 
-## 2. How the Agent Decides: Chat vs. Task
+## 3. How the Agent Decides: Chat vs. Task
 
 The LLM itself makes the classification decision based on the system prompt instructions.
 
@@ -48,7 +78,7 @@ flowchart LR
 
 ---
 
-## 3. AgentRuntime Execution Loop
+## 4. AgentRuntime Execution Loop
 
 ```mermaid
 flowchart TD
@@ -92,7 +122,7 @@ flowchart TD
 
 ---
 
-## 4. Cancellation & Pause Architecture
+## 5. Cancellation & Pause Architecture
 
 ```mermaid
 stateDiagram-v2
@@ -123,7 +153,7 @@ flowchart LR
 
 ---
 
-## 5. JSON Plan Direct Execution (Import Mode)
+## 6. JSON Plan Direct Execution (Import Mode)
 
 ```mermaid
 flowchart TD
@@ -142,7 +172,7 @@ flowchart TD
 
 ---
 
-## 6. Voice Input Pipeline
+## 7. Voice Input Pipeline
 
 ```mermaid
 flowchart TD
@@ -169,7 +199,7 @@ flowchart TD
 
 ---
 
-## 7. Personalization → Prompt Pipeline
+## 8. Personalization → Prompt Pipeline
 
 ```mermaid
 flowchart LR
@@ -199,7 +229,7 @@ flowchart LR
 
 ---
 
-## 8. Settings Sync Flow
+## 9. Settings Sync Flow
 
 ```mermaid
 sequenceDiagram
@@ -219,7 +249,7 @@ sequenceDiagram
 
 ---
 
-## 9. Token Tracking Flow
+## 10. Token Tracking Flow
 
 ```mermaid
 flowchart LR

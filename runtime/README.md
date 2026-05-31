@@ -26,6 +26,11 @@ LLM Provider (Gemini, GPT-4o, Claude, Groq, OpenRouter, Ollama)
 
 `main.py` binds to an OS-assigned free port and prints `PORT:<number>` to stdout. The Tauri Rust layer (`sidecar.rs`) reads this, stores the port, and the frontend WebSocket client connects automatically. This avoids hardcoded port conflicts.
 
+In packaged production builds (AppImage or `.exe` installers):
+1. A compiled Rust bootstrap runner (`opensarthi-runtime` sidecar) executes first.
+2. It sets up and isolates a virtual environment at `~/.config/opensarthi/venv` (Linux) or `%LOCALAPPDATA%\opensarthi\venv` (Windows).
+3. If Python 3.12 or dependencies are missing, it uses the bundled `uv` utility to fetch a standalone interpreter, create the venv, and install python dependencies before running `main.py`.
+
 ---
 
 ## ✅ Feature Reference
@@ -109,23 +114,32 @@ Two parallel STT systems:
 
 ```python
 class Settings(BaseSettings):
-    ai_provider: str = "google"
+    app_name: str = "OpenSarthi"
+    wake_words: list[str] = ["hey sarthi", "hello sarthi"]
+    wake_word_enabled: bool = True
+    wake_word_threshold: float = 0.5
     local_model: str = "qwen2.5-coder:3b"
     cloud_model: str = "gemini-2.5-flash"
+    ai_provider: str = "google"
     # API Keys
-    gemini_api_key: str = ""
-    openai_api_key: str = ""
+    gemini_api_key: str | None = None
+    openai_api_key: str | None = None
     # ... other keys
+    voice_accent: str = "ie"
+    voice_speed: float = 1.35
+    continuous_listening: bool = False
+    active_theme: str = "theme-red-black"
     # Personalization
     user_name: str = ""
-    user_skills: list[str] = []
+    user_skills: list[str] = ["general", "desktop_automation"]
     custom_prompt: str = ""
-    # Voice
-    voice_accent: str = "af_heart"
-    voice_speed: float = 1.0
 ```
 
-All settings are read from `~/.config/opensarthi/.env` via `pydantic-settings`. Empty key inputs retain the existing saved value (no accidental wipe). Settings sync is triggered by the `update_settings` WebSocket message.
+All settings are stored in a platform-aware user configuration directory to isolate user data from read-only application code (e.g. packaged AppImage mounts):
+* **Linux**: `~/.config/opensarthi/.env`
+* **Windows**: `%LOCALAPPDATA%\opensarthi\.env`
+
+Empty key inputs on updates are filtered out to prevent accidental deletion of already configured API keys. Settings sync is automatically triggered on client connection or update via the `update_settings` WebSocket message payload.
 
 ---
 

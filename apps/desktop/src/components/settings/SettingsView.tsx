@@ -461,6 +461,7 @@ export function SettingsView({
                 <label style={labelStyle}>ACTIVE STYLING MATRIX</label>
                 <select value={theme} onChange={(e) => setTheme(e.target.value)} style={selectStyle}>
                   <option value="theme-red-black">🔴 Dark Crimson (HUD Default)</option>
+                  <option value="theme-mono-dark">⚫ Mono Dark (Black &amp; White)</option>
                   <option value="theme-green-black">🟢 Dark Forest (Matrix Green)</option>
                   <option value="theme-purple-black">🟣 Dark Nebula (Cyberpunk Purple)</option>
                   <option value="theme-blue-black">🌊 Dark Ocean (Neon Cyan)</option>

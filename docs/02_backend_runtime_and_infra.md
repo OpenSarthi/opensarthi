@@ -14,12 +14,12 @@
 
 | Layer | Technology | Rationale |
 |-------|-----------|-----------|
-| **Python** | 3.12+ | TaskGroups, performance improvements |
+| **Python** | 3.12 exactly | TaskGroups, pre-compiled ML wheels compatibility |
 | **API Server** | FastAPI | Async-native, auto-docs, WebSocket support |
 | **Validation** | Pydantic v2 | Rust-core validation, 5-50x faster than v1 |
 | **Async** | asyncio + uvicorn | Standard async runtime |
 | **Agent Framework** | PydanticAI (start) → + LangGraph (later) | Type-safe tools first, orchestration when needed |
-| **Packaging** | PyInstaller | Bundle as sidecar binary for Tauri |
+| **Packaging & Bootstrapping** | **`uv` + Rust Sidecar Launcher** | Portable, self-contained Python venv resolution without needing a global Python installation |
 
 ### 1.2 Runtime Directory Structure
 
@@ -89,6 +89,20 @@ runtime/
     ├── server.py               # Expose tools as MCP server
     └── client.py               # Connect to external MCP servers
 ```
+
+### 1.3 Portable Bootstrap & Executable Distribution Flow
+
+To ensure the packaged executable (AppImage on Linux, `.exe` on Windows) is entirely zero-dependency and does not require pre-installed Python configurations, a portable bootstrapping mechanism manages Python's execution lifecycle:
+
+1. **Tauri Sidecar Ingestion**: The native Rust desktop shell executes the compiled bootstrap launcher (`opensarthi-runtime` sidecar) which is bundled inside the app's resource scope.
+2. **Environment Location Mapping**: All runtime dependencies and configuration files are completely isolated from read-only application mounts to avoid permission errors:
+   - **Linux**: Config at `~/.config/opensarthi/` and Python Virtual Environment at `~/.config/opensarthi/venv/`
+   - **Windows**: Config at `%LOCALAPPDATA%\opensarthi\` and Python Virtual Environment at `%LOCALAPPDATA%\opensarthi\venv\`
+3. **Environment Audit & Provisioning**:
+   - The launcher checks if the virtual environment directory already exists and validates key Python package imports (e.g. `fastapi`, `pydantic_ai`, `speech_recognition`).
+   - If missing or corrupted, the launcher leverages the bundled `uv` utility to fetch a standalone, portable Python 3.12 build.
+   - It initializes a virtual environment and runs `uv pip install -r requirements.txt` to pull down local dependencies and build compatibility layers.
+4. **Dynamic Negotiation & Socket Boot**: Once libraries are resolved, it launches FastAPI/Uvicorn on a free, dynamically-negotiated OS port and prints `PORT:<number>` to stdout. Tauri reads this stream, establishes the WebSocket listener, and redirects user queries.
 
 ---
 

@@ -5,6 +5,8 @@ import { InputDialog } from "./components/permissions/InputDialog";
 import { SettingsView } from "./components/settings/SettingsView";
 import { HistoryView } from "./components/settings/HistoryView";
 import { OnboardingView } from "./components/onboarding/OnboardingView";
+import { McpSettingsModal } from "./components/settings/McpSettingsModal";
+import { JsonImportModal } from "./components/assistant/JsonImportModal";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useWindowOverlay } from "./hooks/useWindowOverlay";
@@ -18,6 +20,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
+  const [showMcpSettings, setShowMcpSettings] = useState(false);
+  const [showJsonImport, setShowJsonImport] = useState(false);
 
   // Invoke window overlay and snapping logic
   useWindowOverlay();
@@ -115,8 +119,33 @@ export default function App() {
     });
   };
 
-  const handleOnboardingComplete = (data: { skills: string[]; userName: string; customPrompt: string }) => {
+  const handleOnboardingComplete = (data: {
+    skills: string[];
+    userName: string;
+    customPrompt: string;
+    provider?: string;
+    cloudModel?: string;
+    localModel?: string;
+    apiKey?: string;
+  }) => {
     setPersonalization(data.userName, data.skills, data.customPrompt);
+
+    if (data.provider) {
+      setActiveProvider(data.provider);
+      if (data.localModel || data.cloudModel) {
+        setActiveModels(data.localModel || activeLocalModel, data.cloudModel || activeCloudModel);
+      }
+      if (data.apiKey) {
+        setAllApiKeys({
+          gemini: data.provider === "google" ? data.apiKey : geminiApiKey,
+          openai: data.provider === "openai" ? data.apiKey : openaiApiKey,
+          anthropic: data.provider === "anthropic" ? data.apiKey : anthropicApiKey,
+          groq: data.provider === "groq" ? data.apiKey : groqApiKey,
+          openrouter: data.provider === "openrouter" ? data.apiKey : openrouterApiKey,
+        });
+      }
+    }
+
     setOnboardingCompleted(true);
     // Send to backend when WS is ready (may not be connected yet — send via wsClient when available)
     const sendPersonalization = () => {
@@ -124,6 +153,16 @@ export default function App() {
         user_name: data.userName,
         user_skills: data.skills,
         custom_prompt: data.customPrompt,
+        ...(data.provider ? {
+          ai_provider: data.provider,
+          local_model: data.localModel || activeLocalModel,
+          cloud_model: data.cloudModel || activeCloudModel,
+          gemini_api_key: data.provider === "google" ? (data.apiKey || geminiApiKey) : geminiApiKey,
+          openai_api_key: data.provider === "openai" ? (data.apiKey || openaiApiKey) : openaiApiKey,
+          anthropic_api_key: data.provider === "anthropic" ? (data.apiKey || anthropicApiKey) : anthropicApiKey,
+          groq_api_key: data.provider === "groq" ? (data.apiKey || groqApiKey) : groqApiKey,
+          openrouter_api_key: data.provider === "openrouter" ? (data.apiKey || openrouterApiKey) : openrouterApiKey,
+        } : {})
       });
     };
     // Delay slightly to allow WS to connect if this is the very first launch
@@ -151,10 +190,14 @@ export default function App() {
         onOpenSettings={() => setShowSettings(true)} 
         onOpenHistory={() => setShowHistory(true)}
         onOpenCustomizer={() => setShowCustomizer(true)}
+        onOpenMcpSettings={() => setShowMcpSettings(true)}
+        onOpenJsonImport={() => setShowJsonImport(true)}
         onNewChat={() => resetSessionTokens()}
       />
       <PermissionDialog />
       <InputDialog />
+      <McpSettingsModal isOpen={showMcpSettings} onClose={() => setShowMcpSettings(false)} />
+      <JsonImportModal isOpen={showJsonImport} onClose={() => setShowJsonImport(false)} />
       <AnimatePresence>
         {showSettings && (
           <SettingsView

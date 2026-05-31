@@ -71,8 +71,9 @@ Shown full-screen on first launch (when `onboardingCompleted` is `false` in `loc
 
 - **Step 1 — Skills:** 12 skill category toggles + "Select All" shortcut
 - **Step 2 — Persona:** Name input + custom instructions textarea (500 char limit)
-- **Skip button:** Applies all defaults (all skills, no name, empty prompt)
-- On complete → `App.tsx` calls `setPersonalization()` + sends `update_settings` to backend
+- **Step 3 — Agent Settings:** Setup AI Provider (Google, OpenAI, Anthropic, Groq, OpenRouter, Ollama), model select, and API key configuration.
+- **Skip button:** Applies all defaults (all skills, no name, empty prompt, default Google Gemini config)
+- On complete → `App.tsx` calls `setPersonalization()` + sends `update_settings` to backend to persist preferences
 
 **12 Skill Categories:**
 
@@ -93,9 +94,10 @@ Shown full-screen on first launch (when `onboardingCompleted` is `false` in `loc
 
 ### Edit / Customise Mode
 
-Opened via the **Wrench (Customise) button** in the top-right HUD bar. Renders as a **glassmorphic modal popup** over the active app — the main UI stays visible behind it:
+Opened via the **Wrench (Customise) button** in the top-right HUD bar. Renders as a **straight-bracket HUD panel modal popup** over the active app — the main UI stays visible behind it:
 
 - Pre-populates all fields from current store values
+- Uses active theme color variables dynamically (accent, border, font-mono)
 - Unified single-view layout: Profile & Instructions section + Agent Capabilities grid
 - `X` close button (top-right) + CANCEL / SAVE CHANGES footer
 - On save: updates store + syncs to backend via `update_settings` WebSocket message
@@ -119,12 +121,13 @@ Maximization is detected via Tauri's `getCurrentWindow().onResized()` listener a
 
 ## 📋 JSON Task Import (`TaskList.tsx`)
 
-The `+` button in the Agent Tasks panel header opens a JSON import modal:
+The `+` button in the Agent Tasks panel header opens a JSON import modal in the center of the viewport:
 
 1. Paste a raw JSON step array
-2. Live syntax validation — green/red border feedback with error line display
+2. Live syntax validation — green/red border feedback with clear syntax error highlighting
 3. Step preview list — shows `tool` name + `description` for each step
-4. **RUN NOW** sends `run_json_plan` via WebSocket → backend executes immediately, zero LLM tokens used
+4. **RUN NOW** sends `run_json_plan` via WebSocket → backend executes immediately, bypassing LLM planning entirely
+5. Inserts an immediate user message bubble to show plan execution starting
 
 **Step format:**
 ```json
@@ -231,7 +234,7 @@ Auto-connects to the Python runtime on the dynamically negotiated port. Routes a
 
 ## 🎨 Theme System
 
-5 themes defined in `styles/themes.css` as CSS custom property sets, applied to `document.body.className`:
+6 themes defined in `styles/themes.css` as CSS custom property sets, applied to `document.body.className`:
 
 | Theme ID | Palette |
 |---------|---------|
@@ -240,6 +243,7 @@ Auto-connects to the Python runtime on the dynamically negotiated port. Routes a
 | `deep-purple-black` | Purple accent (default), dark glass |
 | `cyber-sky-white` | Cyan accent, light mode |
 | `sakura-pink-white` | Pink accent, light mode |
+| `simple-dark` | Gray/white accent, flat black theme |
 
 Key CSS variables across all themes:
 

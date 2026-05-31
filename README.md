@@ -41,12 +41,12 @@ OpenSarthi is a monorepo with two tightly coupled layers that communicate over a
 ### Desktop Shell (Frontend)
 
 - **Cyberpunk HUD UI** — three-panel layout: Agent Tasks (left), Chat (center), Live Plan & Activity (right)
-- **5 Premium Themes** — Glass Red-Black, Forest Green-Black, Deep Purple-Black, Cyber Sky-White, Sakura Pink-White
+- **6 Premium Themes** — Glass Red-Black, Forest Green-Black, Deep Purple-Black, Cyber Sky-White, Sakura Pink-White, and Simple Dark (Black-Gray-White)
 - **Real-time Token Counter** — live `request / response / session total` tokens per thread, restored on history load
-- **First-Launch Onboarding** — skill-aware cold-start wizard (12 skill categories, custom name, custom instructions)
-- **Customise Popup** — re-editable persona & skills via Wrench button; opens modal without leaving the main UI
-- **JSON Task Import** — paste a raw JSON step plan in the Agent Tasks panel; runs immediately without LLM planning
-- **Provider & Model Settings** — cascading: Provider → Model → API Key → Save
+- **First-Launch Onboarding** — step-by-step cold-start wizard: Step 1 (Skills & Capabilities selection), Step 2 (Name & Custom instructions), and Step 3 (Agent Settings for Provider, Model, and API Key)
+- **Customise Popup** — re-editable persona & skills via Wrench button; styled as a glassmorphic straight-bracket HUD panel modal matching the theme
+- **Model Context Protocol (MCP) Configuration** — dedicated settings view to toggle local tool exposure and manage external MCP server URLs
+- **JSON Task Import** — center overlay dialog with live JSON syntax validation, error traces, step previews, and direct LLM-bypass runner
 - **Multi-thread Chat History** — persistent threads; each thread restores its own token usage on load
 - **New Thread** — clears session context and resets token counter
 - **Voice Button** — microphone toggle with animated waveform and state indicators
@@ -61,17 +61,21 @@ OpenSarthi is a monorepo with two tightly coupled layers that communicate over a
 - **Context-Aware Conversations** — SQLite-persisted message history with a 20-message sliding window
 - **Token Usage per Thread** — stored per thread_id; frontend restores on history load
 - **Voice Pipeline** — dual STT: Google SpeechRecognition + local Whisper; wake word detection via OpenWakeWord; Kokoro TTS output
-- **Production-Safe Config** — settings at `~/.config/opensarthi/.env`, database at `~/.config/opensarthi/opensarthi.db`
+- **Production-Safe Config** — settings at `~/.config/opensarthi/.env` (Linux) or `%LOCALAPPDATA%\opensarthi\.env` (Windows), database at the same folder
 
-### AppImage Distribution (Linux)
+### Distribution & Portable Bootstrapping Flow (Linux / Windows)
 
-- **Portable Bootstrap** — auto-creates venv, downloads Python 3.12 via bundled `uv` if not present
-- **Stale Venv Detection** — validates core imports before reusing cached venv
-- **Config Isolation** — all user data lives in `~/.config/opensarthi/` (never in read-only AppImage mount)
+- **Self-Contained Executable** — The React frontend is compiled into Tauri static assets, and the native Rust layer handles window and sidecar lifecycle.
+- **Python-Free Target System** — The target machine does not need Python installed. When the user executes the packaged AppImage/executable:
+  1. The Tauri Rust shell launches and spawns the bundled Rust sidecar bootstrap runner.
+  2. The bootstrap runner checks for an isolated virtual environment at `~/.config/opensarthi/venv` (Linux) or `%LOCALAPPDATA%\opensarthi\venv` (Windows).
+  3. If missing: it uses the bundled `uv` binary to download a standalone portable Python 3.12 interpreter, creates the venv, and installs `requirements.txt` dependencies locally.
+  4. Once validated, it spawns the FastAPI Uvicorn server on a dynamically allocated port.
+  5. The Tauri frontend connects over WebSockets via dynamic port negotiation, ensuring zero port conflicts.
 
 ---
 
-## 📦 Building the AppImage
+## 📦 Building the AppImage / Executables
 
 ```bash
 # From the repo root

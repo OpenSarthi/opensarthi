@@ -303,17 +303,19 @@ interface AssistantState {
 - Buttons: **Allow Once**, **Allow Always**, **Deny**
 - Auto-deny after 30s timeout
 
-### 6.2 Design Tokens
+### 6.2 Design Tokens & Themes
+
+OpenSarthi supports 6 premium themes (Red-Black, Green-Black, Purple-Black, Cyber-Sky, Sakura-Pink, and Simple Dark). Visual elements are entirely configured via HSL/RGBA CSS custom properties matching the active theme:
 
 ```css
-/* Color palette — dark mode first */
+/* Example design tokens */
 :root {
   --bg-primary: hsl(220, 20%, 8%);
   --bg-secondary: hsl(220, 18%, 12%);
   --bg-glass: hsla(220, 20%, 15%, 0.6);
   --text-primary: hsl(0, 0%, 95%);
   --text-secondary: hsl(220, 10%, 60%);
-  --accent: hsl(250, 80%, 65%);        /* Purple-blue */
+  --accent: hsl(250, 80%, 65%);        /* Purple-blue default */
   --accent-glow: hsla(250, 80%, 65%, 0.3);
   --success: hsl(150, 60%, 50%);
   --warning: hsl(40, 90%, 55%);
@@ -321,6 +323,10 @@ interface AssistantState {
   --border: hsla(220, 15%, 30%, 0.5);
 }
 ```
+
+Modals like the **Customise Persona & Skills** modal and **MCP Settings** modal use the straight-bracket HUD styling (`.hud-panel`) to maintain consistency with the rest of the workspace panels. All four corner ticks render dynamically based on the active theme's `--border` and `--accent` parameters, ensuring unified aesthetics.
+
+---
 
 ### 6.3 Future UI (Post-MVP)
 

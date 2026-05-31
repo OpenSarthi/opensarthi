@@ -108,6 +108,20 @@ class Session:
             timestamp = int(time.time() * 1000)
             db.save_message(self.thread_id, msg_id, "user", f"[JSON Plan] {goal}", timestamp)
 
+            # Send initial assistant response bubble immediately so the user has immediate feedback in the chat
+            ast_init_id = str(uuid.uuid4())
+            ast_init_ts = int(time.time() * 1000)
+            init_message = f"I am running the custom task plan for: **{goal}**.\nYou can see the live execution steps in the activity panel on the right."
+            db.save_message(self.thread_id, ast_init_id, "assistant", init_message, ast_init_ts)
+            await self.send_message("assistant_response", {
+                "id": ast_init_id,
+                "role": "assistant",
+                "content": init_message,
+                "timestamp": ast_init_ts,
+                "is_voice": False,
+                "usage": {"request_tokens": 0, "response_tokens": 0, "total_tokens": 0}
+            })
+
             from agent_runtime import AgentRuntime
             from observation import DesktopObserver
             from planner.agent import agent
