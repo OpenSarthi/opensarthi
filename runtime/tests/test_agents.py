@@ -34,7 +34,7 @@ class TestAgents(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(classification, "CHAT")
         mock_agent.run.assert_called_once_with("Explain how photosynthesis works")
 
-    @patch("agents.orchestrator.classify_intent")
+    @patch("agents.classifier.classify_intent_with_usage")
     @patch("llm.build_model")
     async def test_orchestrator_routing(self, mock_build_model, mock_classify):
         ws_mock = AsyncMock()
@@ -44,14 +44,14 @@ class TestAgents(unittest.IsolatedAsyncioTestCase):
         orchestrator = OrchestratorAgent(ws_handler=ws_mock, model=model_mock, deps=deps_mock)
         
         # Test simple chat routing
-        mock_classify.return_value = "CHAT"
-        classification, summarized = await orchestrator.route("What is the capital of France?", [], None)
+        mock_classify.return_value = ("CHAT", None)
+        classification, summarized, class_usage, sum_usage = await orchestrator.route("What is the capital of France?", [], None)
         self.assertEqual(classification, "CHAT")
         self.assertIsNone(summarized)
         
         # Test task routing
-        mock_classify.return_value = "TASK"
-        classification, summarized = await orchestrator.route("Open chrome and search for cat videos", [], None)
+        mock_classify.return_value = ("TASK", None)
+        classification, summarized, class_usage, sum_usage = await orchestrator.route("Open chrome and search for cat videos", [], None)
         self.assertEqual(classification, "TASK")
         self.assertIsNone(summarized)
 

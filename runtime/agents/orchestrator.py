@@ -1,6 +1,6 @@
 import asyncio
 import structlog
-from typing import Optional
+from typing import Optional, Any
 from agents.classifier import Classification, classify_intent
 
 logger = structlog.get_logger()
@@ -30,26 +30,27 @@ class OrchestratorAgent:
         goal: str,
         message_history: list,
         observer,
-    ) -> tuple[Classification, str]:
+    ) -> tuple[Classification, Optional[str], Optional[Any], Optional[Any]]:
         """
-        Classify and route. Returns (classification, context_string).
+        Classify and route. Returns (classification, context_string, class_usage, sum_usage).
         The runtime uses the context_string for the actual agent.run() call.
         """
-        classification = await classify_intent(self.model, goal)
+        from agents.classifier import classify_intent_with_usage
+        classification, class_usage = await classify_intent_with_usage(self.model, goal)
         logger.info("Orchestrator classified intent", goal=goal[:80], classification=classification)
 
         # Compress history if it has grown large
-        summarized_context = await self._maybe_summarize(message_history, goal)
+        summarized_context, sum_usage = await self._maybe_summarize(message_history, goal)
 
-        return classification, summarized_context
+        return classification, summarized_context, class_usage, sum_usage
 
-    async def _maybe_summarize(self, message_history: list, current_goal: str) -> Optional[str]:
+    async def _maybe_summarize(self, message_history: list, current_goal: str) -> tuple[Optional[str], Optional[Any]]:
         """
         If message history > MAX_HISTORY_RAW, use a lightweight LLM call to compress
         older turns into a dense summary paragraph. Recent turns are always sent verbatim.
         """
         if len(message_history) <= self.MAX_HISTORY_RAW:
-            return self._conversation_summary  # Use cached if available
+            return self._conversation_summary, None  # Use cached if available
 
         # Already have a summary — update it with the accumulated new messages
         older_messages = message_history[:-self.MAX_HISTORY_SEND]
@@ -84,11 +85,11 @@ OUTPUT: A single paragraph summary only. No preamble."""
             result = await summarizer.run(prompt)
             self._conversation_summary = result.output.strip()
             logger.info("Context compressed by summarizer", length=len(self._conversation_summary))
-            return self._conversation_summary
+            return self._conversation_summary, getattr(result, "usage", None)
 
         except Exception as e:
             logger.warning("Context summarizer failed, using raw history", error=str(e))
-            return self._conversation_summary
+            return self._conversation_summary, None
 
     def reset_summary(self):
         """Call when a new chat thread starts."""

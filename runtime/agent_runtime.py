@@ -21,6 +21,7 @@ class AgentRuntime:
         self.deps = deps
         self.memory = memory_manager
         self.state = AgentStateContext()
+        self.cumulative_steps = []
         self._cancel_requested = False
         self._paused = False
         self._pause_event = asyncio.Event()
@@ -63,14 +64,20 @@ class AgentRuntime:
         finally:
             self._agent_task = None
 
-    def _format_final_response(self, response: str, completed_actions: list, failed_actions: list) -> str:
-        if not completed_actions and not failed_actions:
+    def _format_final_response(self, response: str, cumulative_steps: list) -> str:
+        if not cumulative_steps:
             return response
         lines = [response, ""]
-        for action in completed_actions:
-            lines.append(f"✓ {action.lstrip('✓ ').strip()}")
-        for action in failed_actions:
-            lines.append(f"❌ {action.lstrip('❌ ').strip()}")
+        for s in cumulative_steps:
+            desc = s.get("description") or s.get("tool")
+            status = s.get("status")
+            if status == "success":
+                lines.append(f"✓ {desc}")
+            elif status == "error":
+                err = s.get("error", "Error")
+                lines.append(f"❌ {desc} (Reason: {err})")
+            elif status == "terminated":
+                lines.append(f"❌ {desc} (Reason: Terminated)")
         return "\n".join(lines)
 
     async def _cancellable_sleep(self, seconds: float):
@@ -129,6 +136,7 @@ class AgentRuntime:
 
         completed_actions = []
         failed_actions = []
+        self.cumulative_steps = []
         replanning_attempts = 0
         max_replanning_attempts = 5
 
@@ -174,6 +182,8 @@ class AgentRuntime:
                     result = await self._agent_run(context, deps=self.deps, model=model, message_history=message_history)
                     if getattr(self, "logger", None):
                         self.logger.log_llm_response(replanning_attempts, result.output)
+                    if result and getattr(result, "usage", None):
+                        await self.ws.accumulate_and_update_tokens(result.usage)
                 except asyncio.CancelledError:
                     await self._transition(AgentState.IDLE)
                     return "Execution cancelled by user."
@@ -190,22 +200,29 @@ class AgentRuntime:
                             importance=0.8
                         )
                     await self._transition(AgentState.COMPLETE)
-                    return self._format_final_response(response, completed_actions, failed_actions)
+                    return self._format_final_response(response, self.cumulative_steps)
 
                 import uuid
                 plan_id = str(uuid.uuid4())
-                steps_data = [{
-                    "index": idx,
-                    "tool": s.tool,
-                    "args": s.args or {},
-                    "description": s.description or s.tool,
-                    "status": "pending"
-                } for idx, s in enumerate(plan.steps)]
+                
+                # Append the new steps to our global cumulative steps list
+                start_idx = len(self.cumulative_steps)
+                for idx, s in enumerate(plan.steps):
+                    self.cumulative_steps.append({
+                        "index": len(self.cumulative_steps),
+                        "tool": s.tool,
+                        "args": s.args or {},
+                        "description": s.description or s.tool,
+                        "status": "pending",
+                        "verify_with": s.verify_with,
+                        "wait_after": s.wait_after
+                    })
+                end_idx = len(self.cumulative_steps)
 
                 await self.ws.send_message("plan_created", {
                     "id": plan_id,
                     "goal": plan.goal or goal or "Executing Task",
-                    "steps": steps_data,
+                    "steps": self.cumulative_steps,
                     "recovery_hint": plan.recovery_hint
                 })
 
@@ -213,12 +230,24 @@ class AgentRuntime:
                 await self._transition(AgentState.PLANNING)
 
                 plan_failed = False
-                last_step_idx = 0
-                for i, step in enumerate(plan.steps):
+                last_step_idx = start_idx
+                for i in range(start_idx, end_idx):
                     last_step_idx = i
+                    step_data = self.cumulative_steps[i]
+                    from planner.schemas import PlanStep as PS
+                    step = PS(
+                        tool=step_data["tool"],
+                        args=step_data["args"],
+                        description=step_data["description"],
+                        verify_with=step_data["verify_with"],
+                        wait_after=step_data["wait_after"]
+                    )
+                    
                     if self._cancel_requested:
-                        for remain_idx in range(i, len(plan.steps)):
+                        for remain_idx in range(i, end_idx):
                             await self.ws.send_message("tool_terminated", {"index": remain_idx})
+                            if remain_idx < len(self.cumulative_steps):
+                                self.cumulative_steps[remain_idx]["status"] = "terminated"
                         break
 
                     await self._transition(
@@ -288,8 +317,10 @@ class AgentRuntime:
                                 break
 
                     if self._cancel_requested:
-                        for remain_idx in range(i, len(plan.steps)):
+                        for remain_idx in range(i, end_idx):
                             await self.ws.send_message("tool_terminated", {"index": remain_idx})
+                            if remain_idx < len(self.cumulative_steps):
+                                self.cumulative_steps[remain_idx]["status"] = "terminated"
                         break
 
                     if step_success:
@@ -298,6 +329,10 @@ class AgentRuntime:
                             await self._transition(AgentState.WAITING)
                             await asyncio.sleep(step.wait_after)
                     else:
+                        for remain_idx in range(i + 1, end_idx):
+                            await self.ws.send_message("tool_terminated", {"index": remain_idx})
+                            if remain_idx < len(self.cumulative_steps):
+                                self.cumulative_steps[remain_idx]["status"] = "terminated"
                         failed_actions.append(f"{step.description or step.tool} (Reason: {result.error})")
                         plan_failed = True
                         break
@@ -305,8 +340,11 @@ class AgentRuntime:
                 if self._cancel_requested:
                     await self._transition(AgentState.IDLE)
                     response = "Execution cancelled by user."
-                    remaining = [f"{s.description or s.tool} (Reason: Terminated)" for s in plan.steps[last_step_idx + 1:]]
-                    return self._format_final_response(response, completed_actions, failed_actions + remaining)
+                    for remain_idx in range(last_step_idx, len(self.cumulative_steps)):
+                        if remain_idx < len(self.cumulative_steps):
+                            self.cumulative_steps[remain_idx]["status"] = "terminated"
+                            await self.ws.send_message("tool_terminated", {"index": remain_idx})
+                    return self._format_final_response(response, self.cumulative_steps)
 
                 if plan_failed:
                     replanning_attempts += 1
@@ -335,6 +373,8 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
             try:
                 result = await self._agent_run(final_error_context, deps=self.deps, model=model, message_history=message_history)
                 response = result.output
+                if result and getattr(result, "usage", None):
+                    await self.ws.accumulate_and_update_tokens(result.usage)
             except asyncio.CancelledError:
                 response = "Execution cancelled by user."
             except Exception as e:
@@ -346,7 +386,7 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
                     source="agent",
                     importance=0.7
                 )
-            return self._format_final_response(response, completed_actions, failed_actions)
+            return self._format_final_response(response, self.cumulative_steps)
 
         except asyncio.CancelledError:
             await self._transition(AgentState.IDLE)
@@ -400,17 +440,18 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
             "tool": s.tool,
             "args": s.args or {},
             "description": s.description or s.tool,
-            "status": "pending"
+            "status": "pending",
+            "verify_with": s.verify_with,
+            "wait_after": s.wait_after
         } for i, s in enumerate(plan_steps)]
+        self.cumulative_steps = steps_data
 
         await self.ws.send_message("plan_created", {
             "id": str(uuid.uuid4()),
             "goal": goal,
-            "steps": steps_data,
+            "steps": self.cumulative_steps,
             "recovery_hint": None
         })
-
-        completed, failed = [], []
 
         await self._transition(AgentState.EXECUTING)
 
@@ -418,12 +459,16 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
             if self._cancel_requested:
                 for j in range(i, len(plan_steps)):
                     await self.ws.send_message("tool_terminated", {"index": j})
+                    if j < len(self.cumulative_steps):
+                        self.cumulative_steps[j]["status"] = "terminated"
                 break
 
             await self._check_pause()
             if self._cancel_requested:
                 for j in range(i, len(plan_steps)):
                     await self.ws.send_message("tool_terminated", {"index": j})
+                    if j < len(self.cumulative_steps):
+                        self.cumulative_steps[j]["status"] = "terminated"
                 break
 
             await self._transition(
@@ -433,19 +478,9 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
             )
 
             result = await self._execute_step(step, i)
-            if result.success:
-                completed.append(step.description or step.tool)
-            else:
-                failed.append(f"{step.description or step.tool}: {result.error}")
 
         await self._transition(AgentState.IDLE)
-
-        lines = [f"JSON task completed: {goal}", ""]
-        for a in completed:
-            lines.append(f"✓ {a}")
-        for f in failed:
-            lines.append(f"❌ {f}")
-        return "\n".join(lines)
+        return self._format_final_response(f"JSON task completed: {goal}", self.cumulative_steps)
 
     async def _transition(self, new_state: AgentState, **kwargs):
         self.state.transition(new_state, **kwargs)
@@ -528,6 +563,9 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
         if tool is None:
             err_res = ToolResult(success=False, error=f"Unknown tool: {step.tool}", retryable=False)
             await self.ws.send_message("tool_error", {"index": index, "error": err_res.error})
+            if index < len(self.cumulative_steps):
+                self.cumulative_steps[index]["status"] = "error"
+                self.cumulative_steps[index]["error"] = err_res.error
             return err_res
 
         await self.ws.send_message("tool_action", {
@@ -537,6 +575,8 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
             "result": None
         })
         await self.ws.send_message("tool_started", {"index": index})
+        if index < len(self.cumulative_steps):
+            self.cumulative_steps[index]["status"] = "running"
 
         # Wrap tool execution in a cancellable Task
         self._tool_task = asyncio.ensure_future(
@@ -558,8 +598,14 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
 
         if res.success:
             await self.ws.send_message("tool_completed", {"index": index, "result": res.observation})
+            if index < len(self.cumulative_steps):
+                self.cumulative_steps[index]["status"] = "success"
+                self.cumulative_steps[index]["result"] = res.observation
         else:
             await self.ws.send_message("tool_error", {"index": index, "error": res.error or "Unknown error"})
+            if index < len(self.cumulative_steps):
+                self.cumulative_steps[index]["status"] = "error"
+                self.cumulative_steps[index]["error"] = res.error or "Unknown error"
 
         if getattr(self, "logger", None):
             self.logger.log_tool_call(

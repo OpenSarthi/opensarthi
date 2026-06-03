@@ -99,5 +99,27 @@ class TestAsyncPrimitives(unittest.IsolatedAsyncioTestCase):
             await poll_until(false_condition, timeout=0.2, interval=0.05)
 
 
+class TestAgentRuntimeCumulativeSteps(unittest.TestCase):
+    def test_cumulative_steps_formatting(self):
+        from agent_runtime import AgentRuntime
+        ws_mock = Mock()
+        agent_mock = Mock()
+        observer_mock = Mock()
+        runtime = AgentRuntime(ws_handler=ws_mock, agent=agent_mock, observer=observer_mock)
+        
+        # Test formatting logic
+        steps = [
+            {"tool": "click", "description": "Clicking button", "status": "success"},
+            {"tool": "type_text", "description": "Typing text", "status": "error", "error": "Failed to type"},
+            {"tool": "shell", "description": "Running script", "status": "terminated"}
+        ]
+        
+        res = runtime._format_final_response("Task processed", steps)
+        self.assertIn("✓ Clicking button", res)
+        self.assertIn("❌ Typing text (Reason: Failed to type)", res)
+        self.assertIn("❌ Running script (Reason: Terminated)", res)
+        self.assertIn("Task processed", res)
+
+
 if __name__ == "__main__":
     unittest.main()

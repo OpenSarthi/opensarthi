@@ -52,6 +52,29 @@ class Session:
         }
         await self.ws.send_json(msg)
 
+    async def accumulate_and_update_tokens(self, usage):
+        if not usage:
+            return
+        try:
+            request_tokens = getattr(usage, "request_tokens", 0) or 0
+            response_tokens = getattr(usage, "response_tokens", 0) or 0
+            total_tokens = getattr(usage, "total_tokens", 0) or (request_tokens + response_tokens)
+        except Exception:
+            request_tokens = 0
+            response_tokens = 0
+            total_tokens = 0
+
+        if total_tokens > 0:
+            import db
+            db.accumulate_thread_tokens(self.thread_id, request_tokens, response_tokens, total_tokens)
+            totals = db.get_thread_tokens(self.thread_id)
+            await self.send_message("token_update", {
+                "request_tokens": totals.get("request_tokens", 0),
+                "response_tokens": totals.get("response_tokens", 0),
+                "total_tokens": totals.get("total_tokens", 0),
+                "delta_total_tokens": total_tokens
+            })
+
     async def request_permission(self, tool_name: str, args: dict) -> bool:
         """Ask user for permission to execute a dangerous tool, yielding control back on response."""
         from state_machine import AgentState
@@ -259,11 +282,15 @@ class Session:
 
             from observation import DesktopObserver
             observer = DesktopObserver()
-            classification, summarized_context = await self._orchestrator.route(
+            classification, summarized_context, class_usage, sum_usage = await self._orchestrator.route(
                 goal=text,
                 message_history=history_messages,
                 observer=observer,
             )
+            # Accumulate orchestrator token usages
+            await self.accumulate_and_update_tokens(class_usage)
+            await self.accumulate_and_update_tokens(sum_usage)
+
             # Notify the frontend of the classification
             await self.send_message("intent_classified", {"classification": classification})
 
@@ -316,6 +343,8 @@ class Session:
                     result = await chat_agent.run(text, message_history=message_history)
                     final_output = result.output
                     usage = result.usage
+                    # Accumulate chat tokens
+                    await self.accumulate_and_update_tokens(usage)
                     chat_logger.log_llm_response(0, final_output)
                     chat_logger.finalize(final_output)
                 except Exception as e:
@@ -352,24 +381,11 @@ class Session:
                     logger.error("Agent execution failed", error=str(e))
                     raise e
 
-            # Extract token usage
-            try:
-                request_tokens = getattr(usage, "request_tokens", 0) or 0
-                response_tokens = getattr(usage, "response_tokens", 0) or 0
-                total_tokens = getattr(usage, "total_tokens", 0) or (request_tokens + response_tokens)
-            except Exception:
-                request_tokens = 0
-                response_tokens = 0
-                total_tokens = 0
-            
             ast_msg_id = str(uuid.uuid4())
             ast_timestamp = int(time.time() * 1000)
             db.save_message(self.thread_id, ast_msg_id, "assistant", final_output, ast_timestamp)
 
-            # Persist cumulative token totals for this thread
-            db.accumulate_thread_tokens(self.thread_id, request_tokens, response_tokens, total_tokens)
-
-            # Send the assistant's response back to the UI with token usage
+            # Send the assistant's response back to the UI (token usage was already updated in real time)
             await self.send_message("assistant_response", {
                 "id": ast_msg_id,
                 "role": "assistant",
@@ -377,15 +393,31 @@ class Session:
                 "timestamp": ast_timestamp,
                 "is_voice": source == "voice",
                 "usage": {
-                    "request_tokens": request_tokens,
-                    "response_tokens": response_tokens,
-                    "total_tokens": total_tokens,
+                    "request_tokens": 0,
+                    "response_tokens": 0,
+                    "total_tokens": 0,
                 }
             })
+
+            # Fire-and-forget: extract and store user facts from this turn passively.
+            # Never blocks the response — runs in background, all errors swallowed.
+            try:
+                from memory.passive import extract_and_store_facts
+                asyncio.ensure_future(
+                    extract_and_store_facts(
+                        user_input=text,
+                        assistant_response=final_output,
+                        model=active_model,
+                        thread_id=self.thread_id,
+                    )
+                )
+            except Exception:
+                pass  # Passive extraction is best-effort
 
         except Exception as e:
             logger.error("Agent execution failed", error=str(e))
             await self.send_message("error", {"error": str(e)})
+
 
     async def process_incoming(self, data: dict):
         msg_type = data.get("type")

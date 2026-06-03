@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Any
 from pydantic_ai import Agent as PydanticAgent
 import structlog
 
@@ -6,7 +6,7 @@ logger = structlog.get_logger()
 
 Classification = Literal["CHAT", "TASK", "CLARIFY"]
 
-async def classify_intent(model, text: str) -> Classification:
+async def classify_intent_with_usage(model, text: str) -> tuple[Classification, Any]:
     """
     Classifies the user query using a lightweight LLM call to decide the routing category:
     - CHAT: Informational requests, general conversational messages, explanation requests, or code generation that DO NOT require any desktop operations, browser tasks, or file manipulation.
@@ -38,7 +38,11 @@ async def classify_intent(model, text: str) -> Classification:
             classification = "CHAT"
             
         logger.info("LLM Classifier classified intent", input=text[:80], classification=classification)
-        return classification
+        return classification, getattr(result, "usage", None)
     except Exception as e:
         logger.warning("LLM Classifier failed, falling back to CHAT", error=str(e))
-        return "CHAT"
+        return "CHAT", None
+
+async def classify_intent(model, text: str) -> Classification:
+    classification, _ = await classify_intent_with_usage(model, text)
+    return classification
