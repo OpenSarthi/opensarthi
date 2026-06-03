@@ -31,10 +31,11 @@ interface AssistantOverlayProps {
   onOpenCustomizer: () => void;
   onOpenMcpSettings: () => void;
   onOpenJsonImport: () => void;
+  onOpenContext: () => void;
   onNewChat?: () => void;
 }
 
-export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomizer, onOpenMcpSettings, onOpenJsonImport, onNewChat }: AssistantOverlayProps) {
+export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomizer, onOpenMcpSettings, onOpenJsonImport, onOpenContext, onNewChat }: AssistantOverlayProps) {
   const [textInput, setTextInput] = useState("");
   const [statusIdx, setStatusIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -265,7 +266,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             .trim();
 
           if (clean) {
-            wsClient.send("speak_text", { text: clean });
+            wsClient.send("speak_text", { text: clean, manual: false });
           }
           lastSentSourceRef.current = "text"; // reset expectation
         }
@@ -609,6 +610,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Customise</span>}
           </motion.button>
 
+
+
           {/* MCP Settings Button */}
           <motion.button
             onClick={onOpenMcpSettings}
@@ -770,9 +773,40 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           <div className="hud-panel" style={{ flex: "1 1 0%", minWidth: "320px", display: "flex", flexDirection: "column" }}>
             <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getThreadTitle()}</span>
-              {isTaskRunning && (
-                <span className="animate-pulse" style={{ fontSize: "10px", color: "var(--accent)", fontWeight: "bold", flexShrink: 0 }}>● ACTIVE</span>
-              )}
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+                {isTaskRunning && (
+                  <span className="animate-pulse" style={{ fontSize: "10px", color: "var(--accent)", fontWeight: "bold" }}>● ACTIVE</span>
+                )}
+                <button
+                  onClick={onOpenContext}
+                  title="Agent System Context"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    padding: "3px 8px",
+                    fontSize: "9px",
+                    fontWeight: "bold",
+                    letterSpacing: "0.05em",
+                    background: "rgba(0, 230, 180, 0.1)",
+                    color: "var(--accent)",
+                    border: "1px solid rgba(0, 230, 180, 0.2)",
+                    borderRadius: "3px",
+                    cursor: "pointer",
+                    transition: "all 0.2s"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(0, 230, 180, 0.2)";
+                    e.currentTarget.style.borderColor = "var(--accent)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "rgba(0, 230, 180, 0.1)";
+                    e.currentTarget.style.borderColor = "rgba(0, 230, 180, 0.2)";
+                  }}
+                >
+                  <Cpu size={10} /> CONTEXT
+                </button>
+              </div>
             </div>
             <ParticleBackground voiceState={voiceState} />
             {/* Slow scan line sweep across the panel */}

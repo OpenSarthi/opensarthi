@@ -14,7 +14,7 @@ import {
  */
 export function useWebSocket(port: number | null) {
   const [isConnected, setIsConnected] = useState(false);
-  const { setConnected, setTranscript, setVoiceState, addMessage, setPlan, updateStepStatus, setExecutingStep } =
+  const { setConnected, setTranscript, setVoiceState, addMessage, setPlan, updateStepStatus, setExecutingStep, onboardingCompleted } =
     useAssistantStore();
   const { setPendingRequest } = usePermissionStore();
   const portRef = useRef<number | null>(null);
@@ -146,7 +146,13 @@ export function useWebSocket(port: number | null) {
         setVoiceState("speaking");
       }),
 
-      wsClient.on("speech_completed", () => {
+      wsClient.on("speech_completed", (msg) => {
+        const wasManual = (msg?.payload as any)?.was_manual === true;
+        if (wasManual) {
+          // Manual TTS (user pressed listen button) — do NOT auto-restart listening
+          setVoiceState("idle");
+          return;
+        }
         const { continuousListening } = useAssistantStore.getState();
         if (continuousListening) {
           setVoiceState("listening");
@@ -253,12 +259,28 @@ export function useWebSocket(port: number | null) {
       wsClient.on("task_resumed", () => {
         useAssistantStore.getState().setTaskPaused(false);
       }),
+
+      wsClient.on("shell_output", (msg) => {
+        const { line } = msg.payload as { line: string; command: string };
+        useAssistantStore.getState().appendShellOutputLine(line);
+      }),
+
+      wsClient.on("intent_classified", (msg) => {
+        const { classification } = msg.payload as { classification: string };
+        useAssistantStore.getState().setLastClassification(classification);
+      }),
     ];
 
     return () => {
       unsubs.forEach((fn) => fn());
     };
   }, [port]);
+
+  useEffect(() => {
+    if (isConnected) {
+      wsClient.send("client_state", { page: onboardingCompleted ? "assistant" : "onboarding" });
+    }
+  }, [isConnected, onboardingCompleted]);
 
   return { isConnected };
 }

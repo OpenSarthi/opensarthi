@@ -86,6 +86,13 @@ interface AssistantState {
   setTaskPaused: (paused: boolean) => void;
   setOverlayMode: (val: boolean) => void;
   setSnapAlign: (align: "left" | "right" | "none") => void;
+  // Shell output streaming
+  shellOutputLines: string[];
+  appendShellOutputLine: (line: string) => void;
+  clearShellOutput: () => void;
+  // Intent classification from orchestrator
+  lastClassification: string | null;
+  setLastClassification: (c: string) => void;
 }
 
 export const useAssistantStore = create<AssistantState>((set) => ({
@@ -125,6 +132,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   userSkills: ["general", "desktop_automation", "developer", "home_user"],
   customPrompt: "",
   onboardingCompleted: typeof window !== "undefined" && localStorage.getItem("opensarthi_onboarding_done") === "1",
+  shellOutputLines: [],
+  lastClassification: null,
 
   setVoiceState: (voiceState) => set({ voiceState }),
   setConnected: (isConnected) => set({ isConnected }),
@@ -232,4 +241,10 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   setTaskPaused: (taskPaused) => set({ taskPaused }),
   setOverlayMode: (isOverlayMode) => set({ isOverlayMode }),
   setSnapAlign: (snapAlign) => set({ snapAlign }),
+
+  appendShellOutputLine: (line) => set((s) => ({
+    shellOutputLines: [...s.shellOutputLines.slice(-200), line],  // keep last 200 lines
+  })),
+  clearShellOutput: () => set({ shellOutputLines: [] }),
+  setLastClassification: (lastClassification) => set({ lastClassification }),
 }));

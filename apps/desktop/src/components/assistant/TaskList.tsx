@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, CheckCircle2, XCircle, Clock, Pause, Play, Square } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Clock, Pause, Play, Square, Terminal } from "lucide-react";
 import type { Message, Plan } from "../../lib/schemas";
 import { useAssistantStore } from "../../stores/assistantStore";
 import { wsClient } from "../../lib/ws";
@@ -77,6 +77,14 @@ export function TaskList({
 }: TaskListProps) {
 
   const taskPaused = useAssistantStore((s) => s.taskPaused);
+  const shellOutputLines = useAssistantStore((s) => s.shellOutputLines);
+  const lastClassification = useAssistantStore((s) => s.lastClassification);
+  const shellEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll shell output to bottom
+  useEffect(() => {
+    shellEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [shellOutputLines]);
 
   // Derive agentic tasks from messages
   const agenticTasks: AgenticTask[] = [];
@@ -149,7 +157,19 @@ export function TaskList({
   const reversedTasks = [...agenticTasks].reverse();
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", gap: "6px" }}>
+
+      {/* Classification badge */}
+      {lastClassification && (
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "3px 8px",
+          fontSize: "9px", fontWeight: "bold", letterSpacing: "0.08em",
+          borderRadius: "var(--radius-sm)", width: "fit-content",
+          background: lastClassification === "TASK" ? "rgba(var(--accent-rgb,255,80,80),0.12)" : "rgba(255,255,255,0.06)",
+          border: "1px solid rgba(255,255,255,0.1)",
+          color: lastClassification === "TASK" ? "var(--accent)" : "var(--text-secondary)" }}>
+          {lastClassification === "TASK" ? "⚡" : lastClassification === "CHAT" ? "💬" : "❓"} {lastClassification}
+        </div>
+      )}
 
       {agenticTasks.length === 0 ? (
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.5 }}>
@@ -312,6 +332,37 @@ export function TaskList({
                   >
                     <Square size={10} /> STOP
                   </button>
+                </div>
+              )}
+              {/* Shell output terminal — shown when task is selected/running and shell lines are streaming */}
+              {(task.status === "running" || task.id === selectedTaskId) && shellOutputLines.length > 0 && (
+                <div style={{
+                  marginTop: "6px",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  background: "rgba(0,0,0,0.45)",
+                  overflow: "hidden",
+                }}>
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: "5px",
+                    padding: "4px 8px", borderBottom: "1px solid rgba(255,255,255,0.07)",
+                    fontSize: "9px", color: "var(--text-secondary)", fontWeight: "bold",
+                  }}>
+                    <Terminal size={9} /> SHELL OUTPUT
+                  </div>
+                  <div style={{
+                    maxHeight: "120px", overflowY: "auto",
+                    padding: "6px 8px",
+                    fontFamily: "var(--font-mono)", fontSize: "9px",
+                    color: "rgba(180, 255, 180, 0.85)", lineHeight: "1.5",
+                  }}>
+                    {shellOutputLines.map((line, i) => (
+                      <div key={i} style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                        {line}
+                      </div>
+                    ))}
+                    <div ref={shellEndRef} />
+                  </div>
                 </div>
               )}
             </motion.div>
