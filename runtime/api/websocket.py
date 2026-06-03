@@ -399,9 +399,7 @@ class Session:
                 self.stop_listen_loop()
             elif page == "assistant":
                 self._session_active = True
-                from config import get_active_api_key, settings
-                if get_active_api_key() or settings.ai_provider.lower() == "ollama":
-                    self.start_listen_loop()
+                self.start_listen_loop()
         elif msg_type == "run_json_plan":
             steps = payload.get("steps", [])
             goal = payload.get("goal", "Custom JSON Task")
@@ -596,8 +594,7 @@ class Session:
                     logger.warning("Failed to propagate wake word updates to pipeline", error=str(ve))
 
             logger.info("Settings updated", provider=settings.ai_provider, model=settings.cloud_model)
-            from config import get_active_api_key
-            if getattr(self, "_session_active", False) and (get_active_api_key() or settings.ai_provider.lower() == "ollama"):
+            if getattr(self, "_session_active", False):
                 self.start_listen_loop()
 
     def start_listen_loop(self):

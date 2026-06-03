@@ -51,6 +51,7 @@ export default function App() {
     setAllApiKeys,
     resetSessionTokens,
     onboardingCompleted,
+    isConnected,
     setPersonalization,
     setOnboardingCompleted,
   } = useAssistantStore();
@@ -167,8 +168,17 @@ export default function App() {
         } : {})
       });
     };
-    // Delay slightly to allow WS to connect if this is the very first launch
-    setTimeout(sendPersonalization, 2000);
+    if (isConnected) {
+      sendPersonalization();
+    } else {
+      const interval = setInterval(() => {
+        if (useAssistantStore.getState().isConnected) {
+          sendPersonalization();
+          clearInterval(interval);
+        }
+      }, 300);
+      setTimeout(() => clearInterval(interval), 10000);
+    }
   };
 
   return (

@@ -32,6 +32,14 @@ class VoicePipeline:
         self.listen_thread = None
         self.stt = FasterWhisperSTT()
 
+        # Instantiate wake detector to avoid warnings and support hot updates
+        from voice.wakeword import WakeWordDetector
+        from config import settings
+        self.wake_detector = WakeWordDetector(
+            phrases=getattr(settings, "wake_words", ["hey sarthi", "hello sarthi"]),
+            threshold=getattr(settings, "wake_word_threshold", 0.5)
+        )
+
     async def initialize(self):
         """Pre-adjust for ambient noise and pre-load local offline STT model."""
         logger.info("Initializing voice models")
@@ -103,6 +111,8 @@ class VoicePipeline:
                         time.sleep(1)
         except Exception as e:
             logger.error(f"Failed to open microphone: {e}")
+        finally:
+            logger.info("Mic listening thread exiting")
 
     async def start_listening(self) -> AsyncGenerator[str, None]:
         self.is_listening = True
@@ -115,8 +125,12 @@ class VoicePipeline:
             except Exception:
                 pass
 
-        self.listen_thread = threading.Thread(target=self._listen_worker, daemon=True)
-        self.listen_thread.start()
+        if self.listen_thread is None or not self.listen_thread.is_alive():
+            self.listen_thread = threading.Thread(target=self._listen_worker, daemon=True)
+            self.listen_thread.start()
+            logger.info("Spawned new mic listening thread")
+        else:
+            logger.info("Reusing existing active mic listening thread")
         
         try:
             while self.is_listening:
@@ -146,8 +160,6 @@ class VoicePipeline:
 
     def stop_listening(self):
         self.is_listening = False
-        if self.listen_thread:
-            self.listen_thread = None
         logger.info("Stopped native Python listening")
 
     def stop_speaking(self):
