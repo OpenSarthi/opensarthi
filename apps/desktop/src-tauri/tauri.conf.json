@@ -54,8 +54,15 @@
     "resources": [
       "../../../runtime/*.py",
       "../../../runtime/requirements.txt",
+      "../../../runtime/agents/**/*",
       "../../../runtime/api/**/*",
+      "../../../runtime/llm/**/*",
+      "../../../runtime/mcp/**/*",
+      "../../../runtime/memory/**/*",
+      "../../../runtime/observer/**/*",
       "../../../runtime/planner/**/*",
+      "../../../runtime/providers/**/*",
+      "../../../runtime/security/**/*",
       "../../../runtime/tools/**/*",
       "../../../runtime/voice/**/*"
     ],
