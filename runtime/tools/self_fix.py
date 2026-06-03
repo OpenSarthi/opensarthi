@@ -13,10 +13,17 @@ class SelfFixTool(BaseTool):
     name = "self_fix"
     description = (
         "Diagnose and automatically heal code issues in the OpenSarthi codebase. "
-        "Will run typecheck/compilation, capture output, and rewrite the code using the model. "
-        "Args: description (string: what is broken or needs fixing), target_file (string: path to the file relative to workspace)"
+        "Runs diagnostics, rewrites the file using AI, verifies it compiles, and rolls back on failure."
     )
     risk_level = RiskLevel.DANGEROUS
+    schema = {
+        "type": "object",
+        "properties": {
+            "description": {"type": "string", "description": "What is broken or needs fixing. Be specific — name the symptom and relevant behaviour."},
+            "target_file": {"type": "string", "description": "Path to the file relative to workspace root, e.g. 'runtime/tools/media.py'"},
+        },
+        "required": ["description", "target_file"],
+    }
 
     async def execute(self, args: dict, permission_manager=None) -> ToolResult:
         description = args.get("description", "").strip()

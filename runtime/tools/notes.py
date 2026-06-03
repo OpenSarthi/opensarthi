@@ -7,11 +7,16 @@ NOTES_DIR = os.path.expanduser("~/opensarthi_notes")
 
 class SaveNoteTool(BaseTool):
     name = "save_note"
-    description = (
-        "Create or update a markdown note in the user's local notes folder. "
-        "Args: title (string: note title/filename, e.g., 'project_ideas'), content (string: note body)"
-    )
+    description = "Create or update a markdown note in the user's local notes folder."
     risk_level = RiskLevel.SAFE
+    schema = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Note title/filename, e.g. 'project_ideas', 'meeting_notes'"},
+            "content": {"type": "string", "description": "Note body text (markdown supported)"},
+        },
+        "required": ["title", "content"],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         title = args.get("title", "").strip()
@@ -43,11 +48,15 @@ class SaveNoteTool(BaseTool):
 
 class GetNotesTool(BaseTool):
     name = "get_notes"
-    description = (
-        "Search and retrieve user markdown notes by keyword query, or list all note titles. "
-        "Args: query (string, optional: keyword to search note contents, leave empty to list all notes)"
-    )
+    description = "Search and retrieve markdown notes by keyword, or list all notes if no query given."
     risk_level = RiskLevel.SAFE
+    schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Keyword or phrase to search note contents. Leave empty to list all notes."},
+        },
+        "required": [],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         query = args.get("query", "").strip().lower()

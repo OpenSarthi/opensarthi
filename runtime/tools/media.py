@@ -5,11 +5,15 @@ from planner.schemas import ToolResult, ToolResultConfidence
 
 class MediaControlTool(BaseTool):
     name = "media_control"
-    description = (
-        "Control active media players (Spotify, YouTube in browser, VLC, etc.) via playerctl. "
-        "Args: action (string: 'play-pause', 'next', 'previous', 'stop', 'volume-up', 'volume-down')"
-    )
+    description = "Control active media players via playerctl (Spotify, VLC, YouTube in browser, etc.)."
     risk_level = RiskLevel.SAFE
+    schema = {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["play-pause", "next", "previous", "stop", "volume-up", "volume-down"], "description": "Media control action"},
+        },
+        "required": ["action"],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         action = args.get("action", "").lower()

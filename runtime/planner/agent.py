@@ -24,17 +24,16 @@ class AgentDependencies(BaseModel):
     custom_prompt: str = ""
 
 
-# ─── Overhauled System Prompt ────────────────────────────────────────────────
-
-def build_system_prompt(skills: list, user_name: str, custom_prompt: str) -> str:
-    has_desktop  = "desktop_automation" in skills
-    has_dev      = "developer" in skills
-    has_admin    = "system_admin" in skills
-    has_media    = "media" in skills
-    has_writing  = "writing" in skills
-    has_research = "research" in skills
-    has_web      = "web" in skills
-    has_privacy  = "privacy" in skills
+# ─── Overhauled System Prompt ──────────────────────────────────────────────
+def build_system_prompt(skills: list, user_name: str, custom_prompt: str, chat_only: bool = False) -> str:
+    has_desktop  = "desktop_automation" in skills and not chat_only
+    has_dev      = "developer" in skills and not chat_only
+    has_admin    = "system_admin" in skills and not chat_only
+    has_media    = "media" in skills and not chat_only
+    has_writing  = "writing" in skills and not chat_only
+    has_research = "research" in skills and not chat_only
+    has_web      = "web" in skills and not chat_only
+    has_privacy  = "privacy" in skills and not chat_only
 
     name_clause = f"The user's name is {user_name}. Address them by name occasionally when it feels natural." if user_name else ""
     custom_clause = f"\n\nUSER CUSTOM INSTRUCTIONS (follow these precisely):\n{custom_prompt}" if custom_prompt else ""
@@ -89,6 +88,28 @@ STRICT RULES:
 • Shell tool runs commands in a sandboxed terminal. Not all system commands are permitted.
 • Coordinate clicks (click tool) are unreliable if window is resized/moved. Prefer click_element when possible.
 • wait_after is NOT needed between steps unless you expect a UI transition that takes visible time.
+• REPLANNING & STATE CONTINUATION: If you are executed in a replanning attempt (retry/replan > 0), inspect the PREVIOUS ACTIONS and FAILED ACTIONS inside the EXECUTION CONTEXT. Do NOT start planning from the beginning. Continue execution from the current desktop state to achieve the final goal. Do NOT repeat steps that have already succeeded. Avoid repeating failed steps unless you change arguments to fix them.
+
+TOOL ROUTING (use these rules to pick the right tool):
+• Open an app → open_app(app: str)
+• Search the web / current events / facts → search_web(query: str)
+• Weather / temperature / forecast → get_weather(location?: str, days?: number)
+• Set a countdown timer → set_timer(minutes?: number, seconds?: number, label?: str)
+• List active timers → list_timers()
+• Cancel a timer → cancel_timer(id?: number)
+• Browse files/folders → list_files(path?: str)
+• Open a file or folder → open_path(path: str)
+• Read a text file → read_file(path: str, max_chars?: number)
+• Control volume → set_volume(level?: 0-100, action?: up/down/mute/unmute)
+• Battery status → get_battery()
+• Wi-Fi on/off → toggle_wifi(on?: bool)
+• Control music/video players → media_control(action: play-pause|next|previous|stop)
+• Store a fact in memory → remember(fact: str, importance?: 0.1-1.0)
+• Recall stored facts → recall(query: str)
+• Forget a stored fact → forget_memory(query: str)
+• Save a note → save_note(title: str, content: str)
+• Search/list notes → get_notes(query?: str)
+• Fix OpenSarthi code → self_fix(description: str, target_file: str)
 
 JSON PLAN FORMAT:
 ```json
@@ -169,26 +190,7 @@ def dynamic_system_prompt(ctx: RunContext[AgentDependencies]) -> str:
     )
 
 
-def _args_hint(tool) -> str:
-    hints = {
-        "click": "x: int, y: int, button?: str",
-        "type_text": "text: str",
-        "press_key": "key: str",
-        "open_app": "app: str",
-        "click_element": "role: str, name: str",
-        "focus_window": "title: str",
-        "observe_desktop": "(no args)",
-        "shell": "command: str, timeout?: float",
-        "wait_for_window": "title: str, timeout?: float",
-        "wait_for_text": "text: str, timeout?: float",
-        "media_control": "action: str",
-        "remember": "fact: str, importance?: float",
-        "recall": "query: str",
-        "save_note": "title: str, content: str",
-        "get_notes": "query?: str",
-        "self_fix": "description: str, target_file: str",
-    }
-    return hints.get(tool.name, "...")
+# _args_hint is removed — schemas are now authoritative (see BaseTool.args_schema_summary())
 
 
 def build_structured_context(
@@ -249,11 +251,25 @@ def build_structured_context(
             execution_lines.append(f"  ✗ FAILED: {action}")
     execution_ctx = "\n".join(execution_lines) or "  (none)"
 
+    # ─── Ambient Context (time, date — always injected, free and local) ────
+    try:
+        import datetime
+        now = datetime.datetime.now()
+        ambient = f"  Date/Time: {now.strftime('%A, %d %B %Y %H:%M')} (local)"
+    except Exception:
+        ambient = ""
+
     # ─── Context Assembly ──────────────────────────────────────────────────
     context = f"""━━━ OPENSARTHI AGENT CONTEXT ━━━
 
 GOAL:
   {goal}
+"""
+
+    if ambient:
+        context += f"""
+AMBIENT:
+{ambient}
 """
 
     # Compressed conversation summary (replaces raw history when available)
@@ -262,6 +278,7 @@ GOAL:
 CONVERSATION SUMMARY:
   {summarized_context}
 """
+
 
     if recalled_memories:
         memory_lines = [f"  • {m.content[:200]} (source: {m.source})" for m in recalled_memories]
@@ -282,7 +299,10 @@ EXECUTION CONTEXT:
         from tools.registry import all_tools
         from tools.base import RiskLevel
         tools = all_tools()
-        tool_lines = [f"  • {t.name}({_args_hint(t)}) — {t.description[:80]}" for t in tools]
+        tool_lines = [
+            f"  • {t.name}({t.args_schema_summary()}) — {t.description[:80]}"
+            for t in tools
+        ]
         tools_section = "\n".join(tool_lines)
 
         safe = [t.name for t in tools if t.risk_level == RiskLevel.SAFE]

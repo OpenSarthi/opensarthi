@@ -220,8 +220,17 @@ async def _ensure_window_focus(window_id: str) -> bool:
 
 class ClickTool(BaseTool):
     name = "click"
-    description = "Click at (x, y) coordinates. Automatically re-focuses the pinned task window before clicking. Args: x (number), y (number), button (string, optional: 'left', 'right', 'middle', default 'left')"
+    description = "Click at (x, y) coordinates. Automatically re-focuses the pinned task window before clicking."
     risk_level = RiskLevel.MODERATE
+    schema = {
+        "type": "object",
+        "properties": {
+            "x": {"type": "number", "description": "X coordinate to click"},
+            "y": {"type": "number", "description": "Y coordinate to click"},
+            "button": {"type": "string", "enum": ["left", "right", "middle"], "description": "Mouse button (default: left)"},
+        },
+        "required": ["x", "y"],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         x = args.get("x")
@@ -250,8 +259,15 @@ class ClickTool(BaseTool):
 
 class TypeTextTool(BaseTool):
     name = "type_text"
-    description = "Type text into the currently pinned task window. Automatically re-focuses the target window before typing so user focus-changes do not interfere. Args: text (string)"
+    description = "Type text into the currently pinned task window. Automatically re-focuses the target window before typing."
     risk_level = RiskLevel.MODERATE
+    schema = {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "description": "Text to type"},
+        },
+        "required": ["text"],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         text = args.get("text", "")
@@ -276,8 +292,15 @@ class TypeTextTool(BaseTool):
 
 class PressKeyTool(BaseTool):
     name = "press_key"
-    description = "Presses a specific keyboard key in the pinned task window (e.g., 'Return', 'Enter', 'Tab', 'Escape'). Args: key (string)"
+    description = "Press a keyboard key in the pinned task window (e.g., 'Return', 'Tab', 'Escape', 'ctrl+c')."
     risk_level = RiskLevel.MODERATE
+    schema = {
+        "type": "object",
+        "properties": {
+            "key": {"type": "string", "description": "Key to press, e.g. 'Return', 'Tab', 'Escape', 'ctrl+c'"},
+        },
+        "required": ["key"],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         key = args.get("key", "")
@@ -302,8 +325,15 @@ class PressKeyTool(BaseTool):
 
 class OpenAppTool(BaseTool):
     name = "open_app"
-    description = "Open an application by name (e.g. 'firefox', 'konsole', 'dolphin'). Args: app (string)"
+    description = "Launch a desktop application by name (e.g. 'firefox', 'dolphin', 'konsole'). Aliases like 'file manager' → 'dolphin' are resolved automatically."
     risk_level = RiskLevel.MODERATE
+    schema = {
+        "type": "object",
+        "properties": {
+            "app": {"type": "string", "description": "Application name or alias, e.g. 'firefox', 'dolphin', 'file manager', 'vlc'"},
+        },
+        "required": ["app"],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         app = args.get("app", "").strip()
@@ -378,8 +408,15 @@ class OpenAppTool(BaseTool):
 
 class FocusWindowTool(BaseTool):
     name = "focus_window"
-    description = "Focus/bring a window to the foreground by its title and pin it as the target for future type/click actions. Args: title (string)"
+    description = "Bring a window to the foreground by its title and pin it as the target for future type/click actions."
     risk_level = RiskLevel.MODERATE
+    schema = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Window title substring to search for"},
+        },
+        "required": ["title"],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         title = args.get("title", "").strip()
@@ -448,11 +485,19 @@ class FocusWindowTool(BaseTool):
 class ClickElementTool(BaseTool):
     name = "click_element"
     description = (
-        "Click a UI element by its role and name using AT-SPI accessibility tree. "
-        "More reliable than coordinate clicking — works regardless of window position. "
-        "Args: role (string), name (string)"
+        "Click a UI element by its accessibility role and name. More reliable than coordinate clicking. "
+        "Use role='push button' name='OK' or role='list item' name='Music'. "
+        "Call observe_desktop first to see what elements are available."
     )
     risk_level = RiskLevel.MODERATE
+    schema = {
+        "type": "object",
+        "properties": {
+            "role": {"type": "string", "description": "AT-SPI role, e.g. 'push button', 'list item', 'menu item', 'check box'"},
+            "name": {"type": "string", "description": "Visible element label or text, e.g. 'OK', 'Music', 'Play'"},
+        },
+        "required": [],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         from providers.linux.accessibility import AccessibilityProvider
@@ -500,11 +545,15 @@ class ObserveDesktopTool(BaseTool):
     """Get current desktop state: open windows, active window, focused element."""
     name = "observe_desktop"
     description = (
-        "Observe the current desktop state: list of open windows, active window title, "
-        "focused element role and name. Use this when you are unsure about the current state "
-        "before taking action. Args: (none)"
+        "Inspect the current desktop: open windows, active window title, focused AT-SPI element. "
+        "Always call this before click_element when unsure of element names or roles."
     )
     risk_level = RiskLevel.SAFE
+    schema = {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         lines = []

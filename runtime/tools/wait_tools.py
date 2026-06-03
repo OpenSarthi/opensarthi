@@ -4,8 +4,16 @@ from sync_primitives import wait_for_window, wait_for_text_visible, TimeoutError
 
 class WaitForWindowTool(BaseTool):
     name = "wait_for_window"
-    description = "Wait until a window with the given title appears, then automatically pin it as the target for future type/click actions. Args: title (string), timeout (number, default 10.0)"
+    description = "Wait until a window with the given title appears, then pin it as the target for future type/click actions."
     risk_level = RiskLevel.SAFE
+    schema = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Window title substring to wait for"},
+            "timeout": {"type": "number", "description": "Max wait time in seconds (default: 10)"},
+        },
+        "required": ["title"],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         title = args.get("title")
@@ -50,8 +58,16 @@ class WaitForWindowTool(BaseTool):
 
 class WaitForTextTool(BaseTool):
     name = "wait_for_text"
-    description = "Wait until specific text is visible on screen. Args: text (string), timeout (number, default 10.0)"
+    description = "Wait until specific text becomes visible on screen."
     risk_level = RiskLevel.SAFE
+    schema = {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "description": "Text string to wait for"},
+            "timeout": {"type": "number", "description": "Max wait time in seconds (default: 10)"},
+        },
+        "required": ["text"],
+    }
 
     async def execute(self, args: dict) -> ToolResult:
         text = args.get("text")

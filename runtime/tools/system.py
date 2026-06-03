@@ -8,8 +8,16 @@ from security import is_blocked, sandboxed_execute
 
 class ShellTool(BaseTool):
     name = "shell"
-    description = "Execute a shell command. Use for read-only operations and system tasks. Args: command (string), timeout (number, optional default 30)"
+    description = "Execute a shell command. For read-only operations and system tasks. Sandboxed — destructive commands are blocked."
     risk_level = RiskLevel.DANGEROUS
+    schema = {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string", "description": "Shell command to execute"},
+            "timeout": {"type": "number", "description": "Timeout in seconds (default: 30)"},
+        },
+        "required": ["command"],
+    }
 
     async def execute(self, args: dict, permission_manager=None) -> ToolResult:
         command = args.get("command", "")
