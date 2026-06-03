@@ -28,6 +28,7 @@ export function ContextModal({ isOpen, onClose }: ContextModalProps) {
     customPrompt,
     lastClassification,
     shellOutputLines,
+    messages,
     setPersonalization,
   } = useAssistantStore();
 
@@ -275,6 +276,49 @@ ${localSkills.map(s => `• ${s.toUpperCase()}_CONTEXT: enabled`).join("\n")}`;
                   whiteSpace: "pre-wrap"
                 }}>
                   {getPromptPreview()}
+                </div>
+              </div>
+
+              {/* Active Conversation History Context */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "11px", color: "var(--text-secondary)", letterSpacing: "0.05em" }}>ACTIVE CONVERSATION HISTORY CONTEXT</label>
+                <div style={{
+                  maxHeight: "130px",
+                  overflowY: "auto",
+                  padding: "10px 12px",
+                  fontSize: "11px",
+                  background: "rgba(0,0,0,0.45)",
+                  borderRadius: "6px",
+                  border: "1px solid var(--border)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "8px"
+                }}>
+                  {messages.length === 0 ? (
+                    <span style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "11px" }}>No past messages in the current thread.</span>
+                  ) : (
+                    messages.map((msg, i) => (
+                      <div key={i} style={{ display: "flex", gap: "6px", fontSize: "11px" }}>
+                        <span style={{
+                          fontWeight: "bold",
+                          color: msg.role === "user" ? "var(--accent)" : "var(--text-secondary)",
+                          fontFamily: "var(--font-mono)",
+                          fontSize: "10px",
+                          width: "80px",
+                          flexShrink: 0
+                        }}>
+                          [{msg.role.toUpperCase()}]:
+                        </span>
+                        <span style={{
+                          color: "rgba(255,255,255,0.75)",
+                          whiteSpace: "pre-wrap",
+                          overflowWrap: "anywhere"
+                        }}>
+                          {msg.content.length > 120 ? `${msg.content.slice(0, 120)}...` : msg.content}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 

@@ -296,7 +296,17 @@ class Session:
                 # Log conversational run context/prompt
                 chat_logger = DevLogger(goal=text, model_name=model_name, provider=provider)
                 chat_logger.log_system_prompt(sys_prompt)
-                chat_logger.log_planning_context(0, f"CHAT REQUEST:\n{text}")
+                
+                history_str = ""
+                if message_history:
+                    history_str = "━━━ CONVERSATION HISTORY CONTEXT ━━━\n"
+                    for h_msg in message_history:
+                        parts_str = " ".join([str(getattr(p, 'content', '')) for p in getattr(h_msg, 'parts', [])])
+                        role = "user" if h_msg.__class__.__name__ == 'ModelRequest' else "assistant"
+                        history_str += f"[{role.upper()}]: {parts_str}\n"
+                    history_str += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                
+                chat_logger.log_planning_context(0, f"{history_str}CHAT REQUEST:\n{text}")
 
                 chat_agent = PydanticAgent(
                     model=active_model,
