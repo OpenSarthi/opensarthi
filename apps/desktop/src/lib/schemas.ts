@@ -39,6 +39,9 @@ export const WSMessageTypeSchema = z.enum([
   "task_resumed",
   "tool_terminated",
   "run_json_plan",
+  "shell_output",
+  "intent_classified",
+  "client_state",
 ]);
 export type WSMessageType = z.infer<typeof WSMessageTypeSchema>;
 

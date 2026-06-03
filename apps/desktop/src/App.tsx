@@ -7,6 +7,7 @@ import { HistoryView } from "./components/settings/HistoryView";
 import { OnboardingView } from "./components/onboarding/OnboardingView";
 import { McpSettingsModal } from "./components/settings/McpSettingsModal";
 import { JsonImportModal } from "./components/assistant/JsonImportModal";
+import { ContextModal } from "./components/assistant/ContextModal";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useWindowOverlay } from "./hooks/useWindowOverlay";
@@ -22,6 +23,7 @@ export default function App() {
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [showMcpSettings, setShowMcpSettings] = useState(false);
   const [showJsonImport, setShowJsonImport] = useState(false);
+  const [showContext, setShowContext] = useState(false);
 
   // Invoke window overlay and snapping logic
   useWindowOverlay();
@@ -192,12 +194,14 @@ export default function App() {
         onOpenCustomizer={() => setShowCustomizer(true)}
         onOpenMcpSettings={() => setShowMcpSettings(true)}
         onOpenJsonImport={() => setShowJsonImport(true)}
+        onOpenContext={() => setShowContext(true)}
         onNewChat={() => resetSessionTokens()}
       />
       <PermissionDialog />
       <InputDialog />
       <McpSettingsModal isOpen={showMcpSettings} onClose={() => setShowMcpSettings(false)} />
       <JsonImportModal isOpen={showJsonImport} onClose={() => setShowJsonImport(false)} />
+      <ContextModal isOpen={showContext} onClose={() => setShowContext(false)} />
       <AnimatePresence>
         {showSettings && (
           <SettingsView

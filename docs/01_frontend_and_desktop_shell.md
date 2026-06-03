@@ -340,6 +340,20 @@ Modals like the **Customise Persona & Skills** modal and **MCP Settings** modal 
 
 ---
 
+### 6.4 UI Backlog / Unimplemented Backend Features
+
+The Python backend runtime currently supports several capabilities that emit WebSocket events, but these lack corresponding UI components or handlers in the React frontend:
+
+| Missing UI Feature | Backend Event / Property | Description |
+|--------------------|--------------------------|-------------|
+| **Markdown Rendering** | `assistant_response` | The backend `CHAT` handler sends properly formatted Markdown and code blocks, but `AssistantOverlay.tsx` strips Markdown rendering it as plain text. Requires a `react-markdown` integration. |
+| **Intent Indicators** | `intent_classified` | The backend dynamically classifies tasks (`CHAT`, `TASK`, `CLARIFY`), but the UI does not visually distinguish these intents (e.g., no "Thinking (Task)" badge). |
+| **Live Shell Output Console** | `shell_output` | The `ShellTool` streams stdout line-by-line. The frontend stores this, but lacks a terminal/console window to actually view the stream. |
+| **Pause/Cancel Controls** | `pause_execution`, `request_cancel` | The backend planner can be paused or aborted mid-execution, but the UI lacks corresponding "Pause", "Resume", or "Cancel Plan" buttons. |
+| **Manual TTS Playback** | `manual` flag in `speak_text` | The backend supports reading text manually without triggering continuous listening, but the UI lacks a "Read Aloud" button on past messages. |
+
+---
+
 ## 7. Monorepo Structure
 
 ```

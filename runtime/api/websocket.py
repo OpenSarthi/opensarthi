@@ -38,6 +38,10 @@ class Session:
         self.thread_id = db.create_thread()
         self._message_task = None
         self._current_runtime = None
+        self._manual_tts = False  # True when user manually triggered TTS via listen button
+        self._session_active = False  # True after onboarding complete + API key confirmed
+        # Per-session orchestrator for context summarization
+        self._orchestrator = None
 
     async def send_message(self, msg_type: str, payload: dict):
         msg = {
@@ -92,13 +96,17 @@ class Session:
         await self.send_message("agent_state", state_ctx.to_dict())
 
 
-    async def speak(self, text: str):
+    async def speak(self, text: str, manual: bool = False):
         """Play speech and broadcast speech status events to the client."""
         try:
+            self._manual_tts = manual
             await self.send_message("speech_started", {})
             await self.voice_pipeline.speak(text)
         finally:
-            await self.send_message("speech_completed", {})
+            await self.send_message("speech_completed", {"was_manual": manual})
+            # Auto-listen resumes only if this was an agent-triggered TTS, not manual
+            if manual:
+                self._manual_tts = False
 
     async def handle_json_plan(self, steps: list, goal: str):
         """Execute a pre-built JSON plan directly (JSON import feature)."""
@@ -137,7 +145,11 @@ class Session:
             )
             self._current_runtime = runtime
 
-            final_output = await runtime.run_plan_directly(steps, goal)
+            try:
+                final_output = await runtime.run_plan_directly(steps, goal)
+            except asyncio.CancelledError:
+                final_output = "Execution cancelled by user."
+                logger.info("JSON plan execution task was cancelled by user.")
 
             ast_id = str(uuid.uuid4())
             ast_ts = int(time.time() * 1000)
@@ -204,20 +216,33 @@ class Session:
             model_name = settings.local_model if provider == "ollama" else settings.cloud_model
             api_key = get_active_api_key()
 
+            # Guard: require API key before processing any message
+            if not api_key and provider != "ollama":
+                error_msg = "⚠️ No API key configured. Please add an API key in Settings before using the assistant."
+                err_id = str(uuid.uuid4())
+                err_ts = int(time.time() * 1000)
+                db.save_message(self.thread_id, err_id, "assistant", error_msg, err_ts)
+                await self.send_message("assistant_response", {
+                    "id": err_id, "role": "assistant", "content": error_msg,
+                    "timestamp": err_ts, "is_voice": False,
+                    "usage": {"request_tokens": 0, "response_tokens": 0, "total_tokens": 0}
+                })
+                return
+
             from llm import build_model
             active_model = build_model(provider, model_name, api_key)
 
             from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart, TextPart
-            
-            # Fetch message history (all messages saved so far in this thread)
+
+            # Fetch message history for this thread
             history_messages = db.get_history(self.thread_id)
-            
-            # Trim to last 20 messages to stay within context limits (skip the current prompt which is last)
+
+            # Trim to last 20 messages (skip the current prompt which is last)
             MAX_HISTORY = 20
             trimmed_history = history_messages[:-1]
             if len(trimmed_history) > MAX_HISTORY:
                 trimmed_history = trimmed_history[-MAX_HISTORY:]
-            
+
             message_history = []
             for msg in trimmed_history:
                 if msg["role"] == "user":
@@ -225,33 +250,107 @@ class Session:
                 elif msg["role"] == "assistant":
                     message_history.append(ModelResponse(parts=[TextPart(content=msg["content"])]))
 
-            from agent_runtime import AgentRuntime
-            from observation import DesktopObserver
-            from memory import MemoryManager
+            # Route through orchestrator for classification + context summarization
+            if self._orchestrator is None:
+                from agents import OrchestratorAgent
+                self._orchestrator = OrchestratorAgent(
+                    ws_handler=self, model=active_model, deps=self.deps
+                )
 
+            from observation import DesktopObserver
             observer = DesktopObserver()
-            memory_manager = MemoryManager(self.thread_id)
-            runtime = AgentRuntime(
-                ws_handler=self,
-                agent=agent,
+            classification, summarized_context = await self._orchestrator.route(
+                goal=text,
+                message_history=history_messages,
                 observer=observer,
-                deps=self.deps,
-                memory_manager=memory_manager
             )
-            self._current_runtime = runtime
+            # Notify the frontend of the classification
+            await self.send_message("intent_classified", {"classification": classification})
 
             prefix_warning = ""
             usage = None
-            try:
-                final_output = await runtime.run(
-                    goal=text,
-                    model=active_model,
-                    message_history=message_history
+            final_output = ""
+
+            if classification in ("CHAT", "CLARIFY"):
+                logger.info("Routing to direct CHAT/CLARIFY handler")
+                self._current_runtime = None
+                from pydantic_ai import Agent as PydanticAgent
+                from planner.agent import build_system_prompt
+                from dev_logger import DevLogger
+
+                # Build system prompt utilizing user's customizations (name, skills, custom instructions)
+                sys_prompt = build_system_prompt(
+                    skills=self.deps.skills,
+                    user_name=self.deps.user_name,
+                    custom_prompt=self.deps.custom_prompt
                 )
-                usage = runtime.last_usage
-            except Exception as e:
-                logger.error("Agent execution failed", error=str(e))
-                raise e
+                # Append direct conversation rules to the customized prompt
+                sys_prompt += (
+                    "\n\n━━━ CONVERSATIONAL ASSISTANT RULES ━━━\n"
+                    "Answer the user's conversational questions, explanations, or code requests directly "
+                    "using clean, beautifully formatted GitHub-flavored markdown.\n"
+                    "If the user asks for code, provide complete, well-commented code blocks with syntax highlighting.\n"
+                    "Do not output planning schemas, JSON templates, or internal thoughts unless explicitly requested."
+                )
+
+                # Log conversational run context/prompt
+                chat_logger = DevLogger(goal=text, model_name=model_name, provider=provider)
+                chat_logger.log_system_prompt(sys_prompt)
+                
+                history_str = ""
+                if message_history:
+                    history_str = "━━━ CONVERSATION HISTORY CONTEXT ━━━\n"
+                    for h_msg in message_history:
+                        parts_str = " ".join([str(getattr(p, 'content', '')) for p in getattr(h_msg, 'parts', [])])
+                        role = "user" if h_msg.__class__.__name__ == 'ModelRequest' else "assistant"
+                        history_str += f"[{role.upper()}]: {parts_str}\n"
+                    history_str += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                
+                chat_logger.log_planning_context(0, f"{history_str}CHAT REQUEST:\n{text}")
+
+                chat_agent = PydanticAgent(
+                    model=active_model,
+                    system_prompt=sys_prompt
+                )
+                try:
+                    result = await chat_agent.run(text, message_history=message_history)
+                    final_output = result.output
+                    usage = result.usage
+                    chat_logger.log_llm_response(0, final_output)
+                    chat_logger.finalize(final_output)
+                except Exception as e:
+                    logger.error("Direct chat generation failed", error=str(e))
+                    chat_logger.log(f"CHAT ERROR: {str(e)}")
+                    chat_logger.finalize(f"ERROR: {str(e)}")
+                    raise e
+            else:
+                logger.info("Routing to TASK AgentRuntime planner")
+                from memory import MemoryManager
+                from agent_runtime import AgentRuntime
+                memory_manager = MemoryManager(self.thread_id)
+                runtime = AgentRuntime(
+                    ws_handler=self,
+                    agent=agent,
+                    observer=observer,
+                    deps=self.deps,
+                    memory_manager=memory_manager
+                )
+                self._current_runtime = runtime
+                try:
+                    final_output = await runtime.run(
+                        goal=text,
+                        model=active_model,
+                        message_history=message_history,
+                        summarized_context=summarized_context,
+                    )
+                    usage = runtime.last_usage
+                except asyncio.CancelledError:
+                    final_output = "Execution cancelled by user."
+                    usage = None
+                    logger.info("Agent execution task was cancelled by user.")
+                except Exception as e:
+                    logger.error("Agent execution failed", error=str(e))
+                    raise e
 
             # Extract token usage
             try:
@@ -292,7 +391,18 @@ class Session:
         msg_type = data.get("type")
         payload = data.get("payload", {})
 
-        if msg_type == "run_json_plan":
+        if msg_type == "client_state":
+            page = payload.get("page")
+            logger.info("Received client page state update", page=page)
+            if page == "onboarding":
+                self._session_active = False
+                self.stop_listen_loop()
+            elif page == "assistant":
+                self._session_active = True
+                from config import get_active_api_key, settings
+                if get_active_api_key() or settings.ai_provider.lower() == "ollama":
+                    self.start_listen_loop()
+        elif msg_type == "run_json_plan":
             steps = payload.get("steps", [])
             goal = payload.get("goal", "Custom JSON Task")
             self._message_task = asyncio.create_task(self.handle_json_plan(steps, goal))
@@ -317,6 +427,8 @@ class Session:
         elif msg_type == "new_chat":
             import db
             self.thread_id = db.create_thread()
+            if self._orchestrator:
+                self._orchestrator.reset_summary()
             logger.info("Created new chat thread", thread_id=self.thread_id)
         elif msg_type == "cancel_execution":
             if hasattr(self, '_current_runtime') and self._current_runtime:
@@ -371,6 +483,7 @@ class Session:
             await self.send_message("history_response", {"threads": threads})
         elif msg_type == "speak_text":
             text = payload.get("text", "")
+            is_manual = bool(payload.get("manual", True))
             if text:
                 import re
                 # Strip <think>...</think> blocks from the text before speaking
@@ -383,13 +496,15 @@ class Session:
                 clean_text = re.sub(r'\[\s*\{[\s\S]*?\}\s*\]', '', clean_text)
                 clean_text = clean_text.strip()
                 if clean_text:
-                    logger.info("Replaying speech synthesis via WebSocket request", text=clean_text)
-                    asyncio.create_task(self.speak(clean_text))
+                    logger.info(f"{'Manual' if is_manual else 'Automatic'} TTS triggered", text=clean_text[:80])
+                    # Mark as manual/automatic — so voice pipeline behaves accordingly
+                    asyncio.create_task(self.speak(clean_text, manual=is_manual))
         elif msg_type == "stop_speech":
             logger.info("Received request to stop speech synthesis")
             if hasattr(self, 'voice_pipeline') and self.voice_pipeline:
                 self.voice_pipeline.stop_speaking()
-            await self.send_message("speech_completed", {})
+            await self.send_message("speech_completed", {"was_manual": self._manual_tts})
+            self._manual_tts = False
         elif msg_type == "load_thread":
             import db
             thread_id = payload.get("thread_id")
@@ -437,6 +552,20 @@ class Session:
             settings.wake_word_enabled = bool(payload.get("wake_word_enabled", settings.wake_word_enabled))
             settings.wake_word_threshold = float(payload.get("wake_word_threshold", settings.wake_word_threshold))
 
+            # Update personalization fields
+            settings.user_name = payload.get("user_name", settings.user_name)
+            raw_skills = payload.get("user_skills")
+            if raw_skills is not None:
+                if isinstance(raw_skills, list):
+                    settings.user_skills = raw_skills
+                elif isinstance(raw_skills, str):
+                    import json as _json
+                    try:
+                        settings.user_skills = _json.loads(raw_skills)
+                    except Exception:
+                        settings.user_skills = [s.strip() for s in raw_skills.split(",") if s.strip()]
+            settings.custom_prompt = payload.get("custom_prompt", settings.custom_prompt)
+
             save_settings_to_env(
                 settings.local_model,
                 settings.cloud_model,
@@ -457,20 +586,6 @@ class Session:
                 settings.user_skills,
                 settings.custom_prompt,
             )
-            
-            # Update personalization fields
-            settings.user_name = payload.get("user_name", settings.user_name)
-            raw_skills = payload.get("user_skills")
-            if raw_skills is not None:
-                if isinstance(raw_skills, list):
-                    settings.user_skills = raw_skills
-                elif isinstance(raw_skills, str):
-                    import json as _json
-                    try:
-                        settings.user_skills = _json.loads(raw_skills)
-                    except Exception:
-                        settings.user_skills = [s.strip() for s in raw_skills.split(",") if s.strip()]
-            settings.custom_prompt = payload.get("custom_prompt", settings.custom_prompt)
 
             # Propagate to running voice pipeline
             if hasattr(self, 'voice_pipeline') and self.voice_pipeline:
@@ -481,11 +596,30 @@ class Session:
                     logger.warning("Failed to propagate wake word updates to pipeline", error=str(ve))
 
             logger.info("Settings updated", provider=settings.ai_provider, model=settings.cloud_model)
+            from config import get_active_api_key
+            if getattr(self, "_session_active", False) and (get_active_api_key() or settings.ai_provider.lower() == "ollama"):
+                self.start_listen_loop()
+
+    def start_listen_loop(self):
+        if getattr(self, "_listen_task", None) is None or self._listen_task.done():
+            self._listen_task = asyncio.create_task(self._listen_loop())
+            logger.info("Started voice listen loop task")
+
+    def stop_listen_loop(self):
+        if getattr(self, "_listen_task", None) is not None:
+            self._listen_task.cancel()
+            self._listen_task = None
+        self.voice_pipeline.stop_listening()
 
     async def _listen_loop(self):
         """Simulate sending transcript updates."""
-        async for transcript in self.voice_pipeline.start_listening():
-            await self.send_message("transcript_update", {"text": transcript})
+        try:
+            async for transcript in self.voice_pipeline.start_listening():
+                await self.send_message("transcript_update", {"text": transcript})
+        except asyncio.CancelledError:
+            logger.info("Voice listen loop cancelled")
+        except Exception as e:
+            logger.error("Error in voice listen loop", error=str(e))
 
 class ConnectionManager:
     def __init__(self):
@@ -528,13 +662,14 @@ class ConnectionManager:
             "custom_prompt": getattr(settings, "custom_prompt", ""),
         })
         
-        asyncio.create_task(session._listen_loop())
+        # Voice listening will be started via 'client_state' message from frontend
+        logger.info("Session created. Waiting for client_state event to start voice listen loop.")
         return session
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.sessions:
             session = self.sessions.pop(websocket)
-            session.voice_pipeline.stop_listening()
+            session.stop_listen_loop()
             logger.info("Client disconnected", session_id=session.session_id)
 
 manager = ConnectionManager()

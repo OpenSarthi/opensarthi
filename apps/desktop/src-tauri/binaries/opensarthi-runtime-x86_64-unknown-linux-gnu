@@ -14,9 +14,9 @@ unset PYTHONHOME
 unset PYTHONPATH
 
 # ── 1. Resolve the runtime directory ──────────────────────────────────────────
-if [ -d "/mnt/kartik/ai_desktop_agent_assistant/opensarthi/runtime" ]; then
-    # Developer machine shortcut
-    RUNTIME_DIR="/mnt/kartik/ai_desktop_agent_assistant/opensarthi/runtime"
+if [ -d "$SCRIPT_DIR/../../../../runtime" ]; then
+    # Monorepo development structure
+    RUNTIME_DIR="$SCRIPT_DIR/../../../../runtime"
 elif [ -d "$SCRIPT_DIR/../lib/OpenSarthi/_up_/_up_/_up_/runtime" ]; then
     RUNTIME_DIR="$SCRIPT_DIR/../lib/OpenSarthi/_up_/_up_/_up_/runtime"
 elif [ -d "$SCRIPT_DIR/resources/runtime" ]; then

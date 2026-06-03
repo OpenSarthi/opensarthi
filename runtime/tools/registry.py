@@ -1,8 +1,12 @@
 from typing import Optional
 from tools.base import BaseTool
-from tools.desktop import ClickTool, TypeTextTool, PressKeyTool, OpenAppTool, ClickElementTool, FocusWindowTool
+from tools.desktop import ClickTool, TypeTextTool, PressKeyTool, OpenAppTool, ClickElementTool, FocusWindowTool, ObserveDesktopTool
 from tools.system import ShellTool
 from tools.wait_tools import WaitForWindowTool, WaitForTextTool
+from tools.media import MediaControlTool
+from tools.memory import RememberTool, RecallTool
+from tools.notes import SaveNoteTool, GetNotesTool
+from tools.self_fix import SelfFixTool
 
 _registry: dict[str, BaseTool] = {}
 
@@ -18,9 +22,16 @@ _register(
     OpenAppTool(),
     FocusWindowTool(),
     ClickElementTool(),
+    ObserveDesktopTool(),
     ShellTool(),
     WaitForWindowTool(),
     WaitForTextTool(),
+    MediaControlTool(),
+    RememberTool(),
+    RecallTool(),
+    SaveNoteTool(),
+    GetNotesTool(),
+    SelfFixTool(),
 )
 
 def get(name: str) -> Optional[BaseTool]:

@@ -58,23 +58,24 @@ flowchart TD
 
 ---
 
-## 3. How the Agent Decides: Chat vs. Task
+## 3. How the Agent Decides: Chat vs. Task (Intent Classification)
 
-The LLM itself makes the classification decision based on the system prompt instructions.
+The orchestrator utilizes a lightweight `PydanticAgent` API call to dynamically classify the user's input into exactly one of three intents: `CHAT`, `TASK`, or `CLARIFY`.
 
 ```mermaid
 flowchart LR
-    INPUT[User message] --> LLM[LLM with\nbuild_system_prompt]
-
-    LLM -->|think-only response\nno JSON| CHAT_OUT[Plain text response\nformatted markdown]
-    LLM -->|JSON array response| TASK_OUT["[{tool, args, description}, ...]"]
-
-    CHAT_OUT --> WS_CHAT[assistant_response\nvia WebSocket]
-    TASK_OUT --> PARSE[Parse plan\nPlan + PlanStep schemas]
-    PARSE --> EXEC[AgentRuntime\nexecution loop]
+    INPUT[User message] --> ORCH[OrchestratorAgent.route]
+    ORCH --> CLS[LLM Intent Classification\nPydanticAgent]
+    
+    CLS -->|CHAT / CLARIFY| CHAT_AGENT[Conversational PydanticAgent\nDirect markdown response]
+    CLS -->|TASK| RUNTIME[AgentRuntime Planner Loop\nDesktop Context & Tools]
+    
+    CHAT_AGENT --> WS_CHAT[assistant_response\nbypasses desktop planning]
+    RUNTIME --> TASK_PLAN[Parse JSON plan\nPlan + PlanStep schemas]
+    TASK_PLAN --> EXEC[Execute Tools & Desktop Actions]
 ```
 
-> **Key:** If `desktop_automation` skill is **not** selected, the JSON tool-call format is removed from the prompt entirely — the LLM cannot generate task plans, keeping all responses conversational.
+> **Key Routing Benefit:** By classifying intent upfront via the API, conversational interactions (`CHAT`) completely bypass the heavy desktop observation loop, returning beautifully formatted Markdown instantly. Only actionable commands (`TASK`) trigger the full window snapshotting and planning loop.
 
 ---
 
@@ -226,6 +227,24 @@ flowchart LR
 | `web` | open_app → wait_for_window → type_text flow hint |
 | `privacy` | Prefer local processing, data exposure warnings |
 | None of above | Standard conversational response only |
+
+---
+
+## 10. Multi-Agent Orchestrator & Specialized Tools
+
+OpenSarthi now utilizes a multi-agent orchestration architecture inspired by the GWEN framework.
+
+### Orchestration Model
+1. **Orchestrator Agent**:
+   - Classifies user messages locally or via LLM into `CHAT`, `TASK`, or `CLARIFY`.
+   - Compresses task execution history to avoid token bloat.
+   - Spawns and manages sub-agents (e.g. `PlannerAgent`, `VerifierAgent`).
+
+2. **Specialized Tools (Cross-Platform)**:
+   - **`media_control`**: Controls media players via `playerctl` and system volume via `pactl`.
+   - **`remember` / `recall`**: Interacts with the long-term semantic memory SQLite database to store and fetch user facts.
+   - **`save_note` / `get_notes`**: Manages user notes as markdown files stored under `~/opensarthi_notes`.
+   - **`self_fix`**: A self-healing developer utility. Runs typecheck verification, prompts the model to generate a correction code file, compile-checks the result, and automatically rolls back using backup files on failure.
 
 ---
 

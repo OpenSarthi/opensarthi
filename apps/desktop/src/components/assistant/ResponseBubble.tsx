@@ -199,6 +199,68 @@ function CodeBlock({ lang, codeText }: { lang: string; codeText: string }) {
   );
 }
 
+function parseInlineMarkdown(text: string) {
+  // Simple regex matching for bold and code
+  const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i} style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={i} style={{ 
+          fontFamily: "var(--font-mono)", 
+          fontSize: "0.9em", 
+          background: "rgba(255, 255, 255, 0.08)", 
+          padding: "2px 4px", 
+          borderRadius: "3px",
+          border: "1px solid rgba(255,255,255,0.05)",
+          color: "var(--accent)"
+        }}>
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return part;
+  });
+}
+
+function parseMarkdownLine(line: string, lineIndex: number) {
+  const trimmed = line.trim();
+  
+  // Headers
+  if (trimmed.startsWith("# ")) {
+    return <h1 key={lineIndex} style={{ fontSize: "1.4em", margin: "12px 0 6px 0", color: "var(--accent)", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "4px", fontWeight: "bold" }}>{parseInlineMarkdown(trimmed.slice(2))}</h1>;
+  }
+  if (trimmed.startsWith("## ")) {
+    return <h2 key={lineIndex} style={{ fontSize: "1.25em", margin: "10px 0 5px 0", color: "var(--accent)", fontWeight: "bold" }}>{parseInlineMarkdown(trimmed.slice(3))}</h2>;
+  }
+  if (trimmed.startsWith("### ")) {
+    return <h3 key={lineIndex} style={{ fontSize: "1.1em", margin: "8px 0 4px 0", color: "var(--accent)", fontWeight: "bold" }}>{parseInlineMarkdown(trimmed.slice(4))}</h3>;
+  }
+  
+  // Lists
+  if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
+    return (
+      <li key={lineIndex} style={{ marginLeft: "16px", marginBottom: "4px", listStyleType: "square" }}>
+        {parseInlineMarkdown(trimmed.slice(2))}
+      </li>
+    );
+  }
+  
+  // Empty line
+  if (line === "") {
+    return <div key={lineIndex} style={{ height: "6px" }} />;
+  }
+
+  // Normal paragraph
+  return (
+    <p key={lineIndex} style={{ margin: "4px 0", lineHeight: "1.5" }}>
+      {parseInlineMarkdown(line)}
+    </p>
+  );
+}
+
 export function ResponseBubble({ message }: ResponseBubbleProps) {
   const isUser = message.role === "user";
   const [displayedContent, setDisplayedContent] = useState("");
@@ -247,7 +309,13 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
         const codeText = codeLines.join("\n");
         return <CodeBlock key={index} lang={lang} codeText={codeText} />;
       }
-      return <span key={index} style={{ whiteSpace: "pre-wrap" }}>{part}</span>;
+      
+      const lines = part.split("\n");
+      return (
+        <div key={index} style={{ display: "flex", flexDirection: "column" }}>
+          {lines.map((line, lineIdx) => parseMarkdownLine(line, lineIdx))}
+        </div>
+      );
     });
   };
 
@@ -385,7 +453,7 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
                         .replace(/[*#_\-]/g, "")
                         .trim();
                       if (clean) {
-                        wsClient.send("speak_text", { text: clean });
+                        wsClient.send("speak_text", { text: clean, manual: true });
                       }
                     }}
                     style={{

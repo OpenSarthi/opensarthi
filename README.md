@@ -164,6 +164,13 @@ opensarthi/
 │   ├── sync_primitives.py           # Async helpers
 │   ├── api/
 │   │   └── websocket.py             # WS router, all message handlers
+│   ├── agents/
+│   │   ├── classifier.py            # LLM intent classification
+│   │   └── orchestrator.py          # Agentic orchestration & routing
+│   ├── tests/
+│   │   ├── test_agents.py           # Unit tests for routing
+│   │   ├── test_logging.py          # Unit tests for dev logger
+│   │   └── test_tools.py            # Unit tests for tool logic
 │   ├── planner/
 │   │   ├── agent.py                 # PydanticAI agent + dynamic skill prompt
 │   │   └── schemas.py               # Plan, PlanStep, ToolResult pydantic models
@@ -203,9 +210,11 @@ User Input (voice or text)
         ▼
   WebSocket message ──► websocket.py handler
         │
-        ├─ Is it a chat? ──► agent.run() → streaming assistant_response
+        ├─ LLM Intent Classifier (CHAT/TASK/CLARIFY)
         │
-        └─ Is it a task? ──► AgentRuntime.run()
+        ├─ If CHAT ──► PydanticAgent.run() → Markdown response
+        │
+        └─ If TASK ──► AgentRuntime.run() (Planner Loop)
                                  │
                                  ├─ build_structured_context()
                                  ├─ LLM generates JSON plan
@@ -221,13 +230,17 @@ See [`docs/03_agentic_flow.md`](./docs/03_agentic_flow.md) for detailed flowchar
 
 ## 🔮 Roadmap
 
-- [ ] **Multi-turn Barge-In** — voice interrupt during active TTS playback
-- [ ] **Local Model Preloading** — pre-fetch Ollama weights on sidecar launch
-- [ ] **Wayland Window Tracking** — enhance `ydotool` for KDE/GNOME Wayland
-- [ ] **MCP Server** — expose OpenSarthi tools as Model Context Protocol server
-- [ ] **Memory Module** — LanceDB vector search for long-term context recall
-- [ ] **Observer Pipeline** — screenshot + OCR for real-time screen understanding
-- [ ] **API Key Keyring** — migrate from plaintext `.env` to `libsecret`
+- [ ] **UI: Markdown Rendering** — Integrate `react-markdown` to render beautifully formatted `CHAT` responses in the frontend.
+- [ ] **UI: Intent Indicators** — Display visual badges in the HUD indicating the LLM's dynamically classified intent (e.g., Task vs Chat).
+- [ ] **UI: Live Shell Console** — Create a terminal view component to display real-time stdout streams during `ShellTool` execution.
+- [ ] **UI: Pause/Resume Controls** — Add frontend buttons to trigger the `pause_execution` and `resume_execution` WebSocket events.
+- [ ] **Multi-turn Barge-In** — Voice interrupt during active TTS playback.
+- [ ] **Local Model Preloading** — Pre-fetch Ollama weights on sidecar launch.
+- [ ] **Wayland Window Tracking** — Enhance `ydotool` for KDE/GNOME Wayland.
+- [ ] **MCP Server** — Expose OpenSarthi tools as Model Context Protocol server.
+- [ ] **Memory Module** — LanceDB vector search for long-term context recall.
+- [ ] **Observer Pipeline** — Screenshot + OCR for real-time screen understanding.
+- [ ] **API Key Keyring** — Migrate from plaintext `.env` to `libsecret`.
 
 ---
 

@@ -387,6 +387,18 @@ import pkg from "../../../package.json";
 
 ---
 
+## 🚧 UI Backlog / Unimplemented Features
+
+Several backend runtime features are fully implemented and emitting WebSocket events, but currently lack frontend UI components or interactions:
+
+1. **Markdown Rendering for CHAT**: The backend routes `CHAT` requests to a conversational LLM that returns beautifully formatted Markdown and code blocks. However, `AssistantOverlay.tsx` currently strips all Markdown tags and renders raw text. *Needs: `react-markdown` integration in `MessageList`.*
+2. **Intent Classification Indicator**: The backend emits `intent_classified` (`CHAT`, `TASK`, `CLARIFY`) which the frontend captures in `lastClassification`. However, this is not displayed in the UI (e.g., an icon or badge indicating whether the agent is "Thinking... (Task)" vs "Thinking... (Chat)").
+3. **Live Shell Console View**: The backend emits `shell_output` lines during the execution of shell commands. The frontend captures these via `appendShellOutputLine`, but there is no terminal/console UI to actually view this streaming output.
+4. **Pause/Resume & Cancel Controls**: The backend supports `pause_execution`, `resume_execution`, and `request_cancel`. However, there are no UI buttons exposed to the user to pause, resume, or abort an active agentic task.
+5. **Manual TTS Toggles**: The backend supports a `manual: true/false` flag for `speak_text`, but the frontend currently doesn't expose a way for users to manually trigger TTS readings for past messages.
+
+---
+
 ## 📚 See Also
 
 - [`../../README.md`](../../README.md) — Monorepo overview, setup, architecture

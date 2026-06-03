@@ -209,6 +209,24 @@ python main.py
 
 ---
 
+## 🧪 Running Tests
+
+The backend uses standard `unittest` paired with `IsolatedAsyncioTestCase` for async testing.
+
+To run the full test suite from the `runtime/` directory:
+
+```bash
+cd runtime
+python -m unittest discover tests
+```
+
+To run a specific test module (e.g., agent routing):
+```bash
+python -m unittest tests.test_agents
+```
+
+---
+
 ## 🔮 Planned
 
 - [ ] **Memory** — LanceDB semantic search for long-term context

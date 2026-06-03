@@ -6,6 +6,7 @@ from pydantic_ai import Agent
 from state_machine import AgentState, AgentStateContext
 from planner.schemas import Plan, PlanStep, ToolResult
 from observation import DesktopObserver, DesktopSnapshot
+from dev_logger import DevLogger
 
 class AgentRuntime:
     """
@@ -28,6 +29,9 @@ class AgentRuntime:
         # Cancellable task handles
         self._agent_task: Optional[asyncio.Task] = None
         self._tool_task: Optional[asyncio.Task] = None
+        # Fail-fast: track consecutive same-error failures per tool
+        self._same_tool_fail_count: dict[str, int] = {}
+        self._last_tool_error: dict[str, str] = {}
 
     def pause(self):
         self._paused = True
@@ -69,12 +73,59 @@ class AgentRuntime:
             lines.append(f"❌ {action.lstrip('❌ ').strip()}")
         return "\n".join(lines)
 
-    async def run(self, goal: str, model, message_history: list) -> str:
+    async def _cancellable_sleep(self, seconds: float):
+        """Sleep that immediately aborts if cancel is requested."""
+        try:
+            await asyncio.wait_for(asyncio.shield(asyncio.sleep(seconds)), timeout=seconds + 0.5)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass
+
+    async def run(self, goal: str, model, message_history: list, summarized_context: str = None) -> str:
+        # Initialize DevLogger
+        model_name = getattr(model, "model_name", str(model))
+        provider_name = "unknown"
+        if hasattr(model, "client"):
+            provider_name = model.__class__.__name__
+        self.logger = DevLogger(goal=goal, model_name=model_name, provider=provider_name)
+        
+        # Log system prompt
+        try:
+            from planner.agent import build_system_prompt
+            sys_prompt = build_system_prompt(
+                skills=getattr(self.deps, "skills", ["general"]),
+                user_name=getattr(self.deps, "user_name", ""),
+                custom_prompt=getattr(self.deps, "custom_prompt", "")
+            )
+            self.logger.log_system_prompt(sys_prompt)
+        except Exception as e:
+            self.logger.log(f"Failed to compile and log system prompt: {e}")
+
+        final_res = "Execution terminated unexpectedly."
+        try:
+            final_res = await self._run_logged(goal, model, message_history, summarized_context)
+            return final_res
+        except Exception as e:
+            final_res = f"Fatal execution error: {e}"
+            raise e
+        finally:
+            if getattr(self, "logger", None):
+                self.logger.finalize(final_res)
+
+    async def _run_logged(self, goal: str, model, message_history: list, summarized_context: str = None) -> str:
         self._cancel_requested = False
         self._paused = False
         self._pause_event.set()
         self.state = AgentStateContext(current_goal=goal)
         self.last_usage = None
+        self._same_tool_fail_count.clear()
+        self._last_tool_error.clear()
+
+        # Reset window session for this fresh task run
+        try:
+            from window_session import reset_session
+            reset_session()
+        except Exception:
+            pass
 
         completed_actions = []
         failed_actions = []
@@ -113,10 +164,16 @@ class AgentRuntime:
                     retry_count=replanning_attempts,
                     skills=getattr(self.deps, 'skills', None),
                     recalled_memories=recalled,
+                    summarized_context=summarized_context,
                 )
+
+                if getattr(self, "logger", None):
+                    self.logger.log_planning_context(replanning_attempts, context)
 
                 try:
                     result = await self._agent_run(context, deps=self.deps, model=model, message_history=message_history)
+                    if getattr(self, "logger", None):
+                        self.logger.log_llm_response(replanning_attempts, result.output)
                 except asyncio.CancelledError:
                     await self._transition(AgentState.IDLE)
                     return "Execution cancelled by user."
@@ -200,13 +257,33 @@ class AgentRuntime:
                                 break
 
                         if not result.success:
+                            # Fail-fast: if the same tool fails with the same error twice, stop immediately
+                            tool_key = step.tool
+                            err_msg = (result.error or "").strip()[:200]
+                            if self._last_tool_error.get(tool_key) == err_msg:
+                                self._same_tool_fail_count[tool_key] = self._same_tool_fail_count.get(tool_key, 1) + 1
+                            else:
+                                self._same_tool_fail_count[tool_key] = 1
+                                self._last_tool_error[tool_key] = err_msg
+
+                            if self._same_tool_fail_count.get(tool_key, 0) >= 2:
+                                # Hard stop — agent is looping
+                                import structlog
+                                structlog.get_logger().warning(
+                                    "Fail-fast triggered: same tool failed with same error twice",
+                                    tool=tool_key, error=err_msg
+                                )
+                                break
+
                             if result.retryable and self.state.retry_count < self.state.max_retries:
                                 self.state.retry_count += 1
                                 await self._transition(
                                     AgentState.RETRYING,
                                     current_step_description=f"Retrying: {step.description} ({self.state.retry_count}/{self.state.max_retries})"
                                 )
-                                await asyncio.sleep(1.5)
+                                await self._cancellable_sleep(1.5)
+                                if self._cancel_requested:
+                                    break
                             else:
                                 break
 
@@ -235,7 +312,10 @@ class AgentRuntime:
                     replanning_attempts += 1
                     self.state.retry_count = replanning_attempts
                     await self._transition(AgentState.RETRYING, current_step_description="Replanning due to step failure...")
-                    await asyncio.sleep(1.5)
+                    await self._cancellable_sleep(1.5)
+                    if self._cancel_requested:
+                        await self._transition(AgentState.IDLE)
+                        return "Execution cancelled by user."
                     continue
 
                 replanning_attempts += 1
@@ -480,6 +560,16 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
             await self.ws.send_message("tool_completed", {"index": index, "result": res.observation})
         else:
             await self.ws.send_message("tool_error", {"index": index, "error": res.error or "Unknown error"})
+
+        if getattr(self, "logger", None):
+            self.logger.log_tool_call(
+                attempt=getattr(self.state, "retry_count", 0),
+                step_index=index,
+                tool_name=step.tool,
+                args=step.args,
+                result_status="success" if res.success else "error",
+                result_obs=res.observation if res.success else res.error
+            )
 
         return res
 

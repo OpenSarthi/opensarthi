@@ -38,6 +38,11 @@ runtime/
 │   ├── router.py               # Intent classification / routing
 │   └── schemas.py              # Plan, PlanStep models
 │
+├── tests/
+│   ├── test_agents.py          # Orchestrator & classification tests
+│   ├── test_logging.py         # DevLogger tests
+│   └── test_tools.py           # Tool execution logic tests
+│
 ├── tools/
 │   ├── registry.py             # Tool registry + discovery
 │   ├── base.py                 # BaseTool abstract class
