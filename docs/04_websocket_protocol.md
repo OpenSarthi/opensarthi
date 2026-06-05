@@ -253,6 +253,8 @@ Agent has generated an execution plan.
   "payload": {
     "step_index": 0,
     "tool": "open_app",
+    "args": { "app": "firefox" },
+    "description": "Launch Firefox browser",
     "result": "Firefox launched successfully",
     "timestamp": 1748600001000
   }
@@ -267,6 +269,8 @@ Agent has generated an execution plan.
   "payload": {
     "step_index": 0,
     "tool": "open_app",
+    "args": { "app": "firefox" },
+    "description": "Launch Firefox browser",
     "error": "Application not found: firefox"
   }
 }

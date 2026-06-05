@@ -42,13 +42,13 @@ OpenSarthi is a monorepo with two tightly coupled layers that communicate over a
 
 - **Cyberpunk HUD UI** — three-panel layout: Agent Tasks (left), Chat (center), Live Plan & Activity (right)
 - **6 Premium Themes** — Glass Red-Black, Forest Green-Black, Deep Purple-Black, Cyber Sky-White, Sakura Pink-White, and Simple Dark (Black-Gray-White)
-- **Real-time Token Counter** — live `request / response / session total` tokens per thread, restored on history load
+- **Multi-Tab Thread Manager** — Chrome-style tabs with scrolling, cross buttons, tab rename on message, global session tokens that persist across tab deletions
+- **Real-time Token Counter** — per-thread + global session total tokens, hover tooltip for breakdown, restored on history load
 - **First-Launch Onboarding** — step-by-step cold-start wizard: Step 1 (Skills & Capabilities selection), Step 2 (Name & Custom instructions), and Step 3 (Agent Settings for Provider, Model, and API Key)
 - **Customise Popup** — re-editable persona & skills via Wrench button; styled as a glassmorphic straight-bracket HUD panel modal matching the theme
 - **Model Context Protocol (MCP) Configuration** — dedicated settings view to toggle local tool exposure and manage external MCP server URLs
 - **JSON Task Import** — center overlay dialog with live JSON syntax validation, error traces, step previews, and direct LLM-bypass runner
 - **Multi-thread Chat History** — persistent threads; each thread restores its own token usage on load
-- **New Thread** — clears session context and resets token counter
 - **Voice Button** — microphone toggle with animated waveform and state indicators
 - **Window-Aware Controls** — top-right buttons expand with labels when window is maximized
 
@@ -62,6 +62,15 @@ OpenSarthi is a monorepo with two tightly coupled layers that communicate over a
 - **Token Usage per Thread** — stored per thread_id; frontend restores on history load
 - **Voice Pipeline** — dual STT: Google SpeechRecognition + local Whisper; wake word detection via OpenWakeWord; Kokoro TTS output
 - **Production-Safe Config** — settings at `~/.config/opensarthi/.env` (Linux) or `%LOCALAPPDATA%\opensarthi\.env` (Windows), database at the same folder
+
+### 🤖 Agentic Intelligence (New)
+
+- **Self-Healing Agent** (`agents/healer.py`) — when a step fails, the HealerAgent diagnoses the error + current screen state and proposes a corrected step (different args or tool) before triggering a full replan. Quick heuristics run with no LLM call.
+- **Parallel Task Execution** (`planner/decomposer.py`) — sorts plan steps into independent parallel groups using a topological sorting algorithm based on the `depends_on` field of `PlanStep`, running independent steps concurrently via `asyncio.gather()`.
+- **Self-Improving Reviewer** (`agents/reviewer.py`) — after every task completes, a ReviewerAgent extracts 1–3 concrete lessons (e.g. "Firefox address bar: Ctrl+L → type → Enter") and stores them in long-term memory. These are auto-injected into the next similar task.
+- **Behavioral Preference Observer** (`agents/behavioral_observer.py`) — passively monitors conversations for implicit user corrections and style preferences. Stored as high-priority `[PREFERENCE]` memories always injected into planner context.
+- **Semantic Memory Auto-Inject** — before every planner call, top-5 relevant memories are fetched via cosine similarity and injected. Behavioral preferences are always injected at highest priority regardless of query match.
+- **Focus-Before-Type Enforcement** — system prompt and HealerAgent both enforce: any `type_text` step that fails without prior focus is automatically healed by injecting a `click_element` focus step.
 
 ### Distribution & Portable Bootstrapping Flow (Linux / Windows)
 
@@ -142,7 +151,7 @@ opensarthi/
 │       │   │   └── useTauriEvent.ts # Tauri IPC events
 │       │   ├── stores/
 │       │   │   └── assistantStore.ts # Zustand: messages, tokens, personalization
-│       │   └── styles/              # Global CSS + 5 theme token sets
+│       │   └── styles/              # Global CSS + 6 theme token sets
 │       └── src-tauri/
 │           ├── src/
 │           │   ├── lib.rs           # App entry, sidecar launch
@@ -158,7 +167,7 @@ opensarthi/
 │   ├── main.py                      # FastAPI app + port negotiation
 │   ├── config.py                    # pydantic-settings (user_name, skills, etc.)
 │   ├── db.py                        # SQLite: messages + thread token storage
-│   ├── agent_runtime.py             # Stateful executor: cancel/pause/run/plan
+│   ├── agent_runtime.py             # Stateful executor: cancel/pause/run/plan + self-heal
 │   ├── observation.py               # Desktop snapshot (screenshot + window info)
 │   ├── state_machine.py             # AgentState enum + context
 │   ├── sync_primitives.py           # Async helpers
@@ -166,27 +175,35 @@ opensarthi/
 │   │   └── websocket.py             # WS router, all message handlers
 │   ├── agents/
 │   │   ├── classifier.py            # LLM intent classification
-│   │   └── orchestrator.py          # Agentic orchestration & routing
+│   │   ├── orchestrator.py          # Agentic orchestration & routing
+│   │   ├── healer.py                # Self-Healing Agent (fix failed steps)
+│   │   ├── reviewer.py              # Self-Improving Reviewer (learn from runs)
+│   │   └── behavioral_observer.py   # Behavioral preference learning
 │   ├── tests/
 │   │   ├── test_agents.py           # Unit tests for routing
 │   │   ├── test_logging.py          # Unit tests for dev logger
 │   │   └── test_tools.py            # Unit tests for tool logic
 │   ├── planner/
-│   │   ├── agent.py                 # PydanticAI agent + dynamic skill prompt
+│   │   ├── agent.py                 # PydanticAI agent + dynamic skill prompt + auto-memory
+│   │   ├── decomposer.py            # Task Decomposer for parallel execution
 │   │   └── schemas.py               # Plan, PlanStep, ToolResult pydantic models
 │   ├── tools/
 │   │   ├── desktop.py               # click, type, open_app, screenshot, etc.
 │   │   ├── system.py                # shell (bubblewrap sandboxed)
 │   │   ├── wait_tools.py            # wait_for_window, wait_for_text
+│   │   ├── memory.py                # remember, recall, forget_memory tools
+│   │   ├── self_fix.py              # Self-healing code modification tool
 │   │   └── registry.py              # Tool registry
+│   ├── memory/
+│   │   ├── long_term.py             # Semantic SQLite memory (sentence-transformers)
+│   │   ├── manager.py               # Unified memory manager
+│   │   └── passive.py               # Passive memory extraction
 │   ├── providers/                   # X11/Wayland desktop providers
 │   ├── voice/
 │   │   ├── stt.py                   # Dual STT: Google + Whisper
 │   │   └── pipeline.py              # Wake word, VAD, echo protection
-│   ├── memory/                      # LanceDB vector store (stub)
-│   ├── observer/                    # Screenshot + OCR pipeline (stub)
 │   ├── security/                    # bubblewrap sandboxing (stub)
-│   ├── llm/                         # LLM provider wrappers (stub)
+│   ├── llm/                         # LLM provider wrappers
 │   └── mcp/                         # Model Context Protocol stubs
 │
 ├── docs/                            # Technical documentation
@@ -213,14 +230,21 @@ User Input (voice or text)
         ├─ LLM Intent Classifier (CHAT/TASK/CLARIFY)
         │
         ├─ If CHAT ──► PydanticAgent.run() → Markdown response
+        │                │
+        │                └─ Fire: BehavioralObserver (background)
         │
         └─ If TASK ──► AgentRuntime.run() (Planner Loop)
                                  │
                                  ├─ build_structured_context()
+                                 │    ├─ Auto-inject: semantic memories (top-5)
+                                 │    └─ Auto-inject: behavioral preferences (always)
                                  ├─ LLM generates JSON plan
-                                 ├─ For each step: tool.safe_execute()
-                                 ├─ Observe desktop after each step
+                                 ├─ For each step:
+                                 │    ├─ tool.safe_execute()
+                                 │    └─ On fail → HealerAgent.diagnose_and_fix()
                                  ├─ Replan if step fails (max 3 attempts)
+                                 ├─ Fire: ReviewerAgent.review_and_learn() (background)
+                                 ├─ Fire: BehavioralObserver (background)
                                  └─ Return formatted summary → frontend
 ```
 
@@ -230,17 +254,23 @@ See [`docs/03_agentic_flow.md`](./docs/03_agentic_flow.md) for detailed flowchar
 
 ## 🔮 Roadmap
 
-- [ ] **UI: Markdown Rendering** — Integrate `react-markdown` to render beautifully formatted `CHAT` responses in the frontend.
-- [ ] **UI: Intent Indicators** — Display visual badges in the HUD indicating the LLM's dynamically classified intent (e.g., Task vs Chat).
-- [ ] **UI: Live Shell Console** — Create a terminal view component to display real-time stdout streams during `ShellTool` execution.
-- [ ] **UI: Pause/Resume Controls** — Add frontend buttons to trigger the `pause_execution` and `resume_execution` WebSocket events.
-- [ ] **Multi-turn Barge-In** — Voice interrupt during active TTS playback.
-- [ ] **Local Model Preloading** — Pre-fetch Ollama weights on sidecar launch.
-- [ ] **Wayland Window Tracking** — Enhance `ydotool` for KDE/GNOME Wayland.
-- [ ] **MCP Server** — Expose OpenSarthi tools as Model Context Protocol server.
-- [ ] **Memory Module** — LanceDB vector search for long-term context recall.
-- [ ] **Observer Pipeline** — Screenshot + OCR for real-time screen understanding.
-- [ ] **API Key Keyring** — Migrate from plaintext `.env` to `libsecret`.
+### ✅ Recently Completed
+- [x] **Multi-Tab Thread Manager** — Chrome-style tabbed chat with per-thread isolation
+- [x] **Self-Healing Agent** — `HealerAgent` corrects failed steps before replanning
+- [x] **Parallel Task Execution** — `depends_on` field in PlanStep + asyncio.gather for independent steps
+- [x] **Self-Improving Reviewer** — `ReviewerAgent` extracts lessons post-task
+- [x] **Behavioral Preference Observer** — passively learns user style preferences
+- [x] **Semantic Memory Auto-Inject** — top-5 relevant memories + preferences injected into every LLM call
+- [x] **Focus-Before-Type Enforcement** — healer and prompt both enforce click → focus before type_text
+- [x] **Thread History Fix** — `INSERT OR IGNORE INTO threads` ensures all threads appear in history
+
+### 🔜 Next
+- [ ] **ElevenLabs Streaming TTS** — replace gTTS for premium voice quality
+- [ ] **Web Search Tool** — Tavily/Brave API integration
+- [ ] **Morning Briefing** — daily summary (time, weather, tasks, memories)
+- [ ] **MCP Server** — expose OpenSarthi tools as Model Context Protocol server
+- [ ] **API Key Keyring** — migrate from plaintext `.env` to `libsecret`
+- [ ] **Wayland Window Tracking** — enhance `ydotool` for KDE/GNOME Wayland
 
 ---
 

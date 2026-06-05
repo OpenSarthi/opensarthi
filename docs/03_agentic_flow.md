@@ -79,12 +79,13 @@ flowchart LR
 
 ---
 
-## 4. AgentRuntime Execution Loop
+## 4. AgentRuntime Execution Loop (with Self-Healing)
 
 ```mermaid
 flowchart TD
     START([AgentRuntime.run\ngoal, model, history]) --> SNAP[Take desktop snapshot\nobservation.py]
-    SNAP --> CTX[build_structured_context\ngoal + snapshot + history\n+ completed/failed actions]
+    SNAP --> RECALL[Auto-recall memories\ntop-5 semantic + all preferences]
+    RECALL --> CTX[build_structured_context\ngoal + snapshot + memories\n+ completed/failed actions]
     CTX --> LLM_PLAN[_agent_run\nasyncio.Task wrapping agent.run]
 
     LLM_PLAN --> CANCELLED_LLM{CancelledError?}
@@ -92,38 +93,95 @@ flowchart TD
     CANCELLED_LLM -->|No| PARSE_PLAN[Parse JSON plan\nfrom LLM response]
 
     PARSE_PLAN --> VALID{Valid plan?}
-    VALID -->|No / plain text| RETURN_TEXT([Return LLM text\nas assistant_response])
+    VALID -->|No / plain text| OBSERVER_BG[Fire BehavioralObserver\nasync background task]
+    OBSERVER_BG --> RETURN_TEXT([Return LLM text\nas assistant_response])
     VALID -->|Yes| EMIT_PLAN[Emit plan_created → WS]
 
-    EMIT_PLAN --> LOOP_START
+    EMIT_PLAN --> DECOMPOSE[Task Decomposer\nGroup steps by dependency topological sort]
+    DECOMPOSE --> LOOP_START
 
-    subgraph LOOP_START[For each step in plan]
-        CHECK_CANCEL{cancel\nrequested?} -->|Yes| TERMINATE([Emit tool_terminated\nReturn cancelled])
-        CHECK_CANCEL -->|No| CHECK_PAUSE[_check_pause\nawait asyncio.Event]
-        CHECK_PAUSE --> EMIT_START[Emit tool_started → WS]
-        EMIT_START --> TOOL_EXEC[_tool_execute\nasyncio.Task wrapping\ntool.safe_execute]
-        TOOL_EXEC --> TOOL_CANCELLED{CancelledError?}
-        TOOL_CANCELLED -->|Yes| TERMINATE
-        TOOL_CANCELLED -->|No| TOOL_RESULT{Success?}
-        TOOL_RESULT -->|Yes| COMPLETE[Emit tool_completed → WS\nAppend to completed_actions]
-        TOOL_RESULT -->|No| FAIL[Emit tool_error → WS\nAppend to failed_actions]
-        COMPLETE --> NEXT_STEP[Next step]
-        FAIL --> NEXT_STEP
+    subgraph LOOP_START[For each parallel group in groups]
+        direction TB
+        EXEC_GATHER[Execute group concurrently\nasyncio.gather]
+        
+        subgraph STEP_EXEC[For each step in group]
+            CHECK_CANCEL{cancel\nrequested?} -->|Yes| TERMINATE([Emit tool_terminated\nReturn cancelled])
+            CHECK_CANCEL -->|No| CHECK_PAUSE[_check_pause\nawait asyncio.Event]
+            CHECK_PAUSE --> EMIT_START[Emit tool_started → WS]
+            EMIT_START --> TOOL_EXEC[_tool_execute\nasyncio.Task wrapping\ntool.safe_execute]
+            TOOL_EXEC --> TOOL_CANCELLED{CancelledError?}
+            TOOL_CANCELLED -->|Yes| TERMINATE
+            TOOL_CANCELLED -->|No| TOOL_RESULT{Success?}
+            TOOL_RESULT -->|Yes| COMPLETE[Emit tool_completed → WS\nAppend to completed_actions]
+            TOOL_RESULT -->|No| HEAL{HealerAgent\nquick-fix or LLM-fix?}
+            HEAL -->|Fix found| HEALED_EXEC[Execute healed step]
+            HEALED_EXEC --> HEALED_OK{Success?}
+            HEALED_OK -->|Yes| COMPLETE
+            HEALED_OK -->|No| FAIL[Emit tool_error → WS\nAppend to failed_actions]
+            HEAL -->|No fix| FAIL
+        end
+        
+        EXEC_GATHER --> STEP_EXEC
     end
 
-    NEXT_STEP --> MORE{More steps?}
-    MORE -->|Yes| CHECK_CANCEL
+    STEP_EXEC --> NEXT_GROUP[Next group]
+    NEXT_GROUP --> MORE{More groups?}
+    MORE -->|Yes| LOOP_START
     MORE -->|No| DONE
 
     DONE --> REPLAN{Failed actions exist\nAND retry < 3?}
     REPLAN -->|Yes, retry| SNAP
-    REPLAN -->|No| FORMAT[Format final response\n✓ completed\n❌ failed]
+    REPLAN -->|No| LEARN[Fire ReviewerAgent +\nBehavioralObserver\nasync background tasks]
+    LEARN --> FORMAT[Format final response\n✓ completed / ❌ failed]
     FORMAT --> RETURN([Return formatted summary\nassistant_response → WS])
 ```
 
 ---
 
-## 5. Cancellation & Pause Architecture
+## 5. Self-Healing & Self-Improving Flow
+
+```mermaid
+flowchart TD
+    STEP_FAIL([Step Fails]) --> HEALER[HealerAgent.diagnose_and_fix]
+    HEALER --> QUICK{Quick heuristic\\napplies?}
+    QUICK -->|type_text without focus| FIX_FOCUS[Inject click_element step\\nbefore type_text]
+    QUICK -->|No| LLM_HEAL[LLM healing call\\nscreen state + error -> corrected step]
+    LLM_HEAL --> HEALED{Fix found?}
+    HEALED -->|Yes| APPLY[Apply healed step\\nEmit self_heal tool_action]
+    HEALED -->|No| REPLAN[Normal replan loop]
+    FIX_FOCUS --> APPLY
+    APPLY --> RETRY[Retry healed step]
+    RETRY --> OK{Success?}
+    OK -->|Yes| CONTINUE([Continue plan])
+    OK -->|No| REPLAN
+
+    TASK_END([Task Completes]) --> REVIEWER[ReviewerAgent.review_and_learn\\nAsync fire-and-forget]
+    REVIEWER --> LLM_REVIEW[LLM analyses execution log\\nExtracts 1-3 lessons]
+    LLM_REVIEW --> STORE_LESSONS[Store to long_term_memories\\nsource=self_review importance=0.9]
+
+    TASK_END --> OBSERVER[BehavioralObserver.observe_and_store\\nAsync fire-and-forget]
+    OBSERVER --> LLM_DETECT[LLM scans last 3 conversation turns\\nDetects implicit preferences]
+    LLM_DETECT --> STORE_PREFS[Store to long_term_memories\\nsource=behavioral_observer]
+
+    STORE_LESSONS --> NEXT_TASK[Next similar task]
+    STORE_PREFS --> NEXT_TASK
+    NEXT_TASK --> AUTO_RECALL[auto_recalled_memories fetch\\ntop-5 semantic + all preferences]
+    AUTO_RECALL --> CONTEXT_INJECT[Injected as USER PREFERENCES\\n+ RELEVANT PAST EXPERIENCE]
+    CONTEXT_INJECT --> SMARTER([Agent is smarter this time])
+```
+
+### Self-Healing Heuristics (No LLM Needed)
+
+| Failure Pattern | Auto-Fix |
+|---|---|
+| `type_text` fails, "focus" in error | Inject `click_element` step before typing |
+| `click` fails with coordinate issue | Suggest `click_element` with accessible name |
+| `open_app` fails | Try alternate app binary name |
+| `wait_for_window` times out | Increase timeout by 3000ms |
+
+---
+
+## 6. Cancellation & Pause Architecture
 
 ```mermaid
 stateDiagram-v2

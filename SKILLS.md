@@ -69,30 +69,13 @@
 | Config | **pydantic-settings** | Loads from `~/.config/opensarthi/.env` |
 | DB | **SQLite** via **aiosqlite** | Chat history + token tracking |
 | Voice STT | **SpeechRecognition** (Google) + **faster-whisper** (local) | Dual STT pipeline |
-| Voice TTS | **Kokoro TTS** | gTTS as WebSocket audio fallback |
-| Wake Word | **OpenWakeWord** | Customizable phrases |
-| Logging | **structlog** | Structured JSON logs |
-
-### Rust Core (`apps/desktop/src-tauri/`)
-
-| Module | File | Purpose |
-|--------|------|---------|
-| Entry | `lib.rs` | App entry, sidecar launch |
-| Sidecar | `sidecar.rs` | Python process management, port detection from stdout |
-| Tray | `tray.rs` | System tray menu |
-| IPC | `ipc.rs` | Tauri IPC commands |
-
----
-
-## 4. Repository Structure & File Ownership
-
-```
+| ```
 opensarthi/
 ├── apps/desktop/                    # Tauri v2 + React 19 frontend
 │   ├── src/
 │   │   ├── App.tsx                 # Root: onboarding gate + modal state + theme application
 │   │   ├── components/
-│   │   │   ├── assistant/          # AssistantOverlay (3-panel HUD), TaskList (+ JSON import)
+│   │   │   ├── assistant/          # AssistantOverlay (3-panel HUD + multi-tab), TaskList (+ JSON import)
 │   │   │   ├── onboarding/         # OnboardingView (cold-start + edit mode)
 │   │   │   ├── execution/          # ActionLog (tool execution timeline)
 │   │   │   ├── permissions/        # PermissionDialog, InputDialog
@@ -101,12 +84,12 @@ opensarthi/
 │   │   │   ├── useWebSocket.ts     # WS client, message routing, settings sync
 │   │   │   └── useTauriEvent.ts    # Tauri IPC event listeners
 │   │   ├── stores/
-│   │   │   └── assistantStore.ts   # Zustand: messages, tokens, personalization, themes
+│   │   │   └── assistantStore.ts   # Zustand: messages, tabs, tokens, personalization, themes
 │   │   ├── lib/
 │   │   │   ├── ws.ts               # WebSocket client singleton
 │   │   │   ├── schemas.ts          # Zod schemas for WS payloads
 │   │   │   └── constants.ts        # Tauri event names, defaults
-│   │   └── styles/                 # Global CSS + 5 theme token sets
+│   │   └── styles/                 # Global CSS + 6 theme token sets
 │   └── src-tauri/
 │       ├── src/
 │       │   ├── lib.rs              # App entry, sidecar launch
@@ -120,18 +103,52 @@ opensarthi/
 │   ├── main.py                     # FastAPI app + port negotiation
 │   ├── config.py                   # pydantic-settings (loads ~/.config/opensarthi/.env)
 │   ├── db.py                       # SQLite: messages + thread token storage
-│   ├── agent_runtime.py            # Stateful executor: cancel/pause/run/plan (483 lines, core loop)
+│   ├── agent_runtime.py            # Stateful executor + self-heal (HealerAgent, ReviewerAgent)
 │   ├── observation.py              # Desktop snapshot (screenshot + window info + AT-SPI + OCR)
 │   ├── state_machine.py            # AgentState enum + AgentStateContext dataclass
 │   ├── sync_primitives.py          # Async helpers: wait_for_window, wait_for_text
 │   ├── api/
 │   │   └── websocket.py            # Session, ConnectionManager, all WS message handlers
+│   ├── agents/
+│   │   ├── classifier.py           # LLM intent classification (CHAT/TASK/CLARIFY)
+│   │   ├── orchestrator.py         # Message routing + context summarization
+│   │   ├── healer.py               # HealerAgent: heuristic + LLM step correction
+│   │   ├── reviewer.py             # ReviewerAgent: post-task lesson extraction
+│   │   └── behavioral_observer.py  # BehavioralObserver: preference learning
 │   ├── planner/
 │   │   ├── agent.py                # PydanticAI Agent + build_system_prompt + build_structured_context
 │   │   └── schemas.py              # Plan, PlanStep, ToolResult, ToolResultConfidence
 │   ├── tools/
 │   │   ├── base.py                 # BaseTool ABC + RiskLevel enum + safe_execute
 │   │   ├── desktop.py              # click, type_text, press_key, open_app, click_element, focus_window
+│   │   ├── system.py               # shell (with blocked patterns + sudo handling)
+│   │   ├── wait_tools.py           # wait_for_window, wait_for_text
+│   │   ├── memory.py               # remember, recall, forget_memory tools
+│   │   ├── notes.py                # save_note, get_notes tools
+│   │   ├── self_fix.py             # SelfFixTool: AI code rewrite + rollback
+│   │   └── registry.py             # Tool registry (all_tools, get)
+│   ├── memory/
+│   │   ├── long_term.py            # Semantic SQLite memory (all-MiniLM-L6-v2 + cosine sim)
+│   │   ├── manager.py              # Unified MemoryManager (recall, store)
+│   │   └── passive.py              # Passive memory extraction hook
+│   ├── providers/
+│   │   └── linux/
+│   │       └── accessibility.py    # AT-SPI via GObject Introspection
+│   └── voice/
+│       ├── stt.py                  # Dual STT: Google + Whisper
+│       └── pipeline.py             # Wake word, VAD, echo protection, TTS
+│
+├── docs/                            # Technical documentation
+│   ├── 01_frontend_and_desktop_shell.md
+│   ├── 02_backend_runtime_and_infra.md
+│   ├── 03_agentic_flow.md           # ← Updated with self-healing + self-improving flows
+│   └── 04_websocket_protocol.md
+│
+├── package.json                     # pnpm workspace root
+├── pnpm-workspace.yaml
+├── SKILLS.md                        # ← YOU ARE HERE
+└── README.md
+```── desktop.py              # click, type_text, press_key, open_app, click_element, focus_window
 │   │   ├── system.py               # shell (with blocked patterns + sudo handling)
 │   │   ├── wait_tools.py           # wait_for_window, wait_for_text
 │   │   └── registry.py             # Tool registry (all_tools, get)
@@ -175,21 +192,30 @@ User input (text or voice)
 
 ```
 1. Take desktop snapshot (observation.py)
-2. Build structured context string (planner/agent.py::build_structured_context)
-   — injects: goal, desktop state, execution history, available tools, permissions
-3. Call LLM via PydanticAI agent.run()
-4. Parse response:
-   — If plain text → return as assistant_response (chat mode)
+2. Auto-recall memories:
+   a. Top-5 semantic memories (cosine search against the goal)
+   b. All [PREFERENCE] memories from behavioral_observer (always injected)
+3. Build structured context string (planner/agent.py::build_structured_context)
+   — injects: goal, desktop state, USER PREFERENCES, RELEVANT PAST EXPERIENCE,
+     execution history, available tools, permissions
+4. Call LLM via PydanticAI agent.run()
+5. Parse response:
+   — If plain text → fire BehavioralObserver (background) → return as assistant_response (chat mode)
    — If JSON array/object → parse into Plan with PlanStep objects (task mode)
-5. For each PlanStep in plan:
+6. Decompose steps into parallel groups via topological sorting (decomposer.py).
+7. Concurrently execute steps within each parallel group (asyncio.gather):
    a. Check cancel/pause flags
    b. Look up tool from registry
    c. Call tool.safe_execute(args, permission_manager)
    d. Emit tool_started → tool_completed/tool_error via WS
-   e. Track completed_actions / failed_actions
-6. If any step fails AND retry < max_replanning_attempts (5):
+   e. On failure: HealerAgent.diagnose_and_fix() → try corrected step before retrying
+   f. Track completed_actions / failed_actions
+8. If any step fails AND retry < max_replanning_attempts (3):
    → Loop back to step 1 (replan with failure context)
-7. Format and return final response with ✓/❌ summary
+9. On task end (success or final failure):
+   → Fire ReviewerAgent.review_and_learn() (background — extracts lessons)
+   → Fire BehavioralObserver.observe_and_store() (background — detects preferences)
+10. Format and return final response with ✓/❌ summary
 ```
 
 ### 5.3 Chat vs. Task Classification
@@ -234,8 +260,14 @@ BaseTool (ABC)
 | Focus Window | `focus_window` | MODERATE | `title: str` |
 | Click Element | `click_element` | MODERATE | `role: str, name: str` |
 | Shell | `shell` | DANGEROUS | `command: str, timeout?: float` |
-| Wait for Window | `wait_for_window` | SAFE (implicit) | `title: str, timeout?: float` |
-| Wait for Text | `wait_for_text` | SAFE (implicit) | `text: str, timeout?: float` |
+| Wait for Window | `wait_for_window` | SAFE | `title: str, timeout?: float` |
+| Wait for Text | `wait_for_text` | SAFE | `text: str, timeout?: float` |
+| Remember | `remember` | SAFE | `fact: str, importance?: float` |
+| Recall | `recall` | SAFE | `query: str` |
+| Forget Memory | `forget_memory` | SAFE | `query: str` |
+| Save Note | `save_note` | SAFE | `title: str, content: str` |
+| Get Notes | `get_notes` | SAFE | `query?: str` |
+| Self Fix | `self_fix` | DANGEROUS | `description: str, target_file: str` |
 
 ### 6.3 ToolResult Contract
 
@@ -657,26 +689,35 @@ These are rules that **must not be violated**. Breaking them will cause subtle b
 
 ---
 
-## 20. Roadmap & Stubs
+## 20. Roadmap & Status
 
-These directories exist with stub implementations or are planned:
+### ✅ Implemented (Active)
+
+| Directory / File | Status | Purpose |
+|---|---|---|
+| `runtime/agents/healer.py` | **Active** | Self-Healing Agent: heuristic + LLM diagnosis, corrects failed steps |
+| `runtime/agents/reviewer.py` | **Active** | Self-Improving Reviewer: extracts lessons post-task into long-term memory |
+| `runtime/agents/behavioral_observer.py` | **Active** | Preference learning from conversation patterns |
+| `runtime/memory/long_term.py` | **Active** | Semantic SQLite memory with all-MiniLM-L6-v2 embeddings + cosine sim |
+| `runtime/tools/memory.py` | **Active** | remember, recall, forget_memory tools |
+| `runtime/tools/self_fix.py` | **Active** | AI-powered code rewrite + compile verify + rollback |
+| `runtime/tools/notes.py` | **Active** | save_note, get_notes |
+
+### 🚧 Stubs / Planned
 
 | Directory | Status | Purpose |
-|-----------|--------|---------|
-| `runtime/memory/` | Stub | LanceDB vector store for long-term memory |
-| `runtime/observer/` | Stub | Screenshot + OCR pipeline for real-time screen understanding |
+|---|---|---|
 | `runtime/security/` | Stub | bubblewrap sandboxing (currently direct shell execution) |
-| `runtime/llm/` | Stub | LLM provider wrappers (currently inline in websocket.py) |
 | `runtime/mcp/` | Stub | Model Context Protocol server/client |
 
 ### Planned Features
-- Multi-turn Barge-In (voice interrupt during TTS)
-- Local Model Preloading (Ollama weight prefetch)
-- Wayland Window Tracking (ydotool for KDE/GNOME)
-- MCP Server (expose tools as MCP)
-- Memory Module (LanceDB vector search)
-- Observer Pipeline (screenshot + OCR)
-- API Key Keyring (libsecret migration from plaintext .env)
+- [x] Parallel task execution (`depends_on` in PlanStep + `asyncio.gather`)
+- [ ] ElevenLabs streaming TTS
+- [ ] Web Search Tool (Tavily/Brave)
+- [ ] Morning Briefing
+- [ ] MCP Server (expose tools as MCP)
+- [ ] API Key Keyring (libsecret migration from plaintext .env)
+- [ ] Wayland Window Tracking (ydotool for KDE/GNOME)
 
 ---
 
