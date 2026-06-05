@@ -37,6 +37,9 @@ def init_db():
             role TEXT,
             content TEXT,
             timestamp INTEGER,
+            token_request INTEGER DEFAULT 0,
+            token_response INTEGER DEFAULT 0,
+            token_total INTEGER DEFAULT 0,
             FOREIGN KEY(thread_id) REFERENCES threads(id)
         )
     ''')
@@ -44,6 +47,11 @@ def init_db():
     for col, default in [("token_request", 0), ("token_response", 0), ("token_total", 0)]:
         try:
             cursor.execute(f"ALTER TABLE threads ADD COLUMN {col} INTEGER DEFAULT {default}")
+        except Exception:
+            pass  # Column already exists
+    for col, default in [("token_request", 0), ("token_response", 0), ("token_total", 0)]:
+        try:
+            cursor.execute(f"ALTER TABLE messages ADD COLUMN {col} INTEGER DEFAULT {default}")
         except Exception:
             pass  # Column already exists
     conn.commit()
@@ -58,12 +66,13 @@ def create_thread() -> str:
     conn.close()
     return thread_id
 
-def save_message(thread_id: str, msg_id: str, role: str, content: str, timestamp: int):
+def save_message(thread_id: str, msg_id: str, role: str, content: str, timestamp: int, request_tokens: int = 0, response_tokens: int = 0, total_tokens: int = 0):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    cursor.execute('INSERT OR IGNORE INTO threads (id) VALUES (?)', (thread_id,))
     cursor.execute(
-        'INSERT INTO messages (id, thread_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
-        (msg_id, thread_id, role, content, timestamp)
+        'INSERT INTO messages (id, thread_id, role, content, timestamp, token_request, token_response, token_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        (msg_id, thread_id, role, content, timestamp, request_tokens, response_tokens, total_tokens)
     )
     conn.commit()
     conn.close()
@@ -71,10 +80,10 @@ def save_message(thread_id: str, msg_id: str, role: str, content: str, timestamp
 def get_history(thread_id: str):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('SELECT id, role, content, timestamp FROM messages WHERE thread_id = ? ORDER BY timestamp ASC', (thread_id,))
+    cursor.execute('SELECT id, role, content, timestamp, token_request, token_response, token_total FROM messages WHERE thread_id = ? ORDER BY timestamp ASC', (thread_id,))
     rows = cursor.fetchall()
     conn.close()
-    return [{"id": r[0], "role": r[1], "content": r[2], "timestamp": r[3]} for r in rows]
+    return [{"id": r[0], "role": r[1], "content": r[2], "timestamp": r[3], "token_request": r[4] or 0, "token_response": r[5] or 0, "token_total": r[6] or 0} for r in rows]
 
 def accumulate_thread_tokens(thread_id: str, request_tokens: int, response_tokens: int, total_tokens: int):
     """Add token counts from one response to the thread's running totals."""
@@ -106,11 +115,11 @@ def get_all_threads():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT t.id, t.created_at, m.content, t.token_total
+        SELECT t.id, t.created_at,
+               (SELECT content FROM messages WHERE thread_id = t.id AND role = 'user' ORDER BY timestamp ASC LIMIT 1) as first_message,
+               t.token_total
         FROM threads t
-        LEFT JOIN messages m ON t.id = m.thread_id
-        WHERE m.role = 'user'
-        GROUP BY t.id
+        WHERE EXISTS (SELECT 1 FROM messages WHERE thread_id = t.id AND role = 'user')
         ORDER BY t.created_at DESC
     ''')
     rows = cursor.fetchall()

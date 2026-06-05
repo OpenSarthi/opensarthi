@@ -36,14 +36,21 @@ class Session:
         )
         import db
         self.thread_id = db.create_thread()
-        self._message_task = None
-        self._current_runtime = None
+        self._active_runtimes = {}
+        self._message_tasks = {}
+        self._orchestrators = {}
         self._manual_tts = False  # True when user manually triggered TTS via listen button
         self._session_active = False  # True after onboarding complete + API key confirmed
-        # Per-session orchestrator for context summarization
-        self._orchestrator = None
 
-    async def send_message(self, msg_type: str, payload: dict):
+    async def send_message(self, msg_type: str, payload: dict, thread_id: str = None):
+        if payload is None:
+            payload = {}
+        tid = thread_id or payload.get("thread_id")
+        if not tid and hasattr(self, 'thread_id'):
+            tid = self.thread_id
+        if tid:
+            payload["thread_id"] = tid
+
         msg = {
             "id": str(uuid.uuid4()),
             "type": msg_type,
@@ -52,8 +59,11 @@ class Session:
         }
         await self.ws.send_json(msg)
 
-    async def accumulate_and_update_tokens(self, usage):
+    async def accumulate_and_update_tokens(self, usage, thread_id: str = None):
         if not usage:
+            return
+        tid = thread_id or getattr(self, 'thread_id', None)
+        if not tid:
             return
         try:
             request_tokens = getattr(usage, "request_tokens", 0) or 0
@@ -66,14 +76,14 @@ class Session:
 
         if total_tokens > 0:
             import db
-            db.accumulate_thread_tokens(self.thread_id, request_tokens, response_tokens, total_tokens)
-            totals = db.get_thread_tokens(self.thread_id)
+            db.accumulate_thread_tokens(tid, request_tokens, response_tokens, total_tokens)
+            totals = db.get_thread_tokens(tid)
             await self.send_message("token_update", {
                 "request_tokens": totals.get("request_tokens", 0),
                 "response_tokens": totals.get("response_tokens", 0),
                 "total_tokens": totals.get("total_tokens", 0),
                 "delta_total_tokens": total_tokens
-            })
+            }, thread_id=tid)
 
     async def request_permission(self, tool_name: str, args: dict) -> bool:
         """Ask user for permission to execute a dangerous tool, yielding control back on response."""
@@ -114,9 +124,9 @@ class Session:
         finally:
             self.pending_input = None
 
-    async def emit_state(self, state_ctx):
+    async def emit_state(self, state_ctx, thread_id: str = None):
         """Broadcast current agent state to the frontend UI."""
-        await self.send_message("agent_state", state_ctx.to_dict())
+        await self.send_message("agent_state", state_ctx.to_dict(), thread_id=thread_id)
 
 
     async def speak(self, text: str, manual: bool = False):
@@ -222,13 +232,14 @@ class Session:
         except Exception as e:
             logger.error("Failed to speak and send audio base64", error=str(e))
 
-    async def handle_user_message(self, text: str, source: str = "text"):
-        logger.info("Processing user message", text=text, source=source)
+    async def handle_user_message(self, text: str, source: str = "text", thread_id: str = None):
+        tid = thread_id or self.thread_id
+        logger.info("Processing user message", text=text, source=source, thread_id=tid)
         try:
             import db, time, os
             msg_id = str(uuid.uuid4())
             timestamp = int(time.time() * 1000)
-            db.save_message(self.thread_id, msg_id, "user", text, timestamp)
+            db.save_message(tid, msg_id, "user", text, timestamp)
 
             from config import settings, get_active_api_key
             # Refresh deps with current settings at run-time
@@ -244,12 +255,12 @@ class Session:
                 error_msg = "⚠️ No API key configured. Please add an API key in Settings before using the assistant."
                 err_id = str(uuid.uuid4())
                 err_ts = int(time.time() * 1000)
-                db.save_message(self.thread_id, err_id, "assistant", error_msg, err_ts)
+                db.save_message(tid, err_id, "assistant", error_msg, err_ts)
                 await self.send_message("assistant_response", {
                     "id": err_id, "role": "assistant", "content": error_msg,
                     "timestamp": err_ts, "is_voice": False,
                     "usage": {"request_tokens": 0, "response_tokens": 0, "total_tokens": 0}
-                })
+                }, thread_id=tid)
                 return
 
             from llm import build_model
@@ -258,7 +269,7 @@ class Session:
             from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart, TextPart
 
             # Fetch message history for this thread
-            history_messages = db.get_history(self.thread_id)
+            history_messages = db.get_history(tid)
 
             # Trim to last 20 messages (skip the current prompt which is last)
             MAX_HISTORY = 20
@@ -274,33 +285,35 @@ class Session:
                     message_history.append(ModelResponse(parts=[TextPart(content=msg["content"])]))
 
             # Route through orchestrator for classification + context summarization
-            if self._orchestrator is None:
+            if tid not in self._orchestrators:
                 from agents import OrchestratorAgent
-                self._orchestrator = OrchestratorAgent(
+                self._orchestrators[tid] = OrchestratorAgent(
                     ws_handler=self, model=active_model, deps=self.deps
                 )
+            orchestrator = self._orchestrators[tid]
 
             from observation import DesktopObserver
             observer = DesktopObserver()
-            classification, summarized_context, class_usage, sum_usage = await self._orchestrator.route(
+            classification, summarized_context, class_usage, sum_usage = await orchestrator.route(
                 goal=text,
                 message_history=history_messages,
                 observer=observer,
             )
             # Accumulate orchestrator token usages
-            await self.accumulate_and_update_tokens(class_usage)
-            await self.accumulate_and_update_tokens(sum_usage)
+            await self.accumulate_and_update_tokens(class_usage, thread_id=tid)
+            await self.accumulate_and_update_tokens(sum_usage, thread_id=tid)
 
             # Notify the frontend of the classification
-            await self.send_message("intent_classified", {"classification": classification})
+            await self.send_message("intent_classified", {"classification": classification}, thread_id=tid)
 
             prefix_warning = ""
             usage = None
             final_output = ""
 
             if classification in ("CHAT", "CLARIFY"):
-                logger.info("Routing to direct CHAT/CLARIFY handler")
-                self._current_runtime = None
+                logger.info("Routing to direct CHAT/CLARIFY handler", thread_id=tid)
+                if tid in self._active_runtimes:
+                    self._active_runtimes.pop(tid, None)
                 from pydantic_ai import Agent as PydanticAgent
                 from planner.agent import build_system_prompt
                 from dev_logger import DevLogger
@@ -344,27 +357,28 @@ class Session:
                     final_output = result.output
                     usage = result.usage
                     # Accumulate chat tokens
-                    await self.accumulate_and_update_tokens(usage)
+                    await self.accumulate_and_update_tokens(usage, thread_id=tid)
                     chat_logger.log_llm_response(0, final_output)
                     chat_logger.finalize(final_output)
                 except Exception as e:
-                    logger.error("Direct chat generation failed", error=str(e))
+                    logger.error("Direct chat generation failed", error=str(e), thread_id=tid)
                     chat_logger.log(f"CHAT ERROR: {str(e)}")
                     chat_logger.finalize(f"ERROR: {str(e)}")
                     raise e
             else:
-                logger.info("Routing to TASK AgentRuntime planner")
+                logger.info("Routing to TASK AgentRuntime planner", thread_id=tid)
                 from memory import MemoryManager
                 from agent_runtime import AgentRuntime
-                memory_manager = MemoryManager(self.thread_id)
+                memory_manager = MemoryManager(tid)
                 runtime = AgentRuntime(
                     ws_handler=self,
                     agent=agent,
                     observer=observer,
                     deps=self.deps,
-                    memory_manager=memory_manager
+                    memory_manager=memory_manager,
+                    thread_id=tid
                 )
-                self._current_runtime = runtime
+                self._active_runtimes[tid] = runtime
                 try:
                     final_output = await runtime.run(
                         goal=text,
@@ -376,31 +390,37 @@ class Session:
                 except asyncio.CancelledError:
                     final_output = "Execution cancelled by user."
                     usage = None
-                    logger.info("Agent execution task was cancelled by user.")
+                    logger.info("Agent execution task was cancelled by user.", thread_id=tid)
                 except Exception as e:
-                    logger.error("Agent execution failed", error=str(e))
+                    logger.error("Agent execution failed", error=str(e), thread_id=tid)
                     raise e
 
             ast_msg_id = str(uuid.uuid4())
             ast_timestamp = int(time.time() * 1000)
-            db.save_message(self.thread_id, ast_msg_id, "assistant", final_output, ast_timestamp)
+            req_t = usage.request_tokens if usage else 0
+            res_t = usage.response_tokens if usage else 0
+            tot_t = usage.total_tokens if usage else 0
+            db.save_message(tid, ast_msg_id, "assistant", final_output, ast_timestamp,
+                            request_tokens=req_t, response_tokens=res_t, total_tokens=tot_t)
 
-            # Send the assistant's response back to the UI (token usage was already updated in real time)
+            # Send the assistant's response back to the UI
             await self.send_message("assistant_response", {
                 "id": ast_msg_id,
                 "role": "assistant",
                 "content": final_output,
                 "timestamp": ast_timestamp,
                 "is_voice": source == "voice",
+                "token_request": req_t,
+                "token_response": res_t,
+                "token_total": tot_t,
                 "usage": {
-                    "request_tokens": 0,
-                    "response_tokens": 0,
-                    "total_tokens": 0,
+                    "request_tokens": req_t,
+                    "response_tokens": res_t,
+                    "total_tokens": tot_t,
                 }
-            })
+            }, thread_id=tid)
 
-            # Fire-and-forget: extract and store user facts from this turn passively.
-            # Never blocks the response — runs in background, all errors swallowed.
+            # Fire-and-forget fact extraction
             try:
                 from memory.passive import extract_and_store_facts
                 asyncio.ensure_future(
@@ -408,15 +428,15 @@ class Session:
                         user_input=text,
                         assistant_response=final_output,
                         model=active_model,
-                        thread_id=self.thread_id,
+                        thread_id=tid,
                     )
                 )
             except Exception:
-                pass  # Passive extraction is best-effort
+                pass
 
         except Exception as e:
-            logger.error("Agent execution failed", error=str(e))
-            await self.send_message("error", {"error": str(e)})
+            logger.error("Agent execution failed", error=str(e), thread_id=tid)
+            await self.send_message("error", {"error": str(e)}, thread_id=tid)
 
 
     async def process_incoming(self, data: dict):
@@ -437,9 +457,11 @@ class Session:
             goal = payload.get("goal", "Custom JSON Task")
             self._message_task = asyncio.create_task(self.handle_json_plan(steps, goal))
         elif msg_type == "user_message":
-            self._message_task = asyncio.create_task(
-                self.handle_user_message(payload.get("text", ""), source=payload.get("source", "text"))
+            thread_id = payload.get("thread_id") or self.thread_id
+            task = asyncio.create_task(
+                self.handle_user_message(payload.get("text", ""), source=payload.get("source", "text"), thread_id=thread_id)
             )
+            self._message_tasks[thread_id] = task
         elif msg_type == "session_state":
             pass # Keep mic listening for continuous wake word
         elif msg_type == "voice_state":
@@ -457,14 +479,15 @@ class Session:
         elif msg_type == "new_chat":
             import db
             self.thread_id = db.create_thread()
-            if self._orchestrator:
-                self._orchestrator.reset_summary()
+            if self.thread_id in self._orchestrators:
+                self._orchestrators[self.thread_id].reset_summary()
             logger.info("Created new chat thread", thread_id=self.thread_id)
         elif msg_type == "cancel_execution":
-            if hasattr(self, '_current_runtime') and self._current_runtime:
-                self._current_runtime.request_cancel()
-            if hasattr(self, '_message_task') and self._message_task and not self._message_task.done():
-                self._message_task.cancel()
+            thread_id = payload.get("thread_id") or self.thread_id
+            if thread_id in self._active_runtimes:
+                self._active_runtimes[thread_id].request_cancel()
+            if thread_id in self._message_tasks and not self._message_tasks[thread_id].done():
+                self._message_tasks[thread_id].cancel()
             await self.send_message("agent_state", {
                 "state": "idle",
                 "goal": None,
@@ -473,17 +496,19 @@ class Session:
                 "total_steps": 0,
                 "retry_count": 0,
                 "error": None
-            })
+            }, thread_id=thread_id)
         elif msg_type == "pause_execution":
-            if hasattr(self, '_current_runtime') and self._current_runtime:
-                self._current_runtime.pause()
-                await self.send_message("task_paused", {})
-                logger.info("Task execution paused")
+            thread_id = payload.get("thread_id") or self.thread_id
+            if thread_id in self._active_runtimes:
+                self._active_runtimes[thread_id].pause()
+                await self.send_message("task_paused", {}, thread_id=thread_id)
+                logger.info("Task execution paused", thread_id=thread_id)
         elif msg_type == "resume_execution":
-            if hasattr(self, '_current_runtime') and self._current_runtime:
-                self._current_runtime.resume()
-                await self.send_message("task_resumed", {})
-                logger.info("Task execution resumed")
+            thread_id = payload.get("thread_id") or self.thread_id
+            if thread_id in self._active_runtimes:
+                self._active_runtimes[thread_id].resume()
+                await self.send_message("task_resumed", {}, thread_id=thread_id)
+                logger.info("Task execution resumed", thread_id=thread_id)
         elif msg_type == "permission_response":
             if hasattr(self, 'pending_input') and self.pending_input and not self.pending_input.done():
                 self.pending_input.set_result(payload)

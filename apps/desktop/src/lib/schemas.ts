@@ -87,6 +87,9 @@ export const MessageSchema = z.object({
   content: z.string(),
   timestamp: z.number(),
   plan: PlanSchema.optional(),
+  token_request: z.number().optional(),
+  token_response: z.number().optional(),
+  token_total: z.number().optional(),
 });
 export type Message = z.infer<typeof MessageSchema>;
 
