@@ -531,3 +531,72 @@ button:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--border)
   0%,100% { transform: scale(1); opacity: 1; }
   50%     { transform: scale(1.7); opacity: 0.4; }
 }
+
+.chrome-tabs-container::-webkit-scrollbar {
+  display: none;
+}
+
+.chrome-tab {
+  position: relative;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-weight: normal;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  transition: all 0.15s ease;
+  min-width: 120px;
+  max-width: 180px;
+  gap: 8px;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.chrome-tab::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  background: rgba(0, 0, 0, 0.25);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: none;
+  transform: perspective(12px) rotateX(2.5deg);
+  transform-origin: bottom;
+  border-radius: 6px 6px 0 0;
+  transition: all 0.15s ease;
+}
+
+.chrome-tab.active {
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.chrome-tab.active::before {
+  background: rgba(255, 255, 255, 0.09);
+  border-top: 1px solid var(--border-accent);
+  border-left: 1px solid var(--border-accent);
+  border-right: 1px solid var(--border-accent);
+  border-bottom: none;
+  box-shadow: 0 -2px 8px var(--accent-glow);
+}
+
+.chrome-tab:hover {
+  color: var(--text-primary);
+}
+
+.chrome-tab:hover::before {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chrome-tab.active:hover::before {
+  background: rgba(255, 255, 255, 0.09);
+}
+

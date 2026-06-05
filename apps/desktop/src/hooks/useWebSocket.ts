@@ -31,7 +31,14 @@ export function useWebSocket(port: number | null) {
           const connected = !!payload.connected;
           setIsConnected(connected);
           setConnected(connected);
-          if (connected) setVoiceState("idle");
+          if (connected) {
+            setVoiceState("idle");
+            // Load or initialize the active thread on the backend!
+            const activeId = useAssistantStore.getState().activeThreadId;
+            if (activeId) {
+              wsClient.send("load_thread", { thread_id: activeId });
+            }
+          }
         }
       }),
 
@@ -45,7 +52,6 @@ export function useWebSocket(port: number | null) {
           const lowerText = text.toLowerCase();
           
           const escapedWakeWords = wakeWords.map((w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-          // Append common Whisper phonetic misspellings if the user is trying to use "sarthi"
           const hasSarthi = wakeWords.some((w: string) => w.toLowerCase().includes("sarthi") || w.toLowerCase().includes("sarathi"));
           if (hasSarthi) {
             escapedWakeWords.push("sanati", "farati", "sarath", "sarth", "sorthi", "sorathi", "sorth", "sharthi", "sharathi", "sharth", "sarty", "sarathy", "sarti");
@@ -55,7 +61,6 @@ export function useWebSocket(port: number | null) {
           const hasWakeWord = wakeWordRegex.test(lowerText);
           
           if (hasWakeWord) {
-            // Play a simple beep natively in browser for "Google Assistant" style feedback
             const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
             const oscillator = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
@@ -70,12 +75,10 @@ export function useWebSocket(port: number | null) {
             oscillator.stop(audioCtx.currentTime + 0.2);
             
             const cleanText = text
-              // Remove the wake word and any prefix like "hey", "hello", "hi" before it
               .replace(new RegExp(`(?:hey|hello|hi|he)?\\s*(?:${escapedWakeWords.join('|')})`, 'gi'), "")
               .replace(/hey!/gi, "")
-              // Clean up leading/trailing punctuation and whitespace artifacts
-              .replace(/^[\s,;:.!?]+/, "")  // strip leading commas, spaces, punctuation
-              .replace(/[\s,;:.!?]+$/, "")  // strip trailing commas, spaces, punctuation
+              .replace(/^[\s,;:.!?]+/, "")
+              .replace(/[\s,;:.!?]+$/, "")
               .trim();
             
             setVoiceState("listening");
@@ -87,47 +90,48 @@ export function useWebSocket(port: number | null) {
       }),
 
       wsClient.on("plan_created", (msg) => {
+        const { thread_id } = msg.payload as { thread_id?: string };
         const plan = PlanSchema.parse(msg.payload);
-        setPlan(plan);
+        setPlan(plan, thread_id);
         setVoiceState("processing");
       }),
 
       wsClient.on("tool_action", (msg) => {
-        const { tool, description, status, result } = msg.payload as any;
-        useAssistantStore.getState().addOrUpdateToolAction(tool, description, status, result);
+        const { tool, description, status, result, thread_id } = msg.payload as any;
+        useAssistantStore.getState().addOrUpdateToolAction(tool, description, status, result, thread_id);
         setVoiceState("processing");
       }),
 
       wsClient.on("tool_started", (msg) => {
-        const { index } = msg.payload as { index: number };
-        setExecutingStep(index);
-        updateStepStatus(index, { status: "running", timestamp: Date.now() });
+        const { index, thread_id } = msg.payload as { index: number; thread_id?: string };
+        setExecutingStep(index, thread_id);
+        updateStepStatus(index, { status: "running", timestamp: Date.now() }, thread_id);
       }),
 
       wsClient.on("tool_completed", (msg) => {
-        const { index, result } = msg.payload as { index: number; result: unknown };
-        updateStepStatus(index, { status: "success", result, timestamp: Date.now() });
+        const { index, result, thread_id } = msg.payload as { index: number; result: unknown; thread_id?: string };
+        updateStepStatus(index, { status: "success", result, timestamp: Date.now() }, thread_id);
       }),
 
       wsClient.on("tool_error", (msg) => {
-        const { index, error } = msg.payload as { index: number; error: string };
-        updateStepStatus(index, { status: "error", error, timestamp: Date.now() });
+        const { index, error, thread_id } = msg.payload as { index: number; error: string; thread_id?: string };
+        updateStepStatus(index, { status: "error", error, timestamp: Date.now() }, thread_id);
       }),
 
       wsClient.on("tool_terminated", (msg) => {
-        const { index } = msg.payload as { index: number };
-        updateStepStatus(index, { status: "terminated", timestamp: Date.now() });
+        const { index, thread_id } = msg.payload as { index: number; thread_id?: string };
+        updateStepStatus(index, { status: "terminated", timestamp: Date.now() }, thread_id);
       }),
 
       wsClient.on("assistant_response", (msg) => {
         const message = MessageSchema.parse(msg.payload);
-        addMessage(message);
+        const { thread_id } = msg.payload as { thread_id?: string };
+        addMessage(message, thread_id);
         setTranscript(null);
         
-        // Extract and store token usage if present
         const usage = (msg.payload as any).usage;
         if (usage) {
-          useAssistantStore.getState().updateTokenUsage(usage);
+          useAssistantStore.getState().updateTokenUsage(usage, thread_id);
         }
         
         const isVoice = (msg.payload as any).is_voice;
@@ -138,8 +142,8 @@ export function useWebSocket(port: number | null) {
           setVoiceState("idle");
         }
         
-        setPlan(null);
-        setExecutingStep(null);
+        setPlan(null, thread_id);
+        setExecutingStep(null, thread_id);
       }),
 
       wsClient.on("speech_started", () => {
@@ -149,7 +153,6 @@ export function useWebSocket(port: number | null) {
       wsClient.on("speech_completed", (msg) => {
         const wasManual = (msg?.payload as any)?.was_manual === true;
         if (wasManual) {
-          // Manual TTS (user pressed listen button) — do NOT auto-restart listening
           setVoiceState("idle");
           return;
         }
@@ -197,7 +200,6 @@ export function useWebSocket(port: number | null) {
         }
         if (p.active_theme) store.setActiveTheme(p.active_theme);
 
-        // Sync all per-provider API keys
         store.setAllApiKeys({
           gemini: p.gemini_api_key || "",
           openai: p.openai_api_key || "",
@@ -206,7 +208,6 @@ export function useWebSocket(port: number | null) {
           openrouter: p.openrouter_api_key || "",
         });
 
-        // Sync personalization
         if (p.user_name !== undefined || p.user_skills !== undefined || p.custom_prompt !== undefined) {
           store.setPersonalization(
             p.user_name || store.userName,
@@ -222,19 +223,9 @@ export function useWebSocket(port: number | null) {
       }),
 
       wsClient.on("thread_loaded", (msg) => {
-        const { messages, token_totals } = msg.payload as any;
+        const { thread_id, messages, token_totals } = msg.payload as any;
         const store = useAssistantStore.getState();
-        store.setMessages(messages);
-        // Restore per-thread token usage so the display reflects this thread's history
-        if (token_totals) {
-          store.restoreThreadTokens({
-            request_tokens: token_totals.request_tokens,
-            response_tokens: token_totals.response_tokens,
-            total_tokens: token_totals.total_tokens,
-          });
-        }
-        setPlan(null);
-        setExecutingStep(null);
+        store.loadThreadToTab(thread_id, messages, token_totals);
       }),
 
       wsClient.on("permission_request", (msg) => {
@@ -252,12 +243,14 @@ export function useWebSocket(port: number | null) {
         setVoiceState("error");
       }),
 
-      wsClient.on("task_paused", () => {
-        useAssistantStore.getState().setTaskPaused(true);
+      wsClient.on("task_paused", (msg) => {
+        const { thread_id } = msg.payload as { thread_id?: string };
+        useAssistantStore.getState().setTaskPaused(true, thread_id);
       }),
 
-      wsClient.on("task_resumed", () => {
-        useAssistantStore.getState().setTaskPaused(false);
+      wsClient.on("task_resumed", (msg) => {
+        const { thread_id } = msg.payload as { thread_id?: string };
+        useAssistantStore.getState().setTaskPaused(false, thread_id);
       }),
 
       wsClient.on("shell_output", (msg) => {
@@ -271,15 +264,13 @@ export function useWebSocket(port: number | null) {
       }),
 
       wsClient.on("token_update", (msg) => {
-        const { request_tokens, response_tokens, total_tokens, delta_total_tokens } = msg.payload as any;
-        useAssistantStore.setState((s) => ({
-          tokenUsage: {
-            requestTokens: request_tokens,
-            responseTokens: response_tokens,
-            totalTokens: total_tokens,
-            sessionTotalTokens: s.tokenUsage.sessionTotalTokens + (delta_total_tokens || 0)
-          }
-        }));
+        const { thread_id, request_tokens, response_tokens, total_tokens, delta_total_tokens } = msg.payload as any;
+        useAssistantStore.getState().updateTokenUsageFromWS(thread_id, {
+          request_tokens,
+          response_tokens,
+          total_tokens,
+          delta_total_tokens,
+        });
       }),
     ];
 

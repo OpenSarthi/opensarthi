@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X } from "lucide-react";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
@@ -43,9 +43,13 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const {
     voiceState, isConnected, currentTranscript,
     messages, currentPlan, activeLocalModel, activeCloudModel, activeProvider,
-    tokenUsage, taskPaused, isOverlayMode, snapAlign,
-    setVoiceState, addMessage, clearMessages
+    tokenUsage, globalSessionTokens, taskPaused, isOverlayMode, snapAlign,
+    setVoiceState, addMessage,
+    tabs, activeThreadId, addTab, removeTab, setActiveThreadId
   } = useAssistantStore();
+
+  const modelKey = activeProvider === "ollama" || activeProvider === "local" ? activeLocalModel : activeCloudModel;
+  const globalSessionCount = globalSessionTokens[modelKey] || 0;
 
   const [isMaximized, setIsMaximized] = useState(false);
 
@@ -185,20 +189,20 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     if (!msg || !isConnected) return;
     lastSentSourceRef.current = "voice";
     addMessage({ id: crypto.randomUUID(), role: "user", content: msg, timestamp: Date.now() });
-    wsClient.send("user_message", { text: msg, source: "voice" });
+    wsClient.send("user_message", { text: msg, source: "voice", thread_id: activeThreadId });
     setTextInput("");
     setVoiceState("processing");
-  }, [isConnected, setVoiceState, addMessage]);
+  }, [isConnected, setVoiceState, addMessage, activeThreadId]);
 
   const handleTextSend = useCallback(() => {
     const msg = textInput.trim();
     if (!msg || !isConnected) return;
     lastSentSourceRef.current = "text";
     addMessage({ id: crypto.randomUUID(), role: "user", content: msg, timestamp: Date.now() });
-    wsClient.send("user_message", { text: msg, source: "text" });
+    wsClient.send("user_message", { text: msg, source: "text", thread_id: activeThreadId });
     setTextInput("");
     setVoiceState("processing");
-  }, [textInput, isConnected, setVoiceState, addMessage]);
+  }, [textInput, isConnected, setVoiceState, addMessage, activeThreadId]);
 
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -294,39 +298,13 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   };
 
   const handleNewThread = () => {
-    clearMessages();
     onNewChat?.();
-    wsClient.send("new_chat", {}); // Let backend generate a new thread
+    const newId = crypto.randomUUID();
+    addTab(newId);
+    wsClient.send("load_thread", { thread_id: newId });
   };
 
-  const getThreadTitle = () => {
-    const firstUserMsg = messages.find(m => m.role === "user");
-    if (!firstUserMsg) return "// ACTIVE THREAD - EMPTY";
 
-    const prompt = firstUserMsg.content;
-    const p = prompt.toLowerCase().trim();
-
-    let title = "ACTIVE THREAD";
-    if (p.includes("update") || p.includes("upgrade")) title = "SYSTEM UPDATE";
-    else if (p.includes("install") || p.includes("pacman -s") || p.includes("yay -s")) title = "INSTALL PACKAGE";
-    else if (p.includes("remove") || p.includes("uninstall")) title = "REMOVE PACKAGE";
-    else if (p.includes("reboot") || p.includes("restart")) title = "SYSTEM REBOOT";
-    else if (p.includes("shutdown") || p.includes("poweroff")) title = "SYSTEM SHUTDOWN";
-    else if (p.includes("search") || p.includes("find") || p.includes("grep")) title = "FILE SEARCH";
-    else if (p.includes("open") || p.includes("launch") || p.includes("start")) title = "LAUNCH APP";
-    else if (p.includes("create") || p.includes("write") || p.includes("mkdir") || p.includes("touch")) title = "CREATE FILE";
-    else if (p.includes("kill") || p.includes("pkill")) title = "KILL PROCESS";
-    else if (p.includes("shell") || p.includes("command") || p.includes("run") || p.includes("sudo")) title = "SHELL COMMAND";
-    else if (p.includes("chrome") || p.includes("firefox") || p.includes("browser")) title = "OPEN BROWSER";
-    else if (p.includes("type") || p.includes("click") || p.includes("press")) title = "UI AUTOMATION";
-    else if (p.includes("brightness") || p.includes("volume") || p.includes("screen")) title = "SYSTEM CONTROL";
-    else {
-      const words = prompt.trim().split(/\s+/).slice(0, 3).map(w => w.replace(/[^a-zA-Z]/g, "").toUpperCase()).filter(Boolean);
-      title = words.join(" ") || "AGENT RUN";
-    }
-
-    return `// THREAD: ${title}`;
-  };
 
   const isTaskRunning = !!currentPlan;
 
@@ -451,9 +429,9 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               <button
                 onClick={() => {
                   if (taskPaused) {
-                    wsClient.send("resume_execution", {});
+                    wsClient.send("resume_execution", { thread_id: activeThreadId });
                   } else {
-                    wsClient.send("pause_execution", {});
+                    wsClient.send("pause_execution", { thread_id: activeThreadId });
                   }
                 }}
                 style={{
@@ -471,7 +449,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               {/* Stop/Cancel button */}
               <button
                 onClick={() => {
-                  wsClient.send("cancel_execution", {});
+                  wsClient.send("cancel_execution", { thread_id: activeThreadId });
                 }}
                 style={{
                   flex: 1,
@@ -719,7 +697,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 />
               </div>
             </div>
-            <div className="hud-panel" style={{ height: "170px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
+            <div className="hud-panel" style={{ height: "180px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
               <div className="hud-panel-title">// AGENT STATUS & SYSTEMS</div>
               <div style={{ padding: "12px", fontSize: "12px", color: "var(--text-secondary)", flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
                 <div>PROVIDER: <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{activeProvider}</span></div>
@@ -727,14 +705,14 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 <div style={{ borderTop: "1px dashed rgba(255,255,255,0.08)", marginTop: "4px", paddingTop: "4px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>TOKEN USAGE:</span>
-                    <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{tokenUsage.totalTokens}</span>
+                    <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{tokenUsage.sessionTotalTokens}</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
                     <span>SESSION TOTAL:</span>
-                    <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{tokenUsage.sessionTotalTokens}</span>
+                    <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{globalSessionCount}</span>
                   </div>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "auto", borderTop: "1px solid var(--border)", paddingTop: "6px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "auto", borderTop: "1px solid var(--border)", paddingTop: "6px", marginBottom: "10px" }}>
                   <span>VOICE INPUT:</span>
                   <span style={{ color: voiceState !== "idle" ? "var(--accent)" : "var(--text-secondary)" }}>{voiceState.toUpperCase()}</span>
                 </div>
@@ -771,11 +749,132 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
           {/* CENTER PANEL */}
           <div className="hud-panel" style={{ flex: "1 1 0%", minWidth: "320px", display: "flex", flexDirection: "column" }}>
-            <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getThreadTitle()}</span>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+            <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 8px 0 0", height: "36px", overflow: "visible", gap: "8px" }}>
+              {/* Scrollable Tabs Wrapper */}
+              <div 
+                style={{ 
+                  display: "flex", 
+                  alignItems: "flex-end", 
+                  flex: 1, 
+                  height: "100%", 
+                  overflowX: "auto", 
+                  scrollbarWidth: "none", 
+                  gap: "6px",
+                  paddingLeft: "16px"
+                }}
+                className="chrome-tabs-container"
+              >
+                {tabs.map((tab) => {
+                  const isActive = tab.id === activeThreadId;
+                  const isRunning = !!tab.currentPlan;
+                  return (
+                    <div
+                      key={tab.id}
+                      onClick={() => setActiveThreadId(tab.id)}
+                      className={`chrome-tab ${isActive ? "active" : ""}`}
+                      style={{
+                        height: "30px",
+                        display: "flex",
+                        alignItems: "center",
+                        padding: "0 16px",
+                        cursor: "pointer",
+                        color: isActive ? "var(--accent)" : "var(--text-secondary)",
+                        fontWeight: isActive ? "bold" : "normal",
+                        fontSize: "11px",
+                        letterSpacing: "0.02em",
+                        position: "relative",
+                        minWidth: "120px",
+                        maxWidth: "180px",
+                        gap: "8px",
+                        justifyContent: "space-between",
+                        flexShrink: 0
+                      }}
+                    >
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, zIndex: 2 }}>
+                        {isRunning ? "⚡ " : ""}// {tab.title.replace(/^\/\/\s*/, "").toUpperCase()}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeTab(tab.id);
+                        }}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: "inherit",
+                          padding: "2px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          borderRadius: "50%",
+                          cursor: "pointer",
+                          opacity: isActive ? 0.95 : 0.6,
+                          transition: "opacity 0.15s, background-color 0.15s",
+                          zIndex: 2
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.opacity = "1";
+                          e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.15)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.opacity = isActive ? "0.95" : "0.6";
+                          e.currentTarget.style.backgroundColor = "transparent";
+                        }}
+                      >
+                        <X size={10} style={{ strokeWidth: 2.5 }} />
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {/* Chrome plus icon button */}
+                <button
+                  onClick={handleNewThread}
+                  title="New Tab"
+                  style={{
+                    height: "26px",
+                    width: "26px",
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text-secondary)",
+                    cursor: "pointer",
+                    marginLeft: "6px",
+                    marginBottom: "3px",
+                    transition: "all 0.2s",
+                    flexShrink: 0
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--accent)";
+                    e.currentTarget.style.color = "#000";
+                    e.currentTarget.style.boxShadow = "0 0 8px var(--accent)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                    e.currentTarget.style.color = "var(--text-secondary)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+
+              {/* Divider left to Context Button */}
+              <div style={{
+                width: "1px",
+                height: "22px",
+                background: "rgba(255, 255, 255, 0.15)",
+                margin: "0 4px 0 4px",
+                flexShrink: 0
+              }} />
+
+              {/* Right Most - Context Button (Icon only, larger) */}
+              <div style={{ display: "flex", alignItems: "center", paddingLeft: "2px", flexShrink: 0 }}>
                 {isTaskRunning && (
-                  <span className="animate-pulse" style={{ fontSize: "10px", color: "var(--accent)", fontWeight: "bold" }}>● ACTIVE</span>
+                  <span className="animate-pulse" style={{ fontSize: "10px", color: "var(--accent)", fontWeight: "bold", marginRight: "8px" }}>● ACTIVE</span>
                 )}
                 <button
                   onClick={onOpenContext}
@@ -783,28 +882,28 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: "4px",
-                    padding: "3px 8px",
-                    fontSize: "9px",
-                    fontWeight: "bold",
-                    letterSpacing: "0.05em",
+                    justifyContent: "center",
+                    width: "28px",
+                    height: "28px",
                     background: "rgba(0, 230, 180, 0.1)",
                     color: "var(--accent)",
                     border: "1px solid rgba(0, 230, 180, 0.2)",
-                    borderRadius: "3px",
+                    borderRadius: "4px",
                     cursor: "pointer",
                     transition: "all 0.2s"
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = "rgba(0, 230, 180, 0.2)";
                     e.currentTarget.style.borderColor = "var(--accent)";
+                    e.currentTarget.style.boxShadow = "0 0 8px var(--accent-glow)";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = "rgba(0, 230, 180, 0.1)";
                     e.currentTarget.style.borderColor = "rgba(0, 230, 180, 0.2)";
+                    e.currentTarget.style.boxShadow = "none";
                   }}
                 >
-                  <Cpu size={10} /> CONTEXT
+                  <Cpu size={16} />
                 </button>
               </div>
             </div>
@@ -908,20 +1007,6 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               padding: "16px", borderTop: "1px solid var(--border)",
               display: "flex", flexDirection: "column", gap: "0px", background: "rgba(0,0,0,0.4)", zIndex: 1
             }}>
-              {/* Task running indicator */}
-              {isTaskRunning && (
-                <div style={{
-                  display: "flex", alignItems: "center", gap: "6px",
-                  padding: "6px 8px", marginBottom: "8px",
-                  background: taskPaused ? "rgba(255,180,0,0.08)" : "rgba(var(--accent-rgb, 255,60,60),0.08)",
-                  border: `1px solid ${taskPaused ? "rgba(255,180,0,0.2)" : "rgba(var(--accent-rgb, 255,60,60),0.15)"}`,
-                  borderRadius: "var(--radius-sm)",
-                  fontSize: "10px", fontWeight: "bold", letterSpacing: "0.06em",
-                  color: taskPaused ? "hsl(40, 100%, 60%)" : "var(--accent)",
-                }}>
-                  {taskPaused ? "⏸ TASK PAUSED" : "⚡ TASK IN PROGRESS — INPUT LOCKED"}
-                </div>
-              )}
               <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
                 <VoiceButton voiceState={voiceState} onClick={handleVoiceClick} disabled={!isConnected} />
                 <Waveform voiceState={voiceState} />

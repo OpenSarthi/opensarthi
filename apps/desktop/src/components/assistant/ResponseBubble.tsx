@@ -238,6 +238,9 @@ function parseMarkdownLine(line: string, lineIndex: number) {
   if (trimmed.startsWith("### ")) {
     return <h3 key={lineIndex} style={{ fontSize: "1.1em", margin: "8px 0 4px 0", color: "var(--accent)", fontWeight: "bold" }}>{parseInlineMarkdown(trimmed.slice(4))}</h3>;
   }
+  if (trimmed.startsWith("#### ")) {
+    return <h4 key={lineIndex} style={{ fontSize: "1.05em", margin: "6px 0 3px 0", color: "var(--accent)", fontWeight: "bold" }}>{parseInlineMarkdown(trimmed.slice(5))}</h4>;
+  }
   
   // Lists
   if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
@@ -417,9 +420,26 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
           )}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: "4px", gap: "10px" }}>
-            <span style={{ fontSize: "9px", color: "var(--text-secondary)", opacity: 0.85, fontFamily: "var(--font-mono)", letterSpacing: "0.03em" }}>
-              [ {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })} ]
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "11px", color: "rgba(255, 255, 255, 0.65)", fontFamily: "var(--font-mono)", fontWeight: "bold", letterSpacing: "0.03em" }}>
+                [ {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })} ]
+              </span>
+              {!isUser && message.token_total && message.token_total > 0 ? (
+                <span 
+                  title={`Total Tokens: ${message.token_total.toLocaleString()}\nInput Tokens: ${message.token_request?.toLocaleString()}\nOutput Tokens: ${message.token_response?.toLocaleString()}`}
+                  style={{ 
+                    fontSize: "10px", 
+                    color: "var(--accent)", 
+                    fontFamily: "var(--font-mono)", 
+                    borderLeft: "1px solid rgba(255, 255, 255, 0.15)", 
+                    paddingLeft: "8px",
+                    cursor: "pointer"
+                  }}
+                >
+                  {message.token_total.toLocaleString()} TOKENS
+                </span>
+              ) : null}
+            </div>
             <div style={{ display: "flex", gap: "6px" }}>
               {!isUser && response && (
                 <>
