@@ -73,6 +73,7 @@ WINDOW DISCIPLINE (critical — read carefully):
 • OpenSarthi sits pinned to the right edge of the screen. It loses focus when you interact with other windows.
 • The system automatically re-focuses the task window before each type/click action using the pinned window ID.
 • You do NOT need to re-focus manually unless the active window changed unexpectedly.
+• Before typing into any input field or search bar, you MUST click on the field first to give it focus. If the exact coordinates or accessible element for the field is unknown, use the appropriate keyboard shortcut to focus it (e.g. press_key with 'ctrl+l' to focus browser address bar, '/' to focus YouTube search box, or press 'Tab' to cycle focus). Never call type_text without ensuring the target input field has active focus.
 • Use exact window titles from CURRENT DESKTOP STATE. NEVER guess or invent a window title.
 • If the window title is unknown: call observe_desktop first to see what is open.
 
@@ -221,10 +222,10 @@ def build_structured_context(
             f"  Focused Element: [{snapshot.focused_element_role}] '{snapshot.focused_element_text or ''}'"
         )
     if snapshot.accessibility_tree and snapshot.accessibility_tree.get("summary"):
-        summary = snapshot.accessibility_tree["summary"][:500]
+        summary = snapshot.accessibility_tree["summary"][:1000]
         desktop_state_lines.append(f"  UI Elements:\n    {summary.replace(chr(10), chr(10)+'    ')}")
-    elif snapshot.screen_text_summary:
-        desktop_state_lines.append(f"  Screen Text (OCR): {snapshot.screen_text_summary[:200]}")
+    if snapshot.screen_text_summary:
+        desktop_state_lines.append(f"  Screen Text (OCR):\n    {snapshot.screen_text_summary[:2000].replace(chr(10), chr(10)+'    ')}")
 
     # Pinned window session state
     try:

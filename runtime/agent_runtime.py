@@ -8,18 +8,25 @@ from planner.schemas import Plan, PlanStep, ToolResult
 from observation import DesktopObserver, DesktopSnapshot
 from dev_logger import DevLogger
 
+class TaskUsage:
+    def __init__(self, request_tokens=0, response_tokens=0, total_tokens=0):
+        self.request_tokens = request_tokens
+        self.response_tokens = response_tokens
+        self.total_tokens = total_tokens
+
 class AgentRuntime:
     """
     The stateful execution engine for OpenSarthi.
     Supports immediate cancellation of both LLM inference and tool execution.
     """
 
-    def __init__(self, ws_handler, agent: Agent, observer: DesktopObserver, deps=None, memory_manager=None):
+    def __init__(self, ws_handler, agent: Agent, observer: DesktopObserver, deps=None, memory_manager=None, thread_id: str = None):
         self.ws = ws_handler
         self.agent = agent
         self.observer = observer
         self.deps = deps
         self.memory = memory_manager
+        self.thread_id = thread_id
         self.state = AgentStateContext()
         self.cumulative_steps = []
         self._cancel_requested = False
@@ -124,6 +131,9 @@ class AgentRuntime:
         self._pause_event.set()
         self.state = AgentStateContext(current_goal=goal)
         self.last_usage = None
+        self.run_request_tokens = 0
+        self.run_response_tokens = 0
+        self.run_total_tokens = 0
         self._same_tool_fail_count.clear()
         self._last_tool_error.clear()
 
@@ -183,7 +193,11 @@ class AgentRuntime:
                     if getattr(self, "logger", None):
                         self.logger.log_llm_response(replanning_attempts, result.output)
                     if result and getattr(result, "usage", None):
-                        await self.ws.accumulate_and_update_tokens(result.usage)
+                        usage = result.usage
+                        self.run_request_tokens += (getattr(usage, "request_tokens", 0) or 0)
+                        self.run_response_tokens += (getattr(usage, "response_tokens", 0) or 0)
+                        self.run_total_tokens += (getattr(usage, "total_tokens", 0) or 0)
+                        await self.ws.accumulate_and_update_tokens(result.usage, thread_id=self.thread_id)
                 except asyncio.CancelledError:
                     await self._transition(AgentState.IDLE)
                     return "Execution cancelled by user."
@@ -374,7 +388,11 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
                 result = await self._agent_run(final_error_context, deps=self.deps, model=model, message_history=message_history)
                 response = result.output
                 if result and getattr(result, "usage", None):
-                    await self.ws.accumulate_and_update_tokens(result.usage)
+                    usage = result.usage
+                    self.run_request_tokens += (getattr(usage, "request_tokens", 0) or 0)
+                    self.run_response_tokens += (getattr(usage, "response_tokens", 0) or 0)
+                    self.run_total_tokens += (getattr(usage, "total_tokens", 0) or 0)
+                    await self.ws.accumulate_and_update_tokens(result.usage, thread_id=self.thread_id)
             except asyncio.CancelledError:
                 response = "Execution cancelled by user."
             except Exception as e:
@@ -407,6 +425,7 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
             await self._transition(AgentState.ERROR, error_message=err_msg or err_type)
             return f"❌ System error during execution: {err_msg or err_type}"
         finally:
+            self.last_usage = TaskUsage(self.run_request_tokens, self.run_response_tokens, self.run_total_tokens)
             await asyncio.sleep(1.0)
             await self._transition(AgentState.IDLE)
 
@@ -484,7 +503,7 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
 
     async def _transition(self, new_state: AgentState, **kwargs):
         self.state.transition(new_state, **kwargs)
-        await self.ws.emit_state(self.state)
+        await self.ws.emit_state(self.state, thread_id=self.thread_id)
 
     def _parse_response(self, raw_output: Any) -> tuple[Optional[Plan], Optional[str]]:
         if isinstance(raw_output, Plan):
