@@ -5,8 +5,6 @@ import shutil
 import platform
 from dataclasses import dataclass, field
 from typing import Optional
-import mss
-from PIL import Image
 
 # Platform-conditional accessibility provider
 if platform.system() == "Linux":

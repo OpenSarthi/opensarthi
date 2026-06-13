@@ -5,7 +5,11 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Any
 
 from planner.agent import agent, AgentDependencies
-from voice.pipeline import VoicePipeline
+import os
+if os.environ.get("OPENSARTHI_PLATFORM") == "android":
+    from voice.android_bridge import AndroidVoicePipeline as VoicePipeline
+else:
+    from voice.pipeline import VoicePipeline
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -39,6 +43,7 @@ class Session:
         self._active_runtimes = {}
         self._message_tasks = {}
         self._orchestrators = {}
+        self._pending_inputs: dict = {}  # thread_id -> asyncio.Future (per-thread to avoid concurrent gate collision)
         self._manual_tts = False  # True when user manually triggered TTS via listen button
         self._session_active = False  # True after onboarding complete + API key confirmed
 
@@ -91,7 +96,8 @@ class Session:
     async def request_permission(self, tool_name: str, args: dict, thread_id: str = None) -> bool:
         """Ask user for permission to execute a dangerous tool, yielding control back on response."""
         from state_machine import AgentState
-        self.pending_input = asyncio.Future()
+        tid = thread_id or self.thread_id
+        self._pending_inputs[tid] = asyncio.Future()
         try:
             req_id = str(uuid.uuid4())
             await self.send_message("permission_request", {
@@ -101,31 +107,32 @@ class Session:
                 "risk_level": "dangerous",
                 "description": f"Execute dangerous action: {tool_name} with arguments {args}?",
                 "timeout_seconds": 30
-            }, thread_id=thread_id)
+            }, thread_id=tid)
             if hasattr(self, '_current_runtime') and self._current_runtime:
                 await self._current_runtime._transition(AgentState.ASKING_PERMISSION)
                 
-            response = await self.pending_input
+            response = await self._pending_inputs[tid]
             return response.get("allow", response.get("approved", False))
         finally:
-            self.pending_input = None
+            self._pending_inputs.pop(tid, None)
 
     async def request_user_input(self, prompt: str, input_type: str = "text", thread_id: str = None) -> str:
         """Ask user for arbitrary text input (e.g. password for sudo), yielding control back on response."""
         from state_machine import AgentState
-        self.pending_input = asyncio.Future()
+        tid = thread_id or self.thread_id
+        self._pending_inputs[tid] = asyncio.Future()
         try:
             await self.send_message("input_request", {
                 "prompt": prompt,
                 "input_type": input_type
-            }, thread_id=thread_id)
+            }, thread_id=tid)
             if hasattr(self, '_current_runtime') and self._current_runtime:
                 await self._current_runtime._transition(AgentState.ASKING_PERMISSION)
                 
-            response = await self.pending_input
+            response = await self._pending_inputs[tid]
             return response.get("value", "")
         finally:
-            self.pending_input = None
+            self._pending_inputs.pop(tid, None)
 
     async def emit_state(self, state_ctx, thread_id: str = None):
         """Broadcast current agent state to the frontend UI."""
@@ -491,10 +498,12 @@ class Session:
                 logger.info("[WebSocket] Manual voice listening stopped by user.")
         elif msg_type == "new_chat":
             import db
-            self.thread_id = db.create_thread()
-            if self.thread_id in self._orchestrators:
-                self._orchestrators[self.thread_id].reset_summary()
-            logger.info("Created new chat thread", thread_id=self.thread_id)
+            new_tid = db.create_thread()
+            self.thread_id = new_tid
+            # Clean up the old orchestrator so the next one is fresh
+            old_tid = payload.get("old_thread_id") or self.thread_id
+            self._orchestrators.pop(old_tid, None)
+            logger.info("Created new chat thread", thread_id=new_tid)
         elif msg_type == "cancel_execution":
             thread_id = payload.get("thread_id") or self.thread_id
             if thread_id in self._active_runtimes:
@@ -523,11 +532,13 @@ class Session:
                 await self.send_message("task_resumed", {}, thread_id=thread_id)
                 logger.info("Task execution resumed", thread_id=thread_id)
         elif msg_type == "permission_response":
-            if hasattr(self, 'pending_input') and self.pending_input and not self.pending_input.done():
-                self.pending_input.set_result(payload)
+            tid = payload.get("thread_id") or self.thread_id
+            if tid in self._pending_inputs and not self._pending_inputs[tid].done():
+                self._pending_inputs[tid].set_result(payload)
         elif msg_type == "input_response":
-            if hasattr(self, 'pending_input') and self.pending_input and not self.pending_input.done():
-                self.pending_input.set_result(payload)
+            tid = payload.get("thread_id") or self.thread_id
+            if tid in self._pending_inputs and not self._pending_inputs[tid].done():
+                self._pending_inputs[tid].set_result(payload)
         elif msg_type == "get_history":
             import db
             threads = db.get_all_threads()
@@ -538,6 +549,11 @@ class Session:
             if tid:
                 db.delete_thread(tid)
                 logger.info("Deleted thread", thread_id=tid)
+                # Clean up all per-thread state to prevent memory leaks
+                self._orchestrators.pop(tid, None)
+                self._active_runtimes.pop(tid, None)
+                self._message_tasks.pop(tid, None)
+                self._pending_inputs.pop(tid, None)
                 if self.thread_id == tid:
                     self.thread_id = db.create_thread()
                 threads = db.get_all_threads()
