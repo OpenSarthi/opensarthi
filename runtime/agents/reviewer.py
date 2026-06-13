@@ -93,13 +93,19 @@ Examples of good lessons:
             )
             raw = result.output.strip()
 
-            import re
-            json_match = re.search(r"\[[\s\S]*?\]", raw)
-            if not json_match:
-                return
+            lessons = None
+            try:
+                lessons = json.loads(raw)
+            except json.JSONDecodeError:
+                start_idx = raw.find('[')
+                end_idx = raw.rfind(']')
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    try:
+                        lessons = json.loads(raw[start_idx:end_idx+1])
+                    except json.JSONDecodeError:
+                        pass
 
-            lessons: list = json.loads(json_match.group(0))
-            if not isinstance(lessons, list):
+            if not lessons or not isinstance(lessons, list):
                 return
 
             stored = 0

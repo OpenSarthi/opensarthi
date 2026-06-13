@@ -17,6 +17,24 @@ class TaskUsage:
         self.response_tokens = response_tokens
         self.total_tokens = total_tokens
 
+class WSWrapper:
+    def __init__(self, ws_handler, thread_id):
+        self._ws = ws_handler
+        self._thread_id = thread_id
+
+    async def send_message(self, msg_type: str, payload: dict, thread_id: str = None):
+        tid = thread_id or self._thread_id
+        await self._ws.send_message(msg_type, payload, thread_id=tid)
+
+    async def request_permission(self, tool_name: str, args: dict) -> bool:
+        return await self._ws.request_permission(tool_name, args, thread_id=self._thread_id)
+
+    async def request_user_input(self, prompt: str, input_type: str = "text") -> str:
+        return await self._ws.request_user_input(prompt, input_type, thread_id=self._thread_id)
+
+    def __getattr__(self, name):
+        return getattr(self._ws, name)
+
 class AgentRuntime:
     """
     The stateful execution engine for OpenSarthi.
@@ -26,7 +44,7 @@ class AgentRuntime:
     """
 
     def __init__(self, ws_handler, agent: Agent, observer: DesktopObserver, deps=None, memory_manager=None, thread_id: str = None):
-        self.ws = ws_handler
+        self.ws = WSWrapper(ws_handler, thread_id) if thread_id else ws_handler
         self.agent = agent
         self.observer = observer
         self.deps = deps

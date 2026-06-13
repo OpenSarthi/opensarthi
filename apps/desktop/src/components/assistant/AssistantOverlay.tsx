@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2 } from "lucide-react";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
@@ -338,6 +338,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           backdropFilter: "var(--blur-glass)",
           WebkitBackdropFilter: "var(--blur-glass)",
           border: "1.5px solid var(--border-accent)",
+          boxShadow: "0 0 20px var(--accent-glow), inset 0 0 12px rgba(255,255,255,0.02)",
           padding: "12px",
           gap: "10px",
           overflow: "hidden",
@@ -368,11 +369,29 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             }
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--accent)" }}>
-            <Activity size={14} className="animate-glow" />
-            <span style={{ fontSize: "12px", fontWeight: "bold", letterSpacing: "0.08em" }}>
-              SARTHI ACTIVE
-            </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            {/* Grab Dots Indicator */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginRight: "4px", opacity: 0.5 }}>
+              <div style={{ display: "flex", gap: "2px" }}>
+                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
+                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
+              </div>
+              <div style={{ display: "flex", gap: "2px" }}>
+                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
+                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
+              </div>
+              <div style={{ display: "flex", gap: "2px" }}>
+                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
+                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--accent)" }}>
+              <Activity size={14} className="animate-glow" />
+              <span style={{ fontSize: "12px", fontWeight: "bold", letterSpacing: "0.08em" }}>
+                SARTHI ACTIVE
+              </span>
+            </div>
           </div>
 
           <div style={{ display: "flex", gap: "6px", alignItems: "center" }} onMouseDown={(e) => e.stopPropagation()}>
@@ -398,6 +417,44 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           </div>
         </div>
 
+        {/* Token Tracking Dashboard */}
+        <div style={{
+          background: "rgba(0, 0, 0, 0.4)",
+          border: "1px solid var(--border)",
+          borderRadius: "8px",
+          padding: "8px 10px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "6px",
+          fontSize: "11px",
+          fontFamily: "var(--font-mono)",
+          boxShadow: "inset 0 1px 5px rgba(0,0,0,0.5)",
+          flexShrink: 0
+        }}>
+          {/* <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-secondary)", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid rgba(255,255,255,0.06)", paddingBottom: "4px" }}>
+            <span>📊 RESOURCE MONITOR</span>
+            <span className="animate-pulse" style={{ color: "var(--accent)" }}>● LIVE</span>
+          </div> */}
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: "var(--text-muted)" }}>Run Tokens:</span>
+            <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{tokenUsage.totalTokens.toLocaleString()}</span>
+          </div>
+          {/* <div style={{ display: "flex", gap: "12px", color: "var(--text-secondary)" }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+              <span style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase" }}>Prompt</span>
+              <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{tokenUsage.requestTokens.toLocaleString()}</span>
+            </div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+              <span style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase" }}>Completion</span>
+              <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{tokenUsage.responseTokens.toLocaleString()}</span>
+            </div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+              <span style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase" }}>Session</span>
+              <span style={{ color: "var(--accent)", fontWeight: 500 }}>{globalSessionCount.toLocaleString()}</span>
+            </div>
+          </div> */}
+        </div>
+
         {/* Plan / Execution Steps View */}
         <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", minHeight: 0 }}>
           <div className="hud-panel-title" style={{ fontSize: "11px", borderBottom: "none", padding: "2px 4px" }}>
@@ -406,9 +463,20 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
           {currentPlan ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "4px" }}>
-              {/* Goal */}
-              <div style={{ fontSize: "12px", color: "var(--text-primary)", fontWeight: "bold", borderBottom: "1px dashed rgba(255,255,255,0.08)", paddingBottom: "6px" }}>
-                GOAL: <span className="selectable" style={{ color: "var(--accent)", textTransform: "none" }}>{currentPlan.goal}</span>
+              {/* Goal Card */}
+              <div style={{
+                background: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid rgba(255, 255, 255, 0.05)",
+                borderRadius: "6px",
+                padding: "8px 10px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px"
+              }}>
+                <span style={{ fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Current Directive</span>
+                <div className="selectable" style={{ fontSize: "12px", color: "var(--accent)", fontWeight: 600, lineHeight: "1.4" }}>
+                  {currentPlan.goal}
+                </div>
               </div>
 
               {/* Execution action log timeline */}
@@ -642,6 +710,33 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               <Settings size={14} />
             </motion.div>
             {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Settings</span>}
+          </motion.button>
+
+          {/* Minimise to Sidebar Button */}
+          <motion.button
+            onClick={() => useAssistantStore.getState().setOverlayMode(true)}
+            title="Minimise to Sidebar Overlay"
+            whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              height: "32px",
+              width: isMaximized ? "auto" : "32px",
+              padding: isMaximized ? "0 12px" : "0",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: isMaximized ? "6px" : "0",
+              borderRadius: "4px",
+              background: "rgba(0,0,0,0.3)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+              transition: "all 0.2s"
+            }}
+          >
+            <motion.div whileHover={{ scale: 1.15 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Minimize2 size={14} />
+            </motion.div>
+            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Minimise</span>}
           </motion.button>
         </div>
       </div>

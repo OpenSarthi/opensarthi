@@ -102,13 +102,19 @@ RESPONSE FORMAT (JSON object or null — nothing else):
                 logger.info("HealerAgent: LLM could not propose a fix")
                 return None
 
-            import re
-            json_match = re.search(r"\{[\s\S]*?\}", raw)
-            if not json_match:
-                return None
+            fixed_step = None
+            try:
+                fixed_step = json.loads(raw)
+            except json.JSONDecodeError:
+                start_idx = raw.find('{')
+                end_idx = raw.rfind('}')
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    try:
+                        fixed_step = json.loads(raw[start_idx:end_idx+1])
+                    except json.JSONDecodeError:
+                        pass
 
-            fixed_step = json.loads(json_match.group(0))
-            if not isinstance(fixed_step, dict) or "tool" not in fixed_step:
+            if not fixed_step or not isinstance(fixed_step, dict) or "tool" not in fixed_step:
                 return None
 
             if fixed_step["tool"] not in tool_names:

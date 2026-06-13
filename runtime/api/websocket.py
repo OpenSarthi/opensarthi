@@ -88,7 +88,7 @@ class Session:
                 "delta_total_tokens": total_tokens
             }, thread_id=tid)
 
-    async def request_permission(self, tool_name: str, args: dict) -> bool:
+    async def request_permission(self, tool_name: str, args: dict, thread_id: str = None) -> bool:
         """Ask user for permission to execute a dangerous tool, yielding control back on response."""
         from state_machine import AgentState
         self.pending_input = asyncio.Future()
@@ -101,7 +101,7 @@ class Session:
                 "risk_level": "dangerous",
                 "description": f"Execute dangerous action: {tool_name} with arguments {args}?",
                 "timeout_seconds": 30
-            })
+            }, thread_id=thread_id)
             if hasattr(self, '_current_runtime') and self._current_runtime:
                 await self._current_runtime._transition(AgentState.ASKING_PERMISSION)
                 
@@ -110,7 +110,7 @@ class Session:
         finally:
             self.pending_input = None
 
-    async def request_user_input(self, prompt: str, input_type: str = "text") -> str:
+    async def request_user_input(self, prompt: str, input_type: str = "text", thread_id: str = None) -> str:
         """Ask user for arbitrary text input (e.g. password for sudo), yielding control back on response."""
         from state_machine import AgentState
         self.pending_input = asyncio.Future()
@@ -118,7 +118,7 @@ class Session:
             await self.send_message("input_request", {
                 "prompt": prompt,
                 "input_type": input_type
-            })
+            }, thread_id=thread_id)
             if hasattr(self, '_current_runtime') and self._current_runtime:
                 await self._current_runtime._transition(AgentState.ASKING_PERMISSION)
                 
