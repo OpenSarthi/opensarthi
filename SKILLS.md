@@ -10,9 +10,10 @@
 | Field | Value |
 |-------|-------|
 | **Name** | OpenSarthi |
-| **Tagline** | AI-native Desktop Agent & Assistant for Linux (with Windows support in progress) |
-| **What it is** | An autonomous, voice-first AI desktop agent that executes system-level tasks, controls apps, interacts with the screen, sandboxes shell commands, and responds to natural voice input |
+| **Tagline** | AI-native Desktop & Android Agent — voice-first, autonomous, multi-platform |
+| **What it is** | An autonomous, voice-first AI agent that executes system-level tasks, controls apps, interacts with the screen, sandboxes shell commands, and responds to natural voice input — on Linux desktop and Android |
 | **What it is NOT** | A chatbot, a browser extension, an Electron app, or a cloud-hosted service |
+| **Platforms** | Linux desktop (primary), Windows (in progress), Android (Capacitor + Chaquopy) |
 | **License** | See `LICENSE` at repo root |
 
 ---
@@ -31,15 +32,27 @@
 │           FastAPI + PydanticAI + uvicorn                  │
 │   Agent · Planner · Tools · Voice · Memory · Providers    │
 └──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│           Android App (Capacitor + Chaquopy)              │
+│   React 19 + TypeScript + Vite (WebView via Capacitor)   │
+│   Mobile UI · Voice · Chat · Tasks · Onboarding          │
+└───────────────────────┬──────────────────────────────────┘
+                        │  WebSocket (ws://127.0.0.1:8765/ws)
+┌───────────────────────▼──────────────────────────────────┐
+│       Python Runtime (Chaquopy — runs in-process)         │
+│           FastAPI + PydanticAI + uvicorn                  │
+│   Android voice via SpeechRecognizer + TextToSpeech       │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ### Key Architectural Facts
 
-1. **Two-process model** — Tauri (Rust + WebView) spawns the Python runtime as a sidecar process. They communicate exclusively over a **local WebSocket** on a dynamically negotiated port.
-2. **No REST API** — All communication is WebSocket-based. There are no HTTP endpoints used by the frontend.
-3. **No embedded Python** — Python runs as a separate OS process, managed by `sidecar.rs`. If it crashes, Tauri can restart it.
-4. **Monorepo** — pnpm workspaces. `apps/desktop/` is the Tauri+React app. `runtime/` is the Python sidecar.
-5. **Linux-first, Windows in progress** — X11 fully supported, Wayland partial, Windows uses PyAutoGUI.
+1. **Two-process model (Desktop)** — Tauri (Rust + WebView) spawns the Python runtime as a sidecar process. They communicate exclusively over a **local WebSocket** on a dynamically negotiated port.
+2. **In-process model (Android)** — Chaquopy embeds Python inside the APK. The Python FastAPI server runs in a `RuntimeService` foreground service on port 8765.
+3. **No REST API** — All communication is WebSocket-based. There are no HTTP endpoints used by the frontend.
+4. **Monorepo** — pnpm workspaces. `apps/desktop/` is the Tauri+React app. `apps/android/` is the Capacitor+React app. `runtime/` is the Python sidecar/embedded server.
+5. **Linux-first, Windows in progress, Android active** — Android uses `OPENSARTHI_PLATFORM=android` env var to switch tool registry and voice pipeline.
 
 ---
 
@@ -746,6 +759,114 @@ These are rules that **must not be violated**. Breaking them will cause subtle b
 2. Read `docs/03_agentic_flow.md` for flowcharts
 3. Read this SKILLS.md for the invariants and pitfalls that aren't in the code
 4. Check `docs/04_websocket_protocol.md` for the full message reference
+
+---
+
+## 23. Android Platform
+
+### 23.1 Architecture
+
+| Component | Technology | Notes |
+|-----------|-----------|-------|
+| App Shell | **Capacitor v5** | Wraps React WebView in native Android Activity |
+| UI | **React 19 + TypeScript** | Same design language as desktop; single-column mobile layout |
+| Python Runtime | **Chaquopy 14.0** | Embeds Python 3.11 inside the APK; runs FastAPI in-process |
+| Voice STT | **Android SpeechRecognizer** | Native OS API; rearmed continuously for always-on listening |
+| Voice TTS | **Android TextToSpeech** | Native OS API; called from `AndroidVoiceBridge.kt` |
+| Automation | **AccessibilityService** | Required for click/type/scroll automation (user must enable) |
+| Background | **RuntimeService** | Foreground service keeps Python runtime alive when backgrounded |
+
+### 23.2 Key Files
+
+| File | Purpose |
+|------|---------|
+| `apps/android/src/components/mobile/MobileAssistant.tsx` | Main mobile UI (chat + voice + execution sheet) |
+| `apps/android/src/components/mobile/SettingsView.tsx` | Mobile settings (provider, model, keys, voice, theme) |
+| `apps/android/src/components/mobile/SplashScreen.tsx` | React loading splash shown while WS connects |
+| `apps/android/android/app/src/main/java/dev/opensarthi/android/AndroidVoiceBridge.kt` | Singleton for STT + TTS; rearmed after each transcript |
+| `apps/android/android/app/src/main/java/dev/opensarthi/android/RuntimeService.kt` | Foreground service that starts the Python FastAPI server |
+| `apps/android/android/app/src/main/java/dev/opensarthi/android/MainActivity.kt` | BridgeActivity; initializes voice bridge + starts service |
+| `runtime/main_android.py` | Android entry point; patches tool registry; starts uvicorn |
+| `runtime/voice/android_bridge.py` | Python ↔ Kotlin voice bridge (STT queue + TTS async) |
+| `runtime/tools/android/` | Android-specific tool implementations |
+
+### 23.3 Android Voice Pipeline Flow
+
+```
+SpeechRecognizer (Kotlin, always armed)
+  → onResults → sendTranscriptToPython()
+  → voice/android_bridge.py :: _on_transcript()
+  → _active_pipeline._transcript_queue.put_nowait(text)
+  → AsyncIterator in start_listening() yields transcript
+  → websocket.py :: _listen_loop() sends transcript_update WS msg
+  → React frontend checks for wake word in transcript_update handler
+  → If wake word matched → setVoiceState("listening") + setTranscript(clean)
+  → Silence timer fires → handleVoiceSend(finalTranscript)
+  → user_message WS → agent processes → assistant_response
+  → speak_text WS → voice/android_bridge.py :: speak(text)
+  → AndroidVoiceBridge.kt :: speak() → TextToSpeech.speak()
+  → onDone callback → asyncio event set → pipeline unblocks
+  → speech_completed WS → frontend updates state
+```
+
+### 23.4 Android Tool Registry
+
+Tools are patched at startup in `main_android.py → _patch_android_tools()`:
+- Desktop-only tools (`click`, `open_app`, `shell`, etc.) are replaced with Android stubs or accessibility-backed implementations
+- The `OPENSARTHI_PLATFORM=android` env var gates these overrides
+- Android tools live in `runtime/tools/android/`
+
+### 23.5 Android Build System
+
+```
+apps/android/
+├── android/                     # Native Android project (Gradle)
+│   ├── app/build.gradle         # Chaquopy config, APK signing, dependencies
+│   ├── gradle.properties        # JVM heap: -Xmx4096m (needed for asset compression)
+│   └── app/src/main/
+│       ├── AndroidManifest.xml  # Permissions: RECORD_AUDIO, FOREGROUND_SERVICE, etc.
+│       ├── res/values/
+│       │   ├── styles.xml       # Splash screen theme (Theme.SplashScreen)
+│       │   └── colors.xml       # Brand colors (#050905 dark bg)
+│       └── java/dev/opensarthi/android/
+│           ├── MainActivity.kt
+│           ├── RuntimeService.kt
+│           ├── AndroidVoiceBridge.kt
+│           └── OpenSarthiApp.kt
+└── src/                         # React/TypeScript source
+    ├── App.tsx                  # Root: WS setup + modal routing
+    ├── components/mobile/       # MobileAssistant, SettingsView, SplashScreen, etc.
+    ├── lib/                     # ws.ts, schemas.ts
+    └── stores/                  # assistantStore (shared with desktop)
+```
+
+Build command:
+```bash
+cd apps/android
+npm run build            # Build React assets
+npx cap sync android     # Sync to native project
+cd android
+./gradlew assembleRelease --no-daemon
+```
+
+### 23.6 Android-specific Invariants
+
+1. **`AndroidVoiceBridge` is a singleton** initialized once in `MainActivity.onCreate()`. Never re-create it.
+2. **SpeechRecognizer must run on main thread** — `rearmRecognizer()` is always posted via `mainHandler.post()`.
+3. **`OPENSARTHI_PLATFORM=android`** must be set before any tool or voice import. It is set in `main_android.py`.
+4. **Continuous listening** = SpeechRecognizer is always rearmed after each result (via `rearmRecognizer()` on the Kotlin side). The Python/React side controls whether transcripts trigger commands via wake-word gating.
+5. **TTS blocks STT** — `AndroidVoiceBridge.speak()` calls `speechRecognizer.stopListening()` first; it rearmed in `onDone` callback after speech completes.
+6. **Gradle heap must be ≥ 4096m** (`org.gradle.jvmargs=-Xmx4096m`) to avoid `Java heap space` error during `compressReleaseAssets`.
+
+### 23.7 Separate Repo Decision
+
+**Recommendation: Keep in monorepo.** The Android app shares:
+- The entire `runtime/` Python codebase
+- The `assistantStore.ts` Zustand store
+- WebSocket protocol (identical message format)
+- Design system (CSS variables, themes, fonts)
+
+A separate repo would require maintaining two copies of the runtime and duplicating schema changes. The monorepo approach with `apps/android/` is the correct structure.
 
 ---
 

@@ -1,0 +1,35 @@
+{
+  "name": "opensarthi-android",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenSarthi — AI Agent & Assistant (Android)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "cap:sync": "npx cap sync android",
+    "cap:open": "npx cap open android",
+    "cap:run": "npx cap run android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/haptics": "^6.0.0",
+    "@capacitor/status-bar": "^6.0.0",
+    "framer-motion": "^12",
+    "lucide-react": "^0.483.0",
+    "react": "^19",
+    "react-dom": "^19",
+    "zod": "^3",
+    "zustand": "^5"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4",
+    "typescript": "^5.5",
+    "vite": "^6"
+  }
+}

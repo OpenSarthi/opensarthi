@@ -31,6 +31,12 @@ class HealerAgent:
     def __init__(self, model, deps):
         self.model = model
         self.deps = deps
+        # Create the pydantic-ai agent once — re-used on every diagnosis call
+        try:
+            from pydantic_ai import Agent as PydanticAgent
+            self._agent = PydanticAgent(model=self.model)
+        except Exception:
+            self._agent = None  # Graceful degradation if model not ready yet
 
     async def diagnose_and_fix(
         self,
@@ -60,8 +66,10 @@ class HealerAgent:
 
         # ── 2. LLM-based diagnosis ─────────────────────────────────────────
         try:
-            from pydantic_ai import Agent as PydanticAgent
-            healer_agent = PydanticAgent(model=self.model)
+            if self._agent is None:
+                # Lazy fallback: try again if it wasn't ready at init
+                from pydantic_ai import Agent as PydanticAgent
+                self._agent = PydanticAgent(model=self.model)
 
             from tools.registry import all_tools
             tool_names = [t.name for t in all_tools()]
@@ -93,7 +101,7 @@ RESPONSE FORMAT (JSON object or null — nothing else):
 {{"tool": "tool_name", "args": {{"key": "value"}}, "description": "brief human description"}}
 """
             result = await asyncio.wait_for(
-                healer_agent.run(prompt),
+                self._agent.run(prompt),
                 timeout=20.0
             )
             raw = result.output.strip()

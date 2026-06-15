@@ -1,0 +1,22 @@
+{
+  "$schema": "https://capacitorjs.com/docs/assets/capacitor-config-schema.json",
+  "appId": "dev.opensarthi.android",
+  "appName": "OpenSarthi",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true,
+    "allowNavigation": ["localhost", "127.0.0.1"]
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true,
+    "backgroundColor": "#080c0a"
+  },
+  "plugins": {
+    "StatusBar": {
+      "style": "Dark",
+      "backgroundColor": "#080c0a"
+    }
+  }
+}

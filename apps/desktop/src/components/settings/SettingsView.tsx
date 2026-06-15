@@ -64,6 +64,7 @@ interface SettingsViewProps {
   currentOpenrouterKey: string;
   currentVoiceAccent: string;
   currentVoiceSpeed: number;
+  currentContinuousListening: boolean;
   currentTheme: string;
   currentWakeWords: string[];
   currentWakeWordEnabled: boolean;
@@ -156,6 +157,7 @@ export function SettingsView({
   currentOpenrouterKey,
   currentVoiceAccent,
   currentVoiceSpeed,
+  currentContinuousListening,
   currentTheme,
   currentWakeWords,
   currentWakeWordEnabled,
@@ -175,6 +177,7 @@ export function SettingsView({
 
   const [voiceAccent, setVoiceAccent] = useState(currentVoiceAccent);
   const [voiceSpeed, setVoiceSpeed] = useState(currentVoiceSpeed);
+  const [continuousListening, setContinuousListening] = useState(currentContinuousListening !== undefined ? currentContinuousListening : true);
   const [theme, setTheme] = useState(currentTheme);
   const [wakeWordsInput, setWakeWordsInput] = useState((currentWakeWords || []).join(", "));
   const [wakeWordEnabled, setWakeWordEnabled] = useState(currentWakeWordEnabled !== undefined ? currentWakeWordEnabled : true);
@@ -245,7 +248,7 @@ export function SettingsView({
       openrouterKey: provider === "openrouter"  ? (currentKey || currentOpenrouterKey) : currentOpenrouterKey,
       voiceAccent,
       voiceSpeed,
-      continuousListening: true,
+      continuousListening,
       theme,
       wakeWords: parsedWakeWords,
       wakeWordEnabled,
@@ -512,6 +515,20 @@ export function SettingsView({
                     {voiceSpeed.toFixed(2)}x
                   </span>
                 </div>
+              </div>
+
+              {/* Continuous Listening Toggle */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "4px", paddingBottom: "12px", borderBottom: "1px dashed rgba(255,255,255,0.07)" }}>
+                <label style={{ ...labelStyle, marginBottom: 0, cursor: "pointer" }} htmlFor="continuous-listening">
+                  CONTINUOUS BACKGROUND LISTENING
+                </label>
+                <input
+                  id="continuous-listening"
+                  type="checkbox"
+                  checked={continuousListening}
+                  onChange={(e) => setContinuousListening(e.target.checked)}
+                  style={{ width: "16px", height: "16px", accentColor: "var(--accent)", cursor: "pointer" }}
+                />
               </div>
 
               {/* Wake Word Detection Options */}
