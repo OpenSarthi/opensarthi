@@ -226,7 +226,7 @@ export default function App() {
   const {
     activeLocalModel, activeCloudModel, activeProvider,
     geminiApiKey, openaiApiKey, anthropicApiKey, groqApiKey, openrouterApiKey,
-    voiceAccent, voiceSpeed, activeTheme,
+    voiceAccent, voiceSpeed, continuousListening, activeTheme,
     wakeWords, wakeWordEnabled, wakeWordThreshold,
     onboardingCompleted,
     setActiveModels, setActiveProvider, setAllApiKeys,
@@ -387,6 +387,7 @@ export default function App() {
             currentOpenrouterKey={openrouterApiKey}
             currentVoiceAccent={voiceAccent}
             currentVoiceSpeed={voiceSpeed}
+            currentContinuousListening={continuousListening}
             currentTheme={activeTheme}
             currentWakeWords={wakeWords}
             currentWakeWordEnabled={wakeWordEnabled}

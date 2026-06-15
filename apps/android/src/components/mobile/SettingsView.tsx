@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Save, Volume2, Palette, Cpu, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -53,6 +53,7 @@ interface SettingsViewProps {
   currentOpenrouterKey: string;
   currentVoiceAccent: string;
   currentVoiceSpeed: number;
+  currentContinuousListening: boolean;
   currentTheme: string;
   currentWakeWords: string[];
   currentWakeWordEnabled: boolean;
@@ -143,6 +144,7 @@ export function SettingsView({
   currentOpenrouterKey,
   currentVoiceAccent,
   currentVoiceSpeed,
+  currentContinuousListening,
   currentTheme,
   currentWakeWords,
   currentWakeWordEnabled,
@@ -161,6 +163,7 @@ export function SettingsView({
 
   const [voiceAccent, setVoiceAccent] = useState(currentVoiceAccent);
   const [voiceSpeed, setVoiceSpeed] = useState(currentVoiceSpeed);
+  const [continuousListening, setContinuousListening] = useState(currentContinuousListening ?? false);
   const [theme, setTheme] = useState(currentTheme);
   const [saved, setSaved] = useState(false);
   const [wakeWordEnabled, setWakeWordEnabled] = useState(currentWakeWordEnabled);
@@ -170,12 +173,35 @@ export function SettingsView({
 
   const providerInfo = PROVIDER_LABELS[provider] || PROVIDER_LABELS.google;
 
+  const lastPropsRef = useRef({
+    currentGeminiKey,
+    currentOpenaiKey,
+    currentAnthropicKey,
+    currentGroqKey,
+    currentOpenrouterKey,
+  });
+
   useEffect(() => {
-    setGeminiKey(currentGeminiKey);
-    setOpenaiKey(currentOpenaiKey);
-    setAnthropicKey(currentAnthropicKey);
-    setGroqKey(currentGroqKey);
-    setOpenrouterKey(currentOpenrouterKey);
+    if (lastPropsRef.current.currentGeminiKey !== currentGeminiKey) {
+      setGeminiKey(currentGeminiKey);
+      lastPropsRef.current.currentGeminiKey = currentGeminiKey;
+    }
+    if (lastPropsRef.current.currentOpenaiKey !== currentOpenaiKey) {
+      setOpenaiKey(currentOpenaiKey);
+      lastPropsRef.current.currentOpenaiKey = currentOpenaiKey;
+    }
+    if (lastPropsRef.current.currentAnthropicKey !== currentAnthropicKey) {
+      setAnthropicKey(currentAnthropicKey);
+      lastPropsRef.current.currentAnthropicKey = currentAnthropicKey;
+    }
+    if (lastPropsRef.current.currentGroqKey !== currentGroqKey) {
+      setGroqKey(currentGroqKey);
+      lastPropsRef.current.currentGroqKey = currentGroqKey;
+    }
+    if (lastPropsRef.current.currentOpenrouterKey !== currentOpenrouterKey) {
+      setOpenrouterKey(currentOpenrouterKey);
+      lastPropsRef.current.currentOpenrouterKey = currentOpenrouterKey;
+    }
   }, [currentGeminiKey, currentOpenaiKey, currentAnthropicKey, currentGroqKey, currentOpenrouterKey]);
 
   useEffect(() => {
@@ -197,7 +223,7 @@ export function SettingsView({
       localModel: currentLocalModel,
       cloudModel, provider,
       geminiKey, openaiKey, anthropicKey, groqKey, openrouterKey,
-      voiceAccent, voiceSpeed, continuousListening: false, theme,
+      voiceAccent, voiceSpeed, continuousListening, theme,
       wakeWords, wakeWordEnabled, wakeWordThreshold,
     });
     setSaved(true);
@@ -358,6 +384,10 @@ export function SettingsView({
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <input
+                type="text"
+                autoComplete="on"
+                autoCorrect="on"
+                spellCheck={true}
                 value={newWakeWord}
                 onChange={e => setNewWakeWord(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && addWakeWord()}
@@ -407,6 +437,28 @@ export function SettingsView({
               <option value="theme-light-slate">🏙️ Light Slate</option>
               <option value="theme-light-clean">⬜ Light Clean</option>
             </select>
+          </div>
+
+          {/* Continuous Listening toggle */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <label style={labelStyle}>ALWAYS LISTENING (WAKE WORD)</label>
+              <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginTop: 2 }}>Continuously listen in background for wake word</div>
+            </div>
+            <div
+              onClick={() => setContinuousListening(v => !v)}
+              style={{
+                width: 48, height: 26, borderRadius: 13, cursor: "pointer",
+                background: continuousListening ? "var(--accent)" : "rgba(255,255,255,0.1)",
+                position: "relative", transition: "background 0.2s", flexShrink: 0, marginLeft: 12,
+              }}
+            >
+              <div style={{
+                position: "absolute", top: 3, left: continuousListening ? 25 : 3,
+                width: 20, height: 20, borderRadius: "50%",
+                background: "#fff", transition: "left 0.2s",
+              }} />
+            </div>
           </div>
 
           {/* Voice Accent */}

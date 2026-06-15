@@ -2,27 +2,158 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Send, Mic, MicOff, Settings, ChevronUp, ChevronDown,
-  X, Activity, CheckCircle, AlertCircle, Clock, RefreshCw,
+  X, CheckCircle, AlertCircle, Clock, RefreshCw,
   Menu, User, Copy, Volume2, Zap,
 } from "lucide-react";
+
+// Animated robot avatar SVG for AI responses
+function RobotAvatar() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="7" y="9" width="10" height="9" rx="2" fill="#000" stroke="none" />
+      <rect x="9" y="11" width="2.5" height="2" rx="0.5" fill="#00e6a0">
+        <animate attributeName="opacity" values="1;0.3;1" dur="1.6s" repeatCount="indefinite" begin="0s" />
+      </rect>
+      <rect x="12.5" y="11" width="2.5" height="2" rx="0.5" fill="#00e6a0">
+        <animate attributeName="opacity" values="1;0.3;1" dur="1.6s" repeatCount="indefinite" begin="0.3s" />
+      </rect>
+      <rect x="10" y="14" width="4" height="1" rx="0.5" fill="#00e6a0" opacity="0.7" />
+      <rect x="5" y="11" width="2" height="5" rx="1" fill="#000" />
+      <rect x="17" y="11" width="2" height="5" rx="1" fill="#000" />
+      <rect x="9" y="7" width="2" height="2" rx="0.5" fill="#000" />
+      <rect x="13" y="7" width="2" height="2" rx="0.5" fill="#000" />
+      <rect x="5" y="9" width="14" height="1" rx="0.5" fill="#000" opacity="0.3" />
+    </svg>
+  );
+}
 import { useAssistantStore } from "../../stores/assistantStore";
 import { wsClient } from "../../lib/ws";
 import type { VoiceState, PlanStep } from "../../lib/schemas";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { SplashScreen } from "./SplashScreen";
+import { ParticleBackground } from "./ParticleBackground";
 
 // ─── Step badge ───────────────────────────────────────────────────────────────
 function StepBadge({ status }: { status: string }) {
   const map: Record<string, { icon: any; color: string }> = {
-    pending:    { icon: Clock,       color: "#666" },
-    running:    { icon: RefreshCw,   color: "var(--accent)" },
-    success:    { icon: CheckCircle, color: "#00e6a0" },
-    error:      { icon: AlertCircle, color: "#ff4f4f" },
-    terminated: { icon: X,           color: "#888" },
+    pending: { icon: Clock, color: "#666" },
+    running: { icon: RefreshCw, color: "var(--accent)" },
+    success: { icon: CheckCircle, color: "#00e6a0" },
+    error: { icon: AlertCircle, color: "#ff4f4f" },
+    terminated: { icon: X, color: "#888" },
   };
   const cfg = map[status] || map.pending;
   const Icon = cfg.icon;
   return <Icon size={14} color={cfg.color} className={status === "running" ? "animate-spin" : undefined} style={{ flexShrink: 0 }} />;
+}
+
+// ─── Background Glow Animation (Google Assistant style) ──────────────────────
+function BackgroundGlow({ voiceState }: { voiceState: VoiceState }) {
+  const isListening = voiceState === "listening";
+  const isSpeaking = voiceState === "speaking";
+  const isProcessing = voiceState === "processing";
+  const isActive = isListening || isSpeaking || isProcessing;
+
+  if (!isActive) return null;
+
+  // Faster animations when processing, slower/breathing animations when idle/listening/speaking
+  const duration = isProcessing ? "1.6s" : isSpeaking ? "2.6s" : "3.6s";
+
+  return (
+    <>
+      <style>{`
+        @keyframes googleGlowBlue {
+          0% { transform: translate(-30%, -20%) scale(1.2); opacity: 0.7; }
+          33% { transform: translate(-15%, -10%) scale(1.5); opacity: 0.9; }
+          66% { transform: translate(-35%, -25%) scale(1.0); opacity: 0.6; }
+          100% { transform: translate(-30%, -20%) scale(1.2); opacity: 0.7; }
+        }
+        @keyframes googleGlowRed {
+          0% { transform: translate(-10%, -15%) scale(1.4); opacity: 0.8; }
+          33% { transform: translate(10%, -5%) scale(1.1); opacity: 0.6; }
+          66% { transform: translate(-15%, -20%) scale(1.6); opacity: 0.9; }
+          100% { transform: translate(-10%, -15%) scale(1.4); opacity: 0.8; }
+        }
+        @keyframes googleGlowYellow {
+          0% { transform: translate(10%, -20%) scale(1.1); opacity: 0.6; }
+          33% { transform: translate(-5%, -10%) scale(1.4); opacity: 0.9; }
+          66% { transform: translate(25%, -15%) scale(1.2); opacity: 0.7; }
+          100% { transform: translate(10%, -20%) scale(1.1); opacity: 0.6; }
+        }
+        @keyframes googleGlowGreen {
+          0% { transform: translate(30%, -10%) scale(1.5); opacity: 0.8; }
+          33% { transform: translate(35%, -20%) scale(1.1); opacity: 0.6; }
+          66% { transform: translate(15%, -5%) scale(1.4); opacity: 0.9; }
+          100% { transform: translate(30%, -10%) scale(1.5); opacity: 0.8; }
+        }
+      `}</style>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          opacity: 0.28,
+          pointerEvents: "none",
+          zIndex: 1,
+          filter: "blur(28px)",
+          overflow: "hidden",
+        }}
+      >
+        {/* Blue Blob */}
+        <div
+          style={{
+            position: "absolute",
+            width: "35%",
+            height: "140%",
+            left: "5%",
+            borderRadius: "50%",
+            background: "radial-gradient(circle, #4285F4 0%, transparent 80%)",
+            animation: `googleGlowBlue ${duration} infinite ease-in-out`,
+          }}
+        />
+        {/* Red Blob */}
+        <div
+          style={{
+            position: "absolute",
+            width: "35%",
+            height: "140%",
+            left: "30%",
+            borderRadius: "50%",
+            background: "radial-gradient(circle, #EA4335 0%, transparent 80%)",
+            animation: `googleGlowRed ${duration} infinite ease-in-out`,
+          }}
+        />
+        {/* Yellow Blob */}
+        <div
+          style={{
+            position: "absolute",
+            width: "35%",
+            height: "140%",
+            left: "55%",
+            borderRadius: "50%",
+            background: "radial-gradient(circle, #FBBC05 0%, transparent 80%)",
+            animation: `googleGlowYellow ${duration} infinite ease-in-out`,
+          }}
+        />
+        {/* Green Blob */}
+        <div
+          style={{
+            position: "absolute",
+            width: "35%",
+            height: "140%",
+            left: "80%",
+            borderRadius: "50%",
+            background: "radial-gradient(circle, #34A853 0%, transparent 80%)",
+            animation: `googleGlowGreen ${duration} infinite ease-in-out`,
+          }}
+        />
+      </div>
+    </>
+  );
 }
 
 // ─── Execution Sheet ──────────────────────────────────────────────────────────
@@ -40,15 +171,15 @@ function ExecutionSheet({ plan, taskPaused, activeThreadId, isLive = true, onClo
 
   return (
     <motion.div
-      initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: "auto", opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={{ duration: 0.25 }}
       style={{
-        position: "fixed", bottom: 72, left: 0, right: 0, zIndex: 50,
-        background: "rgba(8,12,10,0.97)", borderTop: "1px solid var(--border-accent)",
-        borderRadius: "20px 20px 0 0",
-        maxHeight: expanded ? "55vh" : "72px",
+        position: "relative", zIndex: 15, width: "100%", flexShrink: 0,
+        background: "transparent", borderBottom: "1.5px solid rgba(255, 255, 255, 0.08)",
+        maxHeight: expanded ? "50vh" : "48px",
         transition: "max-height 0.3s ease", overflow: "hidden",
-        boxShadow: "0 -4px 32px rgba(0,230,160,0.12)",
       }}
     >
       <div style={{
@@ -215,11 +346,12 @@ function MobileBubble({ msg, onTapForPlan, hasPlan }: {
       {!isUser && (
         <div style={{
           width: 30, height: 30, borderRadius: "50%",
-          background: "linear-gradient(135deg, var(--accent) 0%, rgba(0,200,140,0.4) 100%)",
+          background: "linear-gradient(135deg, var(--accent) 0%, rgba(0,200,140,0.5) 100%)",
           display: "flex", alignItems: "center", justifyContent: "center",
           marginRight: 8, flexShrink: 0, marginTop: 2,
+          boxShadow: "0 0 8px var(--accent-glow)",
         }}>
-          <Activity size={13} color="#000" />
+          <RobotAvatar />
         </div>
       )}
       <div style={{ maxWidth: "80%", display: "flex", flexDirection: "column", gap: 4 }}>
@@ -234,37 +366,59 @@ function MobileBubble({ msg, onTapForPlan, hasPlan }: {
             border: isUser ? "none" : `1px solid ${hasPlan ? "var(--accent)" : "rgba(255,255,255,0.08)"}`,
             cursor: hasPlan ? "pointer" : "default",
             wordBreak: "break-word",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
           }}
         >
           {hasPlan && (
-            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
               <Zap size={10} color="var(--accent)" />
-              <span style={{ fontSize: 9, color: "var(--accent)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em" }}>TAP TO VIEW PLAN</span>
+              <span style={{ fontSize: 9, color: "var(--accent)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", opacity: 0.7 }}>AGENT TASK</span>
             </div>
           )}
           <MarkdownRenderer content={displayContent} isUser={isUser} />
-        </div>
-        {/* Action row */}
-        {!isUser && (
-          <div style={{ display: "flex", gap: 6, paddingLeft: 4 }}>
-            <button onClick={handleCopy} style={{
-              display: "flex", alignItems: "center", gap: 4, padding: "3px 8px",
-              background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 12, cursor: "pointer", color: copied ? "var(--accent)" : "var(--text-secondary)",
+
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: 4,
+            borderTop: isUser ? "1px solid rgba(0,0,0,0.12)" : "1px solid rgba(255,255,255,0.05)",
+            paddingTop: 6,
+            gap: 10
+          }}>
+            <span style={{
+              fontSize: 9,
+              color: isUser ? "rgba(0,0,0,0.55)" : "var(--text-muted)",
+              fontFamily: "var(--font-mono)",
+              fontWeight: 500
             }}>
-              <Copy size={11} />
-              <span style={{ fontSize: 10, fontFamily: "var(--font-mono)" }}>{copied ? "COPIED" : "COPY"}</span>
-            </button>
-            <button onClick={handleListen} style={{
-              display: "flex", alignItems: "center", gap: 4, padding: "3px 8px",
-              background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 12, cursor: "pointer", color: "var(--text-secondary)",
-            }}>
-              <Volume2 size={11} />
-              <span style={{ fontSize: 10, fontFamily: "var(--font-mono)" }}>LISTEN</span>
-            </button>
+              [ {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })} ]
+            </span>
+
+            {!isUser && (
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={handleCopy} style={{
+                  display: "flex", alignItems: "center", gap: 3, padding: "2px 6px",
+                  background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 8, cursor: "pointer", color: copied ? "var(--accent)" : "var(--text-secondary)",
+                }}>
+                  <Copy size={10} />
+                  <span style={{ fontSize: 8, fontFamily: "var(--font-mono)", fontWeight: "bold" }}>{copied ? "COPIED" : "COPY"}</span>
+                </button>
+                <button onClick={handleListen} style={{
+                  display: "flex", alignItems: "center", gap: 3, padding: "2px 6px",
+                  background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 8, cursor: "pointer", color: "var(--text-secondary)",
+                }}>
+                  <Volume2 size={10} />
+                  <span style={{ fontSize: 8, fontFamily: "var(--font-mono)", fontWeight: "bold" }}>LISTEN</span>
+                </button>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </motion.div>
   );
@@ -413,8 +567,9 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
     addMessage({ id: crypto.randomUUID(), role: "user", content: msg, timestamp: Date.now() });
     wsClient.send("user_message", { text: msg, source: "text", thread_id: activeThreadId });
     setTextInput("");
+    setTranscript("");
     setVoiceState("processing");
-  }, [textInput, isConnected, isTaskRunning, addMessage, activeThreadId, setVoiceState]);
+  }, [textInput, isConnected, isTaskRunning, addMessage, activeThreadId, setVoiceState, setTranscript]);
 
   const handleVoiceSend = useCallback((msg: string) => {
     if (!msg || !isConnected) return;
@@ -422,8 +577,9 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
     addMessage({ id: crypto.randomUUID(), role: "user", content: msg, timestamp: Date.now() });
     wsClient.send("user_message", { text: msg, source: "voice", thread_id: activeThreadId });
     setTextInput("");
+    setTranscript("");
     setVoiceState("processing");
-  }, [isConnected, addMessage, activeThreadId, setVoiceState]);
+  }, [isConnected, addMessage, activeThreadId, setVoiceState, setTranscript]);
 
   const toggleVoice = useCallback(() => {
     if (voiceState === "idle" || voiceState === "error") {
@@ -448,6 +604,8 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
       <AnimatePresence>{showSplash && <SplashScreen isConnected={isConnected} />}</AnimatePresence>
 
       <div style={{ width: "100vw", height: "100dvh", display: "flex", flexDirection: "column", background: "var(--bg-primary)", overflow: "hidden", position: "relative" }}>
+        {/* Particle / ambient background */}
+        <ParticleBackground voiceState={voiceState} />
 
         {/* Top Bar */}
         <div style={{
@@ -474,12 +632,11 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
             <button onClick={onOpenSettings} style={{ background: "transparent", border: "none", color: "var(--text-secondary)", padding: 6, display: "flex" }}>
               <Settings size={18} />
             </button>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: isConnected ? "var(--accent)" : "#ff4f4f", boxShadow: isConnected ? "0 0 6px var(--accent)" : "none" }} />
           </div>
         </div>
 
         {/* Chat Area */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "16px 10px", paddingBottom: (isTaskRunning || selectedPlan) ? "88px" : "8px", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 10px", paddingBottom: "8px", WebkitOverflowScrolling: "touch" }}>
           {messages.length === 0 && (
             <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, color: "var(--text-secondary)", paddingBottom: 60 }}>
               <img src="/icon.png" alt="" style={{ width: 60, height: 60, borderRadius: 18, opacity: 0.6 }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -507,68 +664,134 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
           <div ref={chatEndRef} />
         </div>
 
-        {/* Execution Sheet */}
-        <AnimatePresence>
-          {(isTaskRunning || selectedPlan) && (
-            <ExecutionSheet
-              plan={isTaskRunning ? (activeTab?.currentPlan ?? null) : selectedPlan}
-              taskPaused={taskPaused}
-              activeThreadId={activeThreadId}
-              isLive={isTaskRunning}
-              onClose={() => setSelectedPlan(null)}
-            />
-          )}
-        </AnimatePresence>
-
-        {/* Voice Overlay */}
-        <AnimatePresence>
-          {(isListening || voiceState === "processing" || voiceState === "speaking") && (
-            <VoiceIndicator state={voiceState} transcript={currentTranscript} />
-          )}
-        </AnimatePresence>
-
-        {/* Input Bar */}
+        {/* Pinned Bottom Bar Container */}
         <div style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "8px 12px",
+          position: "relative",
+          flexShrink: 0,
+          zIndex: 20,
+          display: "flex",
+          flexDirection: "column",
+          background: (isTaskRunning || selectedPlan) ? "rgba(8,12,10,0.97)" : "rgba(8,12,10,0.72)",
+          borderTop: (isTaskRunning || selectedPlan) ? "1.5px solid var(--border-accent)" : "1px solid rgba(255, 255, 255, 0.08)",
+          borderRadius: (isTaskRunning || selectedPlan) ? "20px 20px 0 0" : "0",
+          boxShadow: (isTaskRunning || selectedPlan) ? "0 -4px 32px rgba(0,230,160,0.12)" : "none",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          overflow: "hidden",
           paddingBottom: "max(env(safe-area-inset-bottom), 10px)",
-          background: "rgba(8,12,10,0.97)", borderTop: "1px solid var(--border)",
-          flexShrink: 0, zIndex: 20,
+          transition: "background 0.3s ease, border-radius 0.3s ease, box-shadow 0.3s ease, border-top 0.3s ease",
         }}>
-          <motion.button onClick={toggleVoice} whileTap={{ scale: 0.9 }} style={{
-            width: 44, height: 44, borderRadius: "50%",
-            background: isListening ? "var(--accent)" : "rgba(255,255,255,0.06)",
-            border: `1.5px solid ${isListening ? "var(--accent)" : "var(--border)"}`,
-            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-            boxShadow: isListening ? "0 0 16px var(--accent-glow)" : "none",
-          }}>
-            {isListening ? <MicOff size={18} color="#000" /> : <Mic size={18} color="var(--text-secondary)" />}
-          </motion.button>
+          {/* Execution Sheet inside the bottom bar container to merge them */}
+          <AnimatePresence>
+            {(isTaskRunning || selectedPlan) && (
+              <ExecutionSheet
+                plan={isTaskRunning ? (activeTab?.currentPlan ?? null) : selectedPlan}
+                taskPaused={taskPaused}
+                activeThreadId={activeThreadId}
+                isLive={isTaskRunning}
+                onClose={() => setSelectedPlan(null)}
+              />
+            )}
+          </AnimatePresence>
 
-          <input
-            ref={inputRef}
-            value={textInput}
-            onChange={(e) => setTextInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleTextSend(); } }}
-            placeholder={!isConnected ? "Connecting..." : isTaskRunning ? "Task running..." : isListening ? "Listening..." : "Message OpenSarthi..."}
-            disabled={!isConnected || isTaskRunning || isListening}
+          {/* Background glowing blurred waveform */}
+          <BackgroundGlow voiceState={voiceState} />
+
+          {/* Voice State / Transcript Text (inline inside bottom bar) */}
+          <AnimatePresence>
+            {(isListening || voiceState === "processing" || voiceState === "speaking") && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                style={{
+                  position: "relative",
+                  zIndex: 2,
+                  padding: "10px 16px 2px 16px",
+                  display: "flex",
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 10, color: "var(--accent)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", fontWeight: "bold" }}>
+                    {voiceState === "listening" ? "// LISTENING" : voiceState === "processing" ? "// THINKING" : "// SPEAKING"}
+                  </div>
+                  {voiceState === "listening" && currentTranscript && (
+                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: "italic" }}>
+                      "{currentTranscript}"
+                    </div>
+                  )}
+                </div>
+                <span style={{ fontSize: 8, color: "var(--text-muted)", fontFamily: "var(--font-mono)", flexShrink: 0, marginLeft: 8 }}>TAP MIC TO STOP</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Main input row as a form to enable autocomplete suggestions */}
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleTextSend(); }}
             style={{
-              flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)",
-              borderRadius: 22, padding: "10px 16px", fontSize: 14,
-              color: "var(--text-primary)", fontFamily: "inherit", outline: "none",
-              opacity: (isTaskRunning || isListening) ? 0.5 : 1,
+              position: "relative",
+              zIndex: 2,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 12px 0 12px",
+              margin: 0,
+              width: "100%",
+              boxSizing: "border-box",
             }}
-          />
+          >
+            <motion.button type="button" onClick={toggleVoice} whileTap={{ scale: 0.9 }} style={{
+              width: 44, height: 44, borderRadius: "50%",
+              background: isListening ? "var(--accent)" : voiceState === "speaking" ? "rgba(66,133,244,0.2)" : "rgba(255,255,255,0.06)",
+              border: `1.5px solid ${isListening ? "var(--accent)" : voiceState === "speaking" ? "#4285f4" : "var(--border)"}`,
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              boxShadow: isListening ? "0 0 16px var(--accent-glow)" : "none",
+            }}>
+              {isListening ? <MicOff size={18} color="#000" /> : <Mic size={18} color={voiceState === "speaking" ? "#4285f4" : "var(--text-secondary)"} />}
+            </motion.button>
 
-          <motion.button onClick={handleTextSend} disabled={!textInput.trim() || !isConnected || isTaskRunning} whileTap={{ scale: 0.88 }} style={{
-            width: 44, height: 44, borderRadius: "50%",
-            background: textInput.trim() && isConnected && !isTaskRunning ? "var(--accent)" : "rgba(255,255,255,0.05)",
-            border: `1.5px solid ${textInput.trim() && isConnected && !isTaskRunning ? "var(--accent)" : "var(--border)"}`,
-            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-            cursor: (!textInput.trim() || !isConnected || isTaskRunning) ? "not-allowed" : "pointer",
-          }}>
-            <Send size={16} color={textInput.trim() && isConnected && !isTaskRunning ? "#000" : "var(--text-muted)"} style={{ transform: "rotate(-15deg)" }} />
-          </motion.button>
+            <input
+              ref={inputRef}
+              type="text"
+              autoComplete="on"
+              autoCorrect="on"
+              spellCheck={true}
+              autoCapitalize="sentences"
+              value={isListening ? (currentTranscript || "") : textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleTextSend(); } }}
+              placeholder={
+                !isConnected ? "Connecting..." :
+                  isTaskRunning ? "Task running..." :
+                    voiceState === "listening" ? "Listening..." :
+                      voiceState === "processing" ? "Thinking..." :
+                        voiceState === "speaking" ? "Speaking..." :
+                          "Message OpenSarthi..."
+              }
+              disabled={!isConnected || isTaskRunning || isListening}
+              style={{
+                flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)",
+                borderRadius: 22, padding: "10px 16px", fontSize: 14,
+                color: "var(--text-primary)", fontFamily: "inherit", outline: "none",
+                opacity: (isTaskRunning || isListening) ? 0.5 : 1,
+              }}
+            />
+
+            <motion.button type="submit" disabled={!textInput.trim() || !isConnected || isTaskRunning} whileTap={{ scale: 0.88 }} style={{
+              width: 44, height: 44, borderRadius: "50%",
+              background: textInput.trim() && isConnected && !isTaskRunning ? "var(--accent)" : "rgba(255,255,255,0.05)",
+              border: `1.5px solid ${textInput.trim() && isConnected && !isTaskRunning ? "var(--accent)" : "var(--border)"}`,
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              cursor: (!textInput.trim() || !isConnected || isTaskRunning) ? "not-allowed" : "pointer",
+            }}>
+              <Send size={16} color={textInput.trim() && isConnected && !isTaskRunning ? "#000" : "var(--text-muted)"} style={{ transform: "rotate(-15deg)" }} />
+            </motion.button>
+          </form>
         </div>
       </div>
     </>

@@ -19,8 +19,35 @@ class AndroidWebSocketClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private intentionallyClosed = false;
 
+  constructor() {
+    if (typeof window !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          console.log("[WS-Android] App returned to foreground. Re-connecting WebSocket...");
+          this.connect();
+        }
+      });
+    }
+  }
+
   connect() {
     this.intentionallyClosed = false;
+    if (this.ws) {
+      try {
+        this.ws.onopen = null;
+        this.ws.onmessage = null;
+        this.ws.onerror = null;
+        this.ws.onclose = null;
+        this.ws.close();
+      } catch (e) {
+        console.error("[WS-Android] Error closing old WS:", e);
+      }
+      this.ws = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this._open();
   }
 
