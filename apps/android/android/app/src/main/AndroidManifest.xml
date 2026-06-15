@@ -15,6 +15,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <!-- Notification: for foreground service controls (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Accessibility: for click/type automation tools -->
     <!-- Note: user must enable in Android Settings > Accessibility -->
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -25,6 +28,18 @@
 
     <!-- Vibration: for haptic feedback on voice recognition -->
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Query all packages: for package manager to launch other apps on Android 11+ -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <application
         android:name=".OpenSarthiApp"
@@ -54,6 +69,19 @@
             android:name=".RuntimeService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+
+        <!-- Sarthi Accessibility Service for click/scroll automation -->
+        <service
+            android:name=".SarthiAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
 
     </application>
 
