@@ -19,6 +19,21 @@ logger = structlog.get_logger()
 
 IS_ANDROID = os.environ.get("OPENSARTHI_PLATFORM") == "android"
 
+if IS_ANDROID:
+    try:
+        from java.lang import Runnable
+        class TtsCompleteRunnable(Runnable):
+            def __init__(self, callback):
+                super().__init__()
+                self.callback = callback
+            def run(self):
+                if self.callback:
+                    self.callback()
+    except Exception:
+        TtsCompleteRunnable = None
+else:
+    TtsCompleteRunnable = None
+
 # ── Module-level globals ──────────────────────────────────────────────────────
 _active_pipeline: Optional["AndroidVoicePipeline"] = None
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -140,28 +155,37 @@ class AndroidVoicePipeline:
 
     async def _android_tts(self, text: str):
         loop = asyncio.get_event_loop()
+        import threading
         done_event = asyncio.Event()
+        thread_done = threading.Event()
 
-        def _speak_on_main():
+        def _on_done_thread():
+            """Called from Kotlin main thread when TTS finishes."""
+            thread_done.set()
+            loop.call_soon_threadsafe(done_event.set)
+
+        def _speak_on_executor():
             try:
                 bridge = self._get_bridge()
-
-                # Set a Runnable completion callback using a thread event
-                def _on_done():
-                    loop.call_soon_threadsafe(done_event.set)
-
-                # Chaquopy can wrap Python callables as java.lang.Runnable automatically
-                bridge.onTtsComplete = _on_done
+                # Assign callback then start speaking
+                runnable = TtsCompleteRunnable(_on_done_thread) if TtsCompleteRunnable is not None else _on_done_thread
+                if hasattr(bridge, "setTtsCompleteListener"):
+                    bridge.setTtsCompleteListener(runnable)
+                else:
+                    bridge.onTtsComplete = runnable
                 bridge.speak(text)
+                # Wait for completion with a maximum timeout
+                thread_done.wait(timeout=120.0)
             except Exception as e:
                 logger.error("[AndroidVoicePipeline] TTS speak error", error=str(e))
                 loop.call_soon_threadsafe(done_event.set)
 
-        # Run on executor (bridges to main thread inside speak())
-        await loop.run_in_executor(None, _speak_on_main)
+        # Run on thread pool so we don't block asyncio event loop
+        await loop.run_in_executor(None, _speak_on_executor)
 
+        # Also wait on asyncio side (belt-and-suspenders)
         try:
-            await asyncio.wait_for(done_event.wait(), timeout=90.0)
+            await asyncio.wait_for(done_event.wait(), timeout=125.0)
         except asyncio.TimeoutError:
             logger.warning("[AndroidVoicePipeline] TTS completion timeout")
 

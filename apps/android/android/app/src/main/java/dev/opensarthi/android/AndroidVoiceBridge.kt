@@ -2,6 +2,7 @@ package dev.opensarthi.android
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -58,9 +59,19 @@ class AndroidVoiceBridge private constructor(private val context: Context) : Tex
     // Called by Python to be notified when an utterance finishes
     var onTtsComplete: Runnable? = null
 
+    fun setTtsCompleteListener(listener: Runnable?) {
+        this.onTtsComplete = listener
+    }
+
     init {
-        tts = TextToSpeech(context, this)
-        mainHandler.post { initSpeechRecognizer() }
+        mainHandler.post {
+            try {
+                tts = TextToSpeech(context, this)
+                initSpeechRecognizer()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize voice components on main thread", e)
+            }
+        }
     }
 
     private fun initSpeechRecognizer() {
@@ -131,19 +142,18 @@ class AndroidVoiceBridge private constructor(private val context: Context) : Tex
                     isSpeaking = true
                 }
                 override fun onDone(utteranceId: String?) {
-                    isSpeaking = false
-                    onTtsComplete?.run()
-                    onTtsComplete = null
-                    sendVoiceStateToPython("idle")
-                    if (isListeningActive) {
-                        mainHandler.postDelayed({ rearmRecognizer() }, 350L)
-                    }
+                    handleSpeechFinished()
                 }
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
-                    isSpeaking = false
-                    onTtsComplete?.run()
-                    onTtsComplete = null
+                    handleSpeechFinished()
+                }
+                override fun onError(utteranceId: String?, errorCode: Int) {
+                    Log.e(TAG, "TTS utterance error: $errorCode")
+                    handleSpeechFinished()
+                }
+                override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                    handleSpeechFinished()
                 }
             })
             isTtsInitialized = true
@@ -153,10 +163,22 @@ class AndroidVoiceBridge private constructor(private val context: Context) : Tex
         }
     }
 
+    private fun handleSpeechFinished() {
+        isSpeaking = false
+        onTtsComplete?.run()
+        onTtsComplete = null
+        sendVoiceStateToPython("idle")
+        if (isListeningActive) {
+            mainHandler.postDelayed({ rearmRecognizer() }, 350L)
+        }
+    }
+
     fun speak(text: String) {
         if (!isTtsInitialized) { Log.w(TAG, "TTS not ready"); return }
         mainHandler.post {
-            if (isListeningActive) speechRecognizer?.stopListening()
+            if (isListeningActive) {
+                try { speechRecognizer?.stopListening() } catch (_: Exception) {}
+            }
             isSpeaking = true
             sendVoiceStateToPython("speaking")
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "os_${System.currentTimeMillis()}")
@@ -172,14 +194,44 @@ class AndroidVoiceBridge private constructor(private val context: Context) : Tex
 
     // ── STT ──────────────────────────────────────────────────────────────────
 
+    private var isSystemMuted = false
+
+    private fun muteSystemSounds() {
+        if (!isSystemMuted) {
+            try {
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                audioManager.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_MUTE, 0)
+                isSystemMuted = true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to mute system sounds: ${e.message}")
+            }
+        }
+    }
+
+    private fun restoreSystemSounds() {
+        if (isSystemMuted) {
+            try {
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                audioManager.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_UNMUTE, 0)
+                isSystemMuted = false
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to restore system sounds: ${e.message}")
+            }
+        }
+    }
+
+    // ── STT ──────────────────────────────────────────────────────────────────
+
     fun startListening() {
         isListeningActive = true
+        muteSystemSounds()
         mainHandler.post { rearmRecognizer() }
         Log.d(TAG, "startListening() called")
     }
 
     fun stopListening() {
         isListeningActive = false
+        restoreSystemSounds()
         mainHandler.post {
             try { speechRecognizer?.stopListening() } catch (e: Exception) { Log.e(TAG, "stopListening: ${e.message}") }
         }
@@ -189,6 +241,7 @@ class AndroidVoiceBridge private constructor(private val context: Context) : Tex
     private fun rearmRecognizer() {
         if (!isListeningActive || isSpeaking) return
         try {
+            muteSystemSounds()
             speechRecognizer?.cancel()
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -226,6 +279,7 @@ class AndroidVoiceBridge private constructor(private val context: Context) : Tex
 
     fun destroy() {
         isListeningActive = false
+        restoreSystemSounds()
         speechRecognizer?.destroy()
         tts?.shutdown()
     }
