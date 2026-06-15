@@ -3,11 +3,13 @@ package dev.opensarthi.android
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import com.chaquo.python.Python
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,18 +36,73 @@ class RuntimeService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "opensarthi_runtime"
         private const val RUNTIME_PORT = 8765
+
+        const val ACTION_PAUSE = "dev.opensarthi.android.ACTION_PAUSE"
+        const val ACTION_STOP = "dev.opensarthi.android.ACTION_STOP"
+
+        private var instance: RuntimeService? = null
+
+        @JvmStatic
+        fun updateTaskState(isTaskActive: Boolean, isPaused: Boolean) {
+            instance?.updateNotificationState(isTaskActive, isPaused)
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var runtimeStarted = false
+    private var currentTaskActive = false
+    private var currentPaused = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         startPythonRuntime()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent != null) {
+            val action = intent.action
+            if (action == ACTION_PAUSE) {
+                togglePauseTask()
+            } else if (action == ACTION_STOP) {
+                stopTask()
+            }
+        }
+        return START_STICKY
+    }
+
+    private fun togglePauseTask() {
+        scope.launch {
+            try {
+                val py = Python.getInstance()
+                val wsModule = py.getModule("api.websocket")
+                val manager = wsModule.get("manager")
+                if (currentPaused) {
+                    manager?.callAttr("resume_all_tasks")
+                } else {
+                    manager?.callAttr("pause_all_tasks")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to toggle pause task: ${e.message}", e)
+            }
+        }
+    }
+
+    private fun stopTask() {
+        scope.launch {
+            try {
+                val py = Python.getInstance()
+                val wsModule = py.getModule("api.websocket")
+                val manager = wsModule.get("manager")
+                manager?.callAttr("stop_all_tasks")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to stop task: ${e.message}", e)
+            }
+        }
     }
 
     private fun startPythonRuntime() {
@@ -68,6 +125,7 @@ class RuntimeService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        instance = null
         try {
             val py = Python.getInstance()
             py.getModule("main_android").callAttr("stop_server")
@@ -92,22 +150,55 @@ class RuntimeService : Service() {
         }
     }
 
+    fun updateNotificationState(isTaskActive: Boolean, isPaused: Boolean) {
+        currentTaskActive = isTaskActive
+        currentPaused = isPaused
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager?.notify(NOTIFICATION_ID, buildNotification())
+    }
+
     private fun buildNotification(): Notification {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("OpenSarthi")
-                .setContentText("AI runtime active")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setOngoing(true)
-                .build()
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("OpenSarthi")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+
+        if (currentTaskActive) {
+            if (currentPaused) {
+                builder.setContentText("Task paused")
+                val resumeIntent = Intent(this, RuntimeService::class.java).apply { action = ACTION_PAUSE }
+                val pendingResume = PendingIntent.getService(
+                    this,
+                    1,
+                    resumeIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                builder.addAction(android.R.drawable.ic_media_play, "Resume", pendingResume)
+            } else {
+                builder.setContentText("Task in progress...")
+                val pauseIntent = Intent(this, RuntimeService::class.java).apply { action = ACTION_PAUSE }
+                val pendingPause = PendingIntent.getService(
+                    this,
+                    1,
+                    pauseIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                builder.addAction(android.R.drawable.ic_media_pause, "Pause", pendingPause)
+            }
+
+            val stopIntent = Intent(this, RuntimeService::class.java).apply { action = ACTION_STOP }
+            val pendingStop = PendingIntent.getService(
+                this,
+                2,
+                stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", pendingStop)
         } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-                .setContentTitle("OpenSarthi")
-                .setContentText("AI runtime active")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setOngoing(true)
-                .build()
+            builder.setContentText("AI runtime active")
         }
+
+        return builder.build()
     }
 }

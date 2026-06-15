@@ -3,6 +3,8 @@ package dev.opensarthi.android
 import android.os.Bundle
 import android.util.Log
 import com.getcapacitor.BridgeActivity
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.splashscreen.SplashScreenViewProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,8 +28,33 @@ class MainActivity : BridgeActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
+        splashScreen.setOnExitAnimationListener { provider: SplashScreenViewProvider ->
+            provider.remove()
+        }
         super.onCreate(savedInstanceState)
         AndroidVoiceBridge.init(this)
+        
+        // Request necessary permissions at startup
+        val permissions = mutableListOf<String>()
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) 
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            permissions.add(android.Manifest.permission.RECORD_AUDIO)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(this, "android.permission.POST_NOTIFICATIONS") 
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                permissions.add("android.permission.POST_NOTIFICATIONS")
+            }
+        }
+        if (permissions.isNotEmpty()) {
+            androidx.core.app.ActivityCompat.requestPermissions(
+                this, 
+                permissions.toTypedArray(), 
+                101
+            )
+        }
+        
         startRuntimeService()
     }
 
