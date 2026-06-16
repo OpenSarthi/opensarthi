@@ -1,6 +1,5 @@
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.ollama import OllamaModel
 from typing import Any, Optional, List
 import os
 
@@ -12,7 +11,12 @@ from tools.system import ShellTool
 from tools.wait_tools import WaitForWindowTool, WaitForTextTool
 from observation import DesktopSnapshot
 
-local_llm = OllamaModel(settings.local_model)
+try:
+    from pydantic_ai.models.ollama import OllamaModel
+    local_llm = OllamaModel(settings.local_model)
+except Exception:
+    from pydantic_ai.models.test import TestModel
+    local_llm = TestModel()
 
 class AgentDependencies(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)

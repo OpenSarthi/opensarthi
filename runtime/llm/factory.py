@@ -20,14 +20,17 @@ def build_model(provider: str, model_name: str, api_key: str | None = None) -> A
             os.environ["ANTHROPIC_API_KEY"] = api_key
         from pydantic_ai.models.anthropic import AnthropicModel
         return AnthropicModel(model_name)
-    elif provider in ("groq", "openai", "openrouter"):
+    elif provider == "groq":
+        if api_key:
+            os.environ["GROQ_API_KEY"] = api_key
+        from pydantic_ai.models.groq import GroqModel
+        return GroqModel(model_name)
+    elif provider in ("openai", "openrouter"):
         base_urls = {
-            "groq": "https://api.groq.com/openai/v1",
             "openai": "https://api.openai.com/v1",
             "openrouter": "https://openrouter.ai/api/v1",
         }
         env_vars = {
-            "groq": "GROQ_API_KEY",
             "openai": "OPENAI_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
         }

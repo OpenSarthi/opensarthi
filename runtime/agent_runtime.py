@@ -131,10 +131,10 @@ class AgentRuntime:
         return "\n".join(lines)
 
     async def _cancellable_sleep(self, seconds: float):
-        """Sleep that immediately aborts if cancel is requested."""
+        """Sleep that aborts early if cancel is requested."""
         try:
-            await asyncio.wait_for(asyncio.shield(asyncio.sleep(seconds)), timeout=seconds + 0.5)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
+            await asyncio.sleep(seconds)
+        except asyncio.CancelledError:
             pass
 
     async def run(self, goal: str, model, message_history: list, summarized_context: str = None) -> str:
@@ -431,19 +431,18 @@ class AgentRuntime:
                                                 "result": f"Executed correction: {healed_step.description}" if result.success else f"Correction failed: {result.error}"
                                             })
 
-                                            # Add the healing event to cumulative steps so it persists in final response / history
-                                            heal_log_step = {
-                                                "tool": "self_heal",
-                                                "description": f"Self-healing: {step.description} -> {healed_step.description}",
-                                                "status": "success" if result.success else "error",
-                                                "error": None if result.success else (result.error or "Healing failed")
-                                            }
-                                            self.cumulative_steps.append(heal_log_step)
+                                            # Record heal metadata on the existing step (no append = no index drift)
+                                            if i < len(self.cumulative_steps):
+                                                self.cumulative_steps[i]["heal_applied"] = {
+                                                    "tool": healed_step.tool,
+                                                    "description": healed_step.description,
+                                                    "status": "success" if result.success else "error",
+                                                }
 
                                             if result.success:
                                                 step_success = True
                                                 if i < len(self.cumulative_steps):
-                                                    self.cumulative_steps[i]["description"] = f"[HEALED] {step.description} -> {healed_step.description}"
+                                                    self.cumulative_steps[i]["description"] = f"[HEALED] {step.description} → {healed_step.description}"
                                                 completed_actions.append(healed_step.description)
                                                 break
                                         else:

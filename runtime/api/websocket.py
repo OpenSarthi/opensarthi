@@ -5,7 +5,11 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Any
 
 from planner.agent import agent, AgentDependencies
-from voice.pipeline import VoicePipeline
+import os
+if os.environ.get("OPENSARTHI_PLATFORM") == "android":
+    from voice.android_bridge import AndroidVoicePipeline as VoicePipeline
+else:
+    from voice.pipeline import VoicePipeline
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -39,6 +43,7 @@ class Session:
         self._active_runtimes = {}
         self._message_tasks = {}
         self._orchestrators = {}
+        self._pending_inputs: dict = {}  # thread_id -> asyncio.Future (per-thread to avoid concurrent gate collision)
         self._manual_tts = False  # True when user manually triggered TTS via listen button
         self._session_active = False  # True after onboarding complete + API key confirmed
 
@@ -91,7 +96,8 @@ class Session:
     async def request_permission(self, tool_name: str, args: dict, thread_id: str = None) -> bool:
         """Ask user for permission to execute a dangerous tool, yielding control back on response."""
         from state_machine import AgentState
-        self.pending_input = asyncio.Future()
+        tid = thread_id or self.thread_id
+        self._pending_inputs[tid] = asyncio.Future()
         try:
             req_id = str(uuid.uuid4())
             await self.send_message("permission_request", {
@@ -101,31 +107,32 @@ class Session:
                 "risk_level": "dangerous",
                 "description": f"Execute dangerous action: {tool_name} with arguments {args}?",
                 "timeout_seconds": 30
-            }, thread_id=thread_id)
+            }, thread_id=tid)
             if hasattr(self, '_current_runtime') and self._current_runtime:
                 await self._current_runtime._transition(AgentState.ASKING_PERMISSION)
                 
-            response = await self.pending_input
+            response = await self._pending_inputs[tid]
             return response.get("allow", response.get("approved", False))
         finally:
-            self.pending_input = None
+            self._pending_inputs.pop(tid, None)
 
     async def request_user_input(self, prompt: str, input_type: str = "text", thread_id: str = None) -> str:
         """Ask user for arbitrary text input (e.g. password for sudo), yielding control back on response."""
         from state_machine import AgentState
-        self.pending_input = asyncio.Future()
+        tid = thread_id or self.thread_id
+        self._pending_inputs[tid] = asyncio.Future()
         try:
             await self.send_message("input_request", {
                 "prompt": prompt,
                 "input_type": input_type
-            }, thread_id=thread_id)
+            }, thread_id=tid)
             if hasattr(self, '_current_runtime') and self._current_runtime:
                 await self._current_runtime._transition(AgentState.ASKING_PERMISSION)
                 
-            response = await self.pending_input
+            response = await self._pending_inputs[tid]
             return response.get("value", "")
         finally:
-            self.pending_input = None
+            self._pending_inputs.pop(tid, None)
 
     async def emit_state(self, state_ctx, thread_id: str = None):
         """Broadcast current agent state to the frontend UI."""
@@ -143,6 +150,10 @@ class Session:
             # Auto-listen resumes only if this was an agent-triggered TTS, not manual
             if manual:
                 self._manual_tts = False
+            else:
+                from config import settings
+                if getattr(settings, "continuous_listening", False):
+                    self.start_listen_loop()
 
     async def handle_json_plan(self, steps: list, goal: str):
         """Execute a pre-built JSON plan directly (JSON import feature)."""
@@ -239,6 +250,7 @@ class Session:
         tid = thread_id or self.thread_id
         logger.info("Processing user message", text=text, source=source, thread_id=tid)
         try:
+            self.stop_listen_loop()
             import db, time, os
             msg_id = str(uuid.uuid4())
             timestamp = int(time.time() * 1000)
@@ -392,6 +404,7 @@ class Session:
                     thread_id=tid
                 )
                 self._active_runtimes[tid] = runtime
+                manager.sync_notification_state()
                 try:
                     final_output = await runtime.run(
                         goal=text,
@@ -407,6 +420,9 @@ class Session:
                 except Exception as e:
                     logger.error("Agent execution failed", error=str(e), thread_id=tid)
                     raise e
+                finally:
+                    self._active_runtimes.pop(tid, None)
+                    manager.sync_notification_state()
 
             ast_msg_id = str(uuid.uuid4())
             ast_timestamp = int(time.time() * 1000)
@@ -464,7 +480,9 @@ class Session:
                 self.stop_listen_loop()
             elif page == "assistant":
                 self._session_active = True
-                self.start_listen_loop()
+                import os
+                if os.environ.get("OPENSARTHI_PLATFORM") != "android":
+                    self.start_listen_loop()
         elif msg_type == "run_json_plan":
             steps = payload.get("steps", [])
             goal = payload.get("goal", "Custom JSON Task")
@@ -480,21 +498,34 @@ class Session:
         elif msg_type == "voice_state":
             state = payload.get("state")
             if state == "listening":
-                import time
-                self.voice_pipeline.is_recording_command = True
-                self.voice_pipeline._speech_buffer = []
-                self.voice_pipeline.last_speech_time = time.time()
-                self.voice_pipeline.start_recording_time = time.time()
                 logger.info("[WebSocket] Manual voice listening triggered by user. Bypassing wake word.")
+                if hasattr(self.voice_pipeline, 'is_recording_command'):
+                    # Desktop pipeline — arm the speech buffer
+                    import time
+                    self.voice_pipeline.is_recording_command = True
+                    self.voice_pipeline._speech_buffer = []
+                    self.voice_pipeline.last_speech_time = time.time()
+                    self.voice_pipeline.start_recording_time = time.time()
+                else:
+                    self.start_listen_loop()
+                # On Android, SpeechRecognizer already runs continuously via Kotlin
+                # Frontend handles mic-button state; just echo back to confirm
+                await self.send_message("voice_state", {"state": "listening"})
             elif state == "idle":
-                self.voice_pipeline.is_recording_command = False
                 logger.info("[WebSocket] Manual voice listening stopped by user.")
+                if hasattr(self.voice_pipeline, 'is_recording_command'):
+                    self.voice_pipeline.is_recording_command = False
+                else:
+                    self.stop_listen_loop()
+                await self.send_message("voice_state", {"state": "idle"})
         elif msg_type == "new_chat":
             import db
-            self.thread_id = db.create_thread()
-            if self.thread_id in self._orchestrators:
-                self._orchestrators[self.thread_id].reset_summary()
-            logger.info("Created new chat thread", thread_id=self.thread_id)
+            new_tid = db.create_thread()
+            self.thread_id = new_tid
+            # Clean up the old orchestrator so the next one is fresh
+            old_tid = payload.get("old_thread_id") or self.thread_id
+            self._orchestrators.pop(old_tid, None)
+            logger.info("Created new chat thread", thread_id=new_tid)
         elif msg_type == "cancel_execution":
             thread_id = payload.get("thread_id") or self.thread_id
             if thread_id in self._active_runtimes:
@@ -510,24 +541,29 @@ class Session:
                 "retry_count": 0,
                 "error": None
             }, thread_id=thread_id)
+            manager.sync_notification_state()
         elif msg_type == "pause_execution":
             thread_id = payload.get("thread_id") or self.thread_id
             if thread_id in self._active_runtimes:
                 self._active_runtimes[thread_id].pause()
                 await self.send_message("task_paused", {}, thread_id=thread_id)
                 logger.info("Task execution paused", thread_id=thread_id)
+                manager.sync_notification_state()
         elif msg_type == "resume_execution":
             thread_id = payload.get("thread_id") or self.thread_id
             if thread_id in self._active_runtimes:
                 self._active_runtimes[thread_id].resume()
                 await self.send_message("task_resumed", {}, thread_id=thread_id)
                 logger.info("Task execution resumed", thread_id=thread_id)
+                manager.sync_notification_state()
         elif msg_type == "permission_response":
-            if hasattr(self, 'pending_input') and self.pending_input and not self.pending_input.done():
-                self.pending_input.set_result(payload)
+            tid = payload.get("thread_id") or self.thread_id
+            if tid in self._pending_inputs and not self._pending_inputs[tid].done():
+                self._pending_inputs[tid].set_result(payload)
         elif msg_type == "input_response":
-            if hasattr(self, 'pending_input') and self.pending_input and not self.pending_input.done():
-                self.pending_input.set_result(payload)
+            tid = payload.get("thread_id") or self.thread_id
+            if tid in self._pending_inputs and not self._pending_inputs[tid].done():
+                self._pending_inputs[tid].set_result(payload)
         elif msg_type == "get_history":
             import db
             threads = db.get_all_threads()
@@ -538,6 +574,11 @@ class Session:
             if tid:
                 db.delete_thread(tid)
                 logger.info("Deleted thread", thread_id=tid)
+                # Clean up all per-thread state to prevent memory leaks
+                self._orchestrators.pop(tid, None)
+                self._active_runtimes.pop(tid, None)
+                self._message_tasks.pop(tid, None)
+                self._pending_inputs.pop(tid, None)
                 if self.thread_id == tid:
                     self.thread_id = db.create_thread()
                 threads = db.get_all_threads()
@@ -665,7 +706,9 @@ class Session:
 
             logger.info("Settings updated", provider=settings.ai_provider, model=settings.cloud_model)
             if getattr(self, "_session_active", False):
-                self.start_listen_loop()
+                import os
+                if os.environ.get("OPENSARTHI_PLATFORM") != "android":
+                    self.start_listen_loop()
 
     def start_listen_loop(self):
         if getattr(self, "_listen_task", None) is None or self._listen_task.done():
@@ -738,6 +781,73 @@ class ConnectionManager:
             session = self.sessions.pop(websocket)
             session.stop_listen_loop()
             logger.info("Client disconnected", session_id=session.session_id)
+            self.sync_notification_state()
+
+    def sync_notification_state(self):
+        import os
+        if os.environ.get("OPENSARTHI_PLATFORM") != "android":
+            return
+        try:
+            is_task_active = False
+            is_paused = False
+            for session in list(self.sessions.values()):
+                if session._active_runtimes:
+                    is_task_active = True
+                    if any(getattr(r, "_paused", False) for r in session._active_runtimes.values()):
+                        is_paused = True
+                    break
+            
+            from dev.opensarthi.android import RuntimeService
+            RuntimeService.updateTaskState(is_task_active, is_paused)
+        except Exception as e:
+            logger.warning("Failed to sync notification state to Android", error=str(e))
+
+    def pause_all_tasks(self):
+        loop = asyncio.get_event_loop()
+        for session in list(self.sessions.values()):
+            for tid, runtime in list(session._active_runtimes.items()):
+                runtime.pause()
+                asyncio.run_coroutine_threadsafe(
+                    session.send_message("task_paused", {}, thread_id=tid),
+                    loop
+                )
+        self.sync_notification_state()
+        logger.info("Paused all active tasks via system command")
+
+    def resume_all_tasks(self):
+        loop = asyncio.get_event_loop()
+        for session in list(self.sessions.values()):
+            for tid, runtime in list(session._active_runtimes.items()):
+                runtime.resume()
+                asyncio.run_coroutine_threadsafe(
+                    session.send_message("task_resumed", {}, thread_id=tid),
+                    loop
+                )
+        self.sync_notification_state()
+        logger.info("Resumed all active tasks via system command")
+
+    def stop_all_tasks(self):
+        loop = asyncio.get_event_loop()
+        for session in list(self.sessions.values()):
+            for tid, runtime in list(session._active_runtimes.items()):
+                runtime.request_cancel()
+                asyncio.run_coroutine_threadsafe(
+                    session.send_message("agent_state", {
+                        "state": "idle",
+                        "goal": None,
+                        "step": 0,
+                        "step_description": None,
+                        "total_steps": 0,
+                        "retry_count": 0,
+                        "error": None
+                    }, thread_id=tid),
+                    loop
+                )
+            for tid, task in list(session._message_tasks.items()):
+                if not task.done():
+                    loop.call_soon_threadsafe(task.cancel)
+        self.sync_notification_state()
+        logger.info("Stopped all active tasks via system command")
 
 manager = ConnectionManager()
 

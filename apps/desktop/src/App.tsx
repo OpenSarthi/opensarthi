@@ -39,6 +39,7 @@ export default function App() {
     openrouterApiKey,
     voiceAccent,
     voiceSpeed,
+    continuousListening,
     activeTheme,
     wakeWords,
     wakeWordEnabled,
@@ -226,6 +227,7 @@ export default function App() {
             currentOpenrouterKey={openrouterApiKey}
             currentVoiceAccent={voiceAccent}
             currentVoiceSpeed={voiceSpeed}
+            currentContinuousListening={continuousListening}
             currentTheme={activeTheme}
             currentWakeWords={wakeWords}
             currentWakeWordEnabled={wakeWordEnabled}

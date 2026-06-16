@@ -306,7 +306,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
 
 
-  const isTaskRunning = !!currentPlan;
+  const activeTab = tabs.find((t) => t.id === activeThreadId);
+  const isTaskRunning = !!activeTab?.currentPlan;
 
   const STATUS_LINES = [
     "SYSTEM READY",
