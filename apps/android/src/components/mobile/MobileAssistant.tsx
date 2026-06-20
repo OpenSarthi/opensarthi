@@ -5,6 +5,9 @@ import {
   X, CheckCircle, AlertCircle, Clock, RefreshCw,
   Menu, User, Copy, Volume2, Zap,
 } from "lucide-react";
+import { MarkdownRenderer } from "./MarkdownRenderer";
+import { SplashScreen } from "./SplashScreen";
+import { ParticleBackground } from "./ParticleBackground";
 
 // Animated robot avatar SVG for AI responses
 function RobotAvatar() {
@@ -29,9 +32,57 @@ function RobotAvatar() {
 import { useAssistantStore } from "../../stores/assistantStore";
 import { wsClient } from "../../lib/ws";
 import type { VoiceState, PlanStep } from "../../lib/schemas";
-import { MarkdownRenderer } from "./MarkdownRenderer";
-import { SplashScreen } from "./SplashScreen";
-import { ParticleBackground } from "./ParticleBackground";
+
+// ─── Streaming Message Bubble (word-by-word typing animation) ──────────────────
+function StreamingMessage({ text, isComplete }: { text: string; isComplete: boolean }) {
+  if (!text && !isComplete) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{ display: "flex", justifyContent: "flex-start", marginBottom: 14, padding: "0 4px" }}
+    >
+      {/* Robot avatar */}
+      <div style={{
+        width: 30, height: 30, borderRadius: "50%",
+        background: "linear-gradient(135deg, var(--accent) 0%, rgba(0,200,140,0.5) 100%)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        marginRight: 8, flexShrink: 0, marginTop: 2,
+        boxShadow: "0 0 8px var(--accent-glow)",
+      }}>
+        <RobotAvatar />
+      </div>
+      <div style={{ maxWidth: "80%" }}>
+        <div style={{
+          padding: "10px 14px",
+          borderRadius: "18px 18px 18px 4px",
+          background: "rgba(255,255,255,0.05)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          wordBreak: "break-word",
+        }}>
+          <div style={{ fontSize: 14, color: "var(--text-primary)", lineHeight: 1.6 }}>
+            {text}
+            {!isComplete && (
+              <motion.span
+                animate={{ opacity: [1, 0] }}
+                transition={{ duration: 0.6, repeat: Infinity, ease: "easeInOut" }}
+                style={{
+                  display: "inline-block",
+                  width: 2,
+                  height: "1em",
+                  background: "var(--accent)",
+                  marginLeft: 2,
+                  verticalAlign: "text-bottom",
+                  borderRadius: 1,
+                }}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 // ─── Step badge ───────────────────────────────────────────────────────────────
 function StepBadge({ status }: { status: string }) {
@@ -508,10 +559,14 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
   const [textInput, setTextInput] = useState("");
   const [selectedPlan, setSelectedPlan] = useState<import("../../lib/schemas").Plan | null>(null);
   const [showSplash, setShowSplash] = useState(true);
+  // Streaming / typing animation state
+  const [streamingText, setStreamingText] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastSentSourceRef = useRef<"text" | "voice">("text");
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamingTextRef = useRef("");  // holds accumulated text for TTS on stream_end
 
   const activeTab = tabs.find((t: any) => t.id === activeThreadId);
   const isTaskRunning = !!activeTab?.currentPlan;
@@ -531,6 +586,39 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
   // Auto-scroll
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
+  // Auto-scroll during streaming
+  useEffect(() => {
+    if (isStreaming) chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [streamingText, isStreaming]);
+
+  // ── stream_chunk / stream_end WebSocket listeners ────────────────────────────
+  useEffect(() => {
+    const offChunk = wsClient.on("stream_chunk" as any, (msg: any) => {
+      const chunk: string = msg.payload?.chunk ?? "";
+      streamingTextRef.current += chunk;
+      setStreamingText(t => t + chunk);
+      setIsStreaming(true);
+    });
+    const offEnd = wsClient.on("stream_end" as any, (msg: any) => {
+      // Streaming complete — keep the text visible briefly then let assistant_response commit it
+      setIsStreaming(false);
+      // Auto-TTS for voice mode
+      if (lastSentSourceRef.current === "voice" && streamingTextRef.current.trim()) {
+        let text = streamingTextRef.current
+          .replace(/<think>[\s\S]*?<\/think>/g, "")
+          .replace(/```[\s\S]*?```/g, " ")
+          .replace(/`([^`]+)`/g, "$1")
+          .replace(/[*#_\-]/g, "")
+          .trim();
+        if (text) wsClient.send("speak_text", { text, manual: false });
+      }
+      streamingTextRef.current = "";
+      // Clear the streaming bubble shortly after the committed message appears
+      setTimeout(() => setStreamingText(""), 400);
+    });
+    return () => { offChunk(); offEnd(); };
+  }, []);
+
   // Auto-send after silence
   useEffect(() => {
     if (voiceState !== "listening") {
@@ -547,15 +635,17 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
     return () => { if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current); };
   }, [currentTranscript, voiceState]);
 
-  // Auto TTS on assistant messages after voice input
+  // Auto TTS on assistant messages after voice input (legacy non-streaming path)
   useEffect(() => {
     if (!messages.length) return;
     const last = messages[messages.length - 1];
-    if (last?.role === "assistant" && lastSentSourceRef.current === "voice" && last.content) {
+    // Skip if streaming already handled TTS in stream_end handler
+    if (last?.role === "assistant" && lastSentSourceRef.current === "voice" && last.content && !isStreaming) {
       let text = last.content.replace(/<think>[\s\S]*?<\/think>/g, "");
       if (text.includes("<think>")) return;
       text = text.replace(/```[\s\S]*?```/g, " ").replace(/`([^`]+)`/g, "$1").replace(/[*#_\-]/g, "").trim();
-      if (text) wsClient.send("speak_text", { text, manual: false });
+      // Only TTS if there was no streamed version (streamingTextRef would be empty by now)
+      if (text && !streamingTextRef.current) wsClient.send("speak_text", { text, manual: false });
       lastSentSourceRef.current = "text";
     }
   }, [messages]);
@@ -661,6 +751,18 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
               />
             );
           })}
+
+          {/* Streaming bubble: live typing animation while response comes in */}
+          <AnimatePresence>
+            {(isStreaming || streamingText) && (
+              <StreamingMessage
+                key="streaming"
+                text={streamingText}
+                isComplete={!isStreaming}
+              />
+            )}
+          </AnimatePresence>
+
           <div ref={chatEndRef} />
         </div>
 

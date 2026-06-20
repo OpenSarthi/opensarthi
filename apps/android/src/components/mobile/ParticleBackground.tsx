@@ -94,11 +94,11 @@ interface Ring {
 }
 
 const RINGS: Ring[] = [
-  { radius: 1.00, tiltX: 0.55, tiltZ: 0.0,  phase: 0,   speed: 1.00, particleCount: 280, thickness: 0.14, brightness: 1.0  },
-  { radius: 0.75, tiltX: 1.15, tiltZ: 0.8,  phase: 1.2, speed: 1.60, particleCount: 200, thickness: 0.11, brightness: 0.85 },
-  { radius: 1.25, tiltX: 0.25, tiltZ: -0.5, phase: 2.5, speed: 0.65, particleCount: 220, thickness: 0.10, brightness: 0.70 },
-  { radius: 0.50, tiltX: 2.00, tiltZ: 1.3,  phase: 0.7, speed: 2.40, particleCount: 130, thickness: 0.09, brightness: 0.60 },
-  { radius: 1.55, tiltX: -0.4, tiltZ: 0.3,  phase: 3.8, speed: 0.40, particleCount: 180, thickness: 0.08, brightness: 0.45 },
+  { radius: 1.00, tiltX: 0.55, tiltZ: 0.0,  phase: 0,   speed: 1.00, particleCount: 450, thickness: 0.14, brightness: 1.0  },
+  { radius: 0.75, tiltX: 1.15, tiltZ: 0.8,  phase: 1.2, speed: 1.60, particleCount: 320, thickness: 0.11, brightness: 0.85 },
+  { radius: 1.25, tiltX: 0.25, tiltZ: -0.5, phase: 2.5, speed: 0.65, particleCount: 350, thickness: 0.10, brightness: 0.70 },
+  { radius: 0.50, tiltX: 2.00, tiltZ: 1.3,  phase: 0.7, speed: 2.40, particleCount: 210, thickness: 0.09, brightness: 0.60 },
+  { radius: 1.55, tiltX: -0.4, tiltZ: 0.3,  phase: 3.8, speed: 0.40, particleCount: 290, thickness: 0.08, brightness: 0.45 },
 ];
 
 /* ─── Nebula background particles (slow, large, very dim) ──────────────────── */
@@ -111,8 +111,8 @@ function buildNebulaCloud(count: number, maxR: number) {
       x: r * Math.sin(phi) * Math.cos(theta),
       y: r * Math.sin(phi) * Math.sin(theta) * 0.5,
       z: r * Math.cos(phi),
-      sz: Math.random() * 1.2 + 0.3,
-      alpha: Math.random() * 0.18 + 0.04,
+      sz: Math.random() * 2.2 + 0.6,
+      alpha: Math.random() * 0.20 + 0.05,
       phase: Math.random() * Math.PI * 2,
     };
   });
@@ -138,13 +138,13 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
     let BASE_R = Math.pow(Math.min(W, H), 0.76) * 1.5;
 
     // Nebula particles
-    let nebula = buildNebulaCloud(320, BASE_R * 1.6);
+    let nebula = buildNebulaCloud(500, BASE_R * 1.6);
 
     const ro = new ResizeObserver(() => {
       W = canvas.width = parent?.clientWidth ?? W;
       H = canvas.height = parent?.clientHeight ?? H;
       BASE_R = Math.pow(Math.min(W, H), 0.76) * 1.5;
-      nebula = buildNebulaCloud(320, BASE_R * 1.6);
+      nebula = buildNebulaCloud(500, BASE_R * 1.6);
     });
     if (parent) ro.observe(parent);
 
@@ -161,10 +161,10 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
         dx:     (Math.random() - 0.5),          // scatter X offset
         dy:     (Math.random() - 0.5) * 0.6,    // scatter Y offset
         dz:     (Math.random() - 0.5),          // scatter Z offset
-        bright: Math.random() < 0.07,
-        size:   Math.random() < 0.07
-          ? Math.random() * 1.8 + 0.8
-          : Math.random() * 0.9 + 0.2,
+        bright: Math.random() < 0.08,
+        size:   Math.random() < 0.08
+          ? Math.random() * 3.2 + 1.6
+          : Math.random() * 1.8 + 0.5,
       }))
     );
 
@@ -180,6 +180,9 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
             : vs === "speaking" ? 0.75
               : 0.3;
       intensity += (targetIntensity - intensity) * 0.04;
+
+      // Base rendering density / visual brightness scaling
+      const visualIntensity = 0.35 + intensity * 0.65;
 
       const sweepSpeed = 0.014 + intensity * 0.055;
       sweepAngle += sweepSpeed;
@@ -204,20 +207,22 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
       const corePulse = 1 + Math.sin(time * (3 + intensity * 8)) * (0.08 + intensity * 0.18);
       const coreR = Math.max(1, BASE_R * 0.06 * corePulse);
 
-      ctx.fillStyle = `rgba(${r},${g},${b},${(0.022 + intensity * 0.030).toFixed(4)})`;
+      // Outer ambient fog — cheap single arc fill, zero gradient allocation
+      ctx.fillStyle = `rgba(${r},${g},${b},${(visualIntensity * 0.045).toFixed(4)})`;
       ctx.beginPath();
       ctx.arc(cx, cy, BASE_R * (0.52 + intensity * 0.28), 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.shadowColor = `rgba(${r},${g},${b},0.6)`;
+      // Mid + nucleus — shadowBlur is GPU-side, no JS object allocation per frame
+      ctx.shadowColor = `rgba(${r},${g},${b},${(visualIntensity * 0.6).toFixed(4)})`;
       ctx.shadowBlur = coreR * 5;
-      ctx.fillStyle = `rgba(${r},${g},${b},${(0.10 + intensity * 0.12).toFixed(4)})`;
+      ctx.fillStyle = `rgba(${r},${g},${b},${(visualIntensity * 0.16).toFixed(4)})`;
       ctx.beginPath();
       ctx.arc(cx, cy, coreR * 2.5, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.shadowBlur = coreR * 1.5;
-      ctx.fillStyle = `rgba(${r},${g},${b},${(0.7 + intensity * 0.3).toFixed(4)})`;
+      ctx.fillStyle = `rgba(${r},${g},${b},${(visualIntensity * 0.75).toFixed(4)})`;
       ctx.beginPath();
       ctx.arc(cx, cy, Math.max(0.5, coreR * 0.7), 0, Math.PI * 2);
       ctx.fill();
@@ -266,7 +271,7 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
           const angleDiff = Math.abs(((t - sweepAngle) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
           const sweepBoost = intensity > 0.15 ? Math.max(0, 1 - angleDiff / 0.45) : 0;
 
-          const baseAlpha = ring.brightness * depthA * (0.20 + intensity * 0.16);
+          const baseAlpha = ring.brightness * depthA * (0.20 + visualIntensity * 0.16);
           const alpha = Math.min(0.90, baseAlpha + sweepBoost * 0.55);
           const size = Math.max(0.15, sp.size * Math.min(1.4, psc));
 
@@ -286,8 +291,8 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
           }
         }
 
-        /* ── Draw the ring arc outline (very faint) ── */
-        const arcAlpha = ring.brightness * 0.06 * (0.4 + intensity * 0.6);
+        /* ── Draw the ring arc outline (visible light color ring structure) ── */
+        const arcAlpha = ring.brightness * 0.12 * (0.4 + visualIntensity * 0.6);
         const arcSteps = 120;
         ctx.beginPath();
         let first = true;
@@ -308,7 +313,7 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
         }
         ctx.closePath();
         ctx.strokeStyle = `rgba(${r},${g},${b},${arcAlpha})`;
-        ctx.lineWidth = 0.6;
+        ctx.lineWidth = 0.5 + visualIntensity * 0.3;
         ctx.stroke();
       }
 
