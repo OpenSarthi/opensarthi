@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, User, Volume2, Copy, Check } from "lucide-react";
 import type { Message } from "../../lib/schemas";
 import { wsClient } from "../../lib/ws";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
 
 interface ResponseBubbleProps {
   message: Message;
@@ -199,47 +202,32 @@ function CodeBlock({ lang, codeText }: { lang: string; codeText: string }) {
   );
 }
 
-function parseInlineMarkdown(text: string) {
-  // Simple regex matching for bold and code
-  const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i} style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith("`") && part.endsWith("`")) {
-      return (
-        <code key={i} style={{ 
-          fontFamily: "var(--font-mono)", 
-          fontSize: "0.9em", 
-          background: "rgba(255, 255, 255, 0.08)", 
-          padding: "2px 4px", 
-          borderRadius: "3px",
-          border: "1px solid rgba(255,255,255,0.05)",
-          color: "var(--accent)"
-        }}>
-          {part.slice(1, -1)}
-        </code>
-      );
-    }
-    return part;
-  });
-}
+const renderParagraph = ({ children }: any) => {
+  let text = "";
+  if (typeof children === "string") {
+    text = children;
+  } else if (Array.isArray(children)) {
+    text = children.map(c => typeof c === "string" ? c : "").join("");
+  }
 
-function parseMarkdownLine(line: string, lineIndex: number) {
-  const trimmed = line.trim();
-  
-  // Custom execution/healer trace styling inside bubbles
+  const trimmed = text.trim();
   if (trimmed.startsWith("✓ ")) {
-    const desc = trimmed.slice(2);
-    const isHeal = desc.toLowerCase().includes("self-healing") || desc.toLowerCase().includes("self_heal");
+    const isHeal = trimmed.toLowerCase().includes("self-healing") || trimmed.toLowerCase().includes("self_heal");
+    let modifiedChildren = children;
+    if (typeof children === "string") {
+      modifiedChildren = children.slice(2);
+    } else if (Array.isArray(children) && typeof children[0] === "string") {
+      modifiedChildren = [children[0].slice(2), ...children.slice(1)];
+    }
+
     return (
-      <div key={lineIndex} style={{ 
+      <div style={{ 
         display: "flex", 
         alignItems: "center", 
         gap: "6px", 
         fontSize: "11px", 
         fontFamily: "var(--font-mono)", 
-        color: isHeal ? "var(--warning)" : "var(--success)", 
+        color: isHeal ? "var(--warning)" : "var(--success, #00e6b4)", 
         background: isHeal ? "rgba(255, 170, 0, 0.05)" : "rgba(0, 230, 180, 0.04)", 
         border: isHeal ? "1px dashed rgba(255, 170, 0, 0.25)" : "1px solid rgba(0, 230, 180, 0.15)",
         borderRadius: "var(--radius-sm)", 
@@ -247,15 +235,23 @@ function parseMarkdownLine(line: string, lineIndex: number) {
         margin: "4px 0" 
       }}>
         <span>{isHeal ? "🩹" : "✓"}</span>
-        <span>{parseInlineMarkdown(desc)}</span>
+        <span>{modifiedChildren}</span>
       </div>
     );
   }
+
   if (trimmed.startsWith("❌")) {
     const isHeal = trimmed.toLowerCase().includes("self-healing") || trimmed.toLowerCase().includes("self_heal");
-    const contentText = trimmed.startsWith("❌ ") ? trimmed.slice(2) : trimmed.slice(1);
+    const prefixLength = trimmed.startsWith("❌ ") ? 2 : 1;
+    let modifiedChildren = children;
+    if (typeof children === "string") {
+      modifiedChildren = children.slice(prefixLength);
+    } else if (Array.isArray(children) && typeof children[0] === "string") {
+      modifiedChildren = [children[0].slice(prefixLength), ...children.slice(1)];
+    }
+
     return (
-      <div key={lineIndex} style={{ 
+      <div style={{ 
         display: "flex", 
         alignItems: "center", 
         gap: "6px", 
@@ -269,46 +265,132 @@ function parseMarkdownLine(line: string, lineIndex: number) {
         margin: "4px 0" 
       }}>
         <span>❌</span>
-        <span>{parseInlineMarkdown(contentText)}</span>
+        <span>{modifiedChildren}</span>
       </div>
     );
   }
 
-  // Headers
-  if (trimmed.startsWith("# ")) {
-    return <h1 key={lineIndex} style={{ fontSize: "1.4em", margin: "12px 0 6px 0", color: "var(--accent)", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "4px", fontWeight: "bold" }}>{parseInlineMarkdown(trimmed.slice(2))}</h1>;
-  }
-  if (trimmed.startsWith("## ")) {
-    return <h2 key={lineIndex} style={{ fontSize: "1.25em", margin: "10px 0 5px 0", color: "var(--accent)", fontWeight: "bold" }}>{parseInlineMarkdown(trimmed.slice(3))}</h2>;
-  }
-  if (trimmed.startsWith("### ")) {
-    return <h3 key={lineIndex} style={{ fontSize: "1.1em", margin: "8px 0 4px 0", color: "var(--accent)", fontWeight: "bold" }}>{parseInlineMarkdown(trimmed.slice(4))}</h3>;
-  }
-  if (trimmed.startsWith("#### ")) {
-    return <h4 key={lineIndex} style={{ fontSize: "1.05em", margin: "6px 0 3px 0", color: "var(--accent)", fontWeight: "bold" }}>{parseInlineMarkdown(trimmed.slice(5))}</h4>;
-  }
-  
-  // Lists
-  if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
-    return (
-      <li key={lineIndex} style={{ marginLeft: "16px", marginBottom: "4px", listStyleType: "square" }}>
-        {parseInlineMarkdown(trimmed.slice(2))}
-      </li>
-    );
-  }
-  
-  // Empty line
-  if (line === "") {
-    return <div key={lineIndex} style={{ height: "6px" }} />;
-  }
+  return <p style={{ margin: "4px 0", lineHeight: "1.5" }}>{children}</p>;
+};
 
-  // Normal paragraph
-  return (
-    <p key={lineIndex} style={{ margin: "4px 0", lineHeight: "1.5" }}>
-      {parseInlineMarkdown(line)}
-    </p>
-  );
-}
+const markdownComponents = {
+  p: renderParagraph,
+  
+  h1: ({ children }: any) => (
+    <h1 style={{ fontSize: "1.4em", margin: "12px 0 6px 0", color: "var(--accent)", borderBottom: "1px solid var(--border)", paddingBottom: "4px", fontWeight: "bold" }}>
+      {children}
+    </h1>
+  ),
+  h2: ({ children }: any) => (
+    <h2 style={{ fontSize: "1.25em", margin: "10px 0 5px 0", color: "var(--accent)", fontWeight: "bold" }}>
+      {children}
+    </h2>
+  ),
+  h3: ({ children }: any) => (
+    <h3 style={{ fontSize: "1.1em", margin: "8px 0 4px 0", color: "var(--accent)", fontWeight: "bold" }}>
+      {children}
+    </h3>
+  ),
+  h4: ({ children }: any) => (
+    <h4 style={{ fontSize: "1.05em", margin: "6px 0 3px 0", color: "var(--accent)", fontWeight: "bold" }}>
+      {children}
+    </h4>
+  ),
+  
+  li: ({ children }: any) => (
+    <li style={{ marginLeft: "16px", marginBottom: "4px", listStyleType: "square" }}>
+      {children}
+    </li>
+  ),
+  
+  hr: () => (
+    <hr style={{ border: "0", borderTop: "1px solid var(--border)", margin: "16px 0", opacity: 0.6 }} />
+  ),
+  
+  pre: ({ children }: any) => {
+    const codeEl = React.Children.only(children) as React.ReactElement<any>;
+    const className = codeEl.props.className || "";
+    const match = /language-(\w+)/.exec(className);
+    const lang = match ? match[1] : "";
+    const codeText = String(codeEl.props.children).replace(/\n$/, "");
+    return <CodeBlock lang={lang} codeText={codeText} />;
+  },
+  
+  code: ({ children, ...props }: any) => {
+    return (
+      <code style={{ 
+        fontFamily: "var(--font-mono)", 
+        fontSize: "0.9em", 
+        background: "rgba(255, 255, 255, 0.08)", 
+        padding: "2px 4px", 
+        borderRadius: "3px",
+        border: "1px solid var(--border)",
+        color: "var(--accent)"
+      }} {...props}>
+        {children}
+      </code>
+    );
+  },
+
+  table: ({ children }: any) => (
+    <div style={{ overflowX: "auto", margin: "12px 0", width: "100%" }}>
+      <table style={{ 
+        width: "100%", 
+        borderCollapse: "collapse", 
+        border: "1px solid var(--border)",
+        fontSize: "13px",
+        fontFamily: "var(--font-mono, monospace)"
+      }}>
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children }: any) => (
+    <thead style={{ background: "rgba(255,255,255,0.03)", borderBottom: "2px solid var(--border)" }}>
+      {children}
+    </thead>
+  ),
+  tbody: ({ children }: any) => (
+    <tbody>{children}</tbody>
+  ),
+  tr: ({ children }: any) => (
+    <tr style={{ borderBottom: "1px solid var(--border)" }}>{children}</tr>
+  ),
+  th: ({ children }: any) => (
+    <th style={{ 
+      padding: "8px 10px", 
+      fontWeight: "bold", 
+      textAlign: "left", 
+      color: "var(--accent)", 
+      borderRight: "1px solid var(--border)" 
+    }}>{children}</th>
+  ),
+  td: ({ children }: any) => (
+    <td style={{ 
+      padding: "6px 10px", 
+      color: "var(--text-secondary)", 
+      borderRight: "1px solid var(--border)" 
+    }}>{children}</td>
+  ),
+
+  a: ({ href, children }: any) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+      {children}
+    </a>
+  ),
+
+  blockquote: ({ children }: any) => (
+    <blockquote style={{ 
+      borderLeft: "3px solid var(--accent)", 
+      paddingLeft: "10px", 
+      margin: "8px 0", 
+      color: "var(--text-secondary)", 
+      background: "rgba(255,255,255,0.01)" 
+    }}>
+      {children}
+    </blockquote>
+  )
+};
 
 export function ResponseBubble({ message }: ResponseBubbleProps) {
   const isUser = message.role === "user";
@@ -342,31 +424,6 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
 
     return () => clearInterval(timer);
   }, [message.content, message.timestamp, isUser]);
-
-  const renderContent = (content: string) => {
-    if (!content) return null;
-    const parts = content.split(/(```[\s\S]*?```)/g);
-    return parts.map((part, index) => {
-      if (part.startsWith("```") && part.endsWith("```")) {
-        const lines = part.slice(3, -3).trim().split("\n");
-        let lang = "";
-        let codeLines = lines;
-        if (lines.length > 0 && /^[a-zA-Z0-9_-]+$/.test(lines[0])) {
-          lang = lines[0];
-          codeLines = lines.slice(1);
-        }
-        const codeText = codeLines.join("\n");
-        return <CodeBlock key={index} lang={lang} codeText={codeText} />;
-      }
-      
-      const lines = part.split("\n");
-      return (
-        <div key={index} style={{ display: "flex", flexDirection: "column" }}>
-          {lines.map((line, lineIdx) => parseMarkdownLine(line, lineIdx))}
-        </div>
-      );
-    });
-  };
 
   const { thinking, response, isComplete } = parseThinking(displayedContent);
 
@@ -462,7 +519,11 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
           )}
           
           {response && (
-            <div style={{ flex: 1 }}>{renderContent(response)}</div>
+            <div style={{ flex: 1 }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {response}
+              </ReactMarkdown>
+            </div>
           )}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: "4px", gap: "10px" }}>
