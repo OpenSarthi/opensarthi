@@ -212,13 +212,11 @@ class AgentRuntime:
                 recalled = []
                 auto_recalled = []
                 if self.memory:
-                    recalled = await self.memory.recall(goal, top_k=3)
-                    # Auto-inject: broader semantic recall (goal + recent context)
                     try:
-                        auto_recalled = await self.memory.recall(goal, top_k=5)
+                        auto_recalled = await self.memory.recall(goal, top_k=8)
+                        recalled = auto_recalled[:3]  # top-3 subset for explicit section
                         # Also always fetch high-priority behavioral preferences
                         pref_results = await self.memory.long.search("[PREFERENCE]", top_k=8)
-                        # Merge, deduplicate by content
                         seen = {m.content for m in auto_recalled}
                         for m in pref_results:
                             if m.content not in seen:
@@ -500,9 +498,32 @@ class AgentRuntime:
                 for group in groups:
                     if plan_failed or self._cancel_requested:
                         break
-                    
-                    tasks = [execute_single_step(idx) for idx in group]
-                    results = await asyncio.gather(*tasks)
+
+                    async def _run_group(group_indices: list) -> list:
+                        async_tasks = [
+                            asyncio.ensure_future(execute_single_step(idx))
+                            for idx in group_indices
+                        ]
+                        done_results = []
+                        for coro in asyncio.as_completed(async_tasks):
+                            r = await coro
+                            done_results.append(r)
+                            if not r:
+                                # Cancel remaining sibling tasks immediately
+                                for t in async_tasks:
+                                    if not t.done():
+                                        t.cancel()
+                                break
+                        # Await cancelled tasks to suppress warnings
+                        for t in async_tasks:
+                            if not t.done():
+                                try:
+                                    await t
+                                except (asyncio.CancelledError, Exception):
+                                    pass
+                        return done_results
+
+                    results = await _run_group(group)
                     if not all(results):
                         plan_failed = True
                         break
@@ -533,9 +554,7 @@ class AgentRuntime:
                         return "Execution cancelled by user."
                     continue
 
-                replanning_attempts += 1
-                self.state.retry_count = replanning_attempts
-                await self._transition(AgentState.RETRYING, current_step_description="Verifying task completion...")
+                await self._transition(AgentState.COMPLETE)
                 # ── Fire-and-forget: learn from this successful execution ──
                 if self.memory and completed_actions:
                     asyncio.create_task(
@@ -553,7 +572,16 @@ class AgentRuntime:
                                 memory_manager=self.memory,
                             )
                         )
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)
+                # Store success in memory and return immediately
+                if self.memory:
+                    await self.memory.store(
+                        content=f"Goal: {goal}\nOutcome: Completed successfully.\nActions: {completed_actions}",
+                        source="agent",
+                        importance=0.9
+                    )
+                final_success_response = f"Task completed successfully."
+                return self._format_final_response(final_success_response, self.cumulative_steps)
 
             await self._transition(AgentState.ERROR, error_message="Task failed after maximum replanning attempts.")
 
@@ -686,6 +714,12 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
             )
 
             result = await self._execute_step(step, i)
+
+        # Mark any still-pending steps as terminated after loop ends
+        for j, s in enumerate(self.cumulative_steps):
+            if s.get("status") in ("pending", "running"):
+                self.cumulative_steps[j]["status"] = "terminated"
+                await self.ws.send_message("tool_terminated", {"index": j})
 
         await self._transition(AgentState.IDLE)
         return self._format_final_response(f"JSON task completed: {goal}", self.cumulative_steps)

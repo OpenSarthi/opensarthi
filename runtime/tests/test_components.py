@@ -66,9 +66,9 @@ class TestLLMFactory(unittest.TestCase):
 
         # Test that building standard models imports the correct classes
         # Groq
-        with patch("pydantic_ai.models.openai.OpenAIModel") as mock_openai:
+        with patch("pydantic_ai.models.groq.GroqModel") as mock_groq:
             build_model("groq", "llama-3")
-            mock_openai.assert_called_once()
+            mock_groq.assert_called_once()
 
 if __name__ == "__main__":
     unittest.main()
