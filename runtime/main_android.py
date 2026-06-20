@@ -16,10 +16,14 @@ to substitute desktop tools (click, observe_desktop, etc.) with Android-aware
 equivalents that either raise NotImplementedError (unimplemented) or delegate
 to the Kotlin accessibility bridge.
 """
+# ISSUE-14 FIX: Set OPENSARTHI_PLATFORM=android BEFORE any module imports.
+# websocket.py and registry.py branch on this env var at import time.
+import os
+os.environ["OPENSARTHI_PLATFORM"] = "android"
+
 import asyncio
 import threading
 import sys
-import os
 
 # ── Path setup (Chaquopy provides sys.path automatically, but we add runtime root) ──
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -54,8 +58,6 @@ def start_server(port: int = 8765):
 
     _patch_android_tools()
 
-    # Patch voice pipeline to use Android bridge (no-op on unimplemented paths)
-    os.environ.setdefault("OPENSARTHI_PLATFORM", "android")
     os.environ.setdefault("RUNTIME_PORT", str(port))
 
     import uvicorn

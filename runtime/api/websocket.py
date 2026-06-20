@@ -43,7 +43,9 @@ class Session:
         self._active_runtimes = {}
         self._message_tasks = {}
         self._orchestrators = {}
-        self._pending_inputs: dict = {}  # thread_id -> asyncio.Future (per-thread to avoid concurrent gate collision)
+        # Separate futures for permission vs text input to avoid collision
+        self._pending_permissions: dict = {}  # thread_id -> asyncio.Future
+        self._pending_inputs: dict = {}       # thread_id -> asyncio.Future
         self._manual_tts = False  # True when user manually triggered TTS via listen button
         self._session_active = False  # True after onboarding complete + API key confirmed
 
@@ -97,7 +99,7 @@ class Session:
         """Ask user for permission to execute a dangerous tool, yielding control back on response."""
         from state_machine import AgentState
         tid = thread_id or self.thread_id
-        self._pending_inputs[tid] = asyncio.Future()
+        self._pending_permissions[tid] = asyncio.Future()
         try:
             req_id = str(uuid.uuid4())
             await self.send_message("permission_request", {
@@ -110,11 +112,11 @@ class Session:
             }, thread_id=tid)
             if hasattr(self, '_current_runtime') and self._current_runtime:
                 await self._current_runtime._transition(AgentState.ASKING_PERMISSION)
-                
-            response = await self._pending_inputs[tid]
+
+            response = await self._pending_permissions[tid]
             return response.get("allow", response.get("approved", False))
         finally:
-            self._pending_inputs.pop(tid, None)
+            self._pending_permissions.pop(tid, None)
 
     async def request_user_input(self, prompt: str, input_type: str = "text", thread_id: str = None) -> str:
         """Ask user for arbitrary text input (e.g. password for sudo), yielding control back on response."""
@@ -128,7 +130,7 @@ class Session:
             }, thread_id=tid)
             if hasattr(self, '_current_runtime') and self._current_runtime:
                 await self._current_runtime._transition(AgentState.ASKING_PERMISSION)
-                
+
             response = await self._pending_inputs[tid]
             return response.get("value", "")
         finally:
@@ -137,6 +139,25 @@ class Session:
     async def emit_state(self, state_ctx, thread_id: str = None):
         """Broadcast current agent state to the frontend UI."""
         await self.send_message("agent_state", state_ctx.to_dict(), thread_id=thread_id)
+
+    async def stream_text(self, text: str, thread_id: str = None, chunk_size: int = 3):
+        """
+        Stream a text response word-by-word to the frontend.
+        Sends 'stream_chunk' events followed by 'stream_end'.
+        Used by chat_node and the LangGraph path to power the typing animation.
+        """
+        tid = thread_id or self.thread_id
+        words = text.split(" ")
+        buffer = []
+        for i, word in enumerate(words):
+            buffer.append(word)
+            if len(buffer) >= chunk_size or i == len(words) - 1:
+                await self.send_message("stream_chunk", {
+                    "chunk": " ".join(buffer) + (" " if i < len(words) - 1 else ""),
+                }, thread_id=tid)
+                buffer = []
+                await asyncio.sleep(0.03)  # ~33 chunks/sec — smooth typing effect
+        await self.send_message("stream_end", {}, thread_id=tid)
 
 
     async def speak(self, text: str, manual: bool = False):
@@ -215,36 +236,6 @@ class Session:
             logger.error("JSON plan execution failed", error=str(e))
             await self.send_message("error", {"error": str(e)})
 
-    async def speak_and_send_audio(self, text: str):
-        try:
-            from gtts import gTTS
-            import base64
-            import os
-            import tempfile
-            
-            # Synthesize premium voice
-            tts = gTTS(text=text, lang='en', tld='com')
-            temp_file = os.path.join(tempfile.gettempdir(), "opensarthi_voice.mp3")
-            tts.save(temp_file)
-            
-            # Read and encode to base64
-            with open(temp_file, "rb") as f:
-                audio_bytes = f.read()
-            base64_audio = base64.b64encode(audio_bytes).decode('utf-8')
-            
-            # Send to frontend!
-            await self.send_message("audio_output", {
-                "audio": base64_audio
-            })
-            logger.info("Sent premium base64 audio to frontend")
-            
-            # Clean up
-            try:
-                os.remove(temp_file)
-            except Exception:
-                pass
-        except Exception as e:
-            logger.error("Failed to speak and send audio base64", error=str(e))
 
     async def handle_user_message(self, text: str, source: str = "text", thread_id: str = None):
         tid = thread_id or self.thread_id
@@ -385,44 +376,75 @@ class Session:
                     await self.accumulate_and_update_tokens(usage, thread_id=tid)
                     chat_logger.log_llm_response(0, final_output)
                     chat_logger.finalize(final_output)
+                    # ── Word-by-word streaming to frontend (typing animation) ──
+                    await self.stream_text(final_output, thread_id=tid)
                 except Exception as e:
                     logger.error("Direct chat generation failed", error=str(e), thread_id=tid)
                     chat_logger.log(f"CHAT ERROR: {str(e)}")
                     chat_logger.finalize(f"ERROR: {str(e)}")
                     raise e
             else:
-                logger.info("Routing to TASK AgentRuntime planner", thread_id=tid)
+                logger.info("Routing to TASK planner", thread_id=tid)
                 from memory import MemoryManager
-                from agent_runtime import AgentRuntime
                 memory_manager = MemoryManager(tid)
-                runtime = AgentRuntime(
-                    ws_handler=self,
-                    agent=agent,
-                    observer=observer,
-                    deps=self.deps,
-                    memory_manager=memory_manager,
-                    thread_id=tid
-                )
-                self._active_runtimes[tid] = runtime
-                manager.sync_notification_state()
-                try:
-                    final_output = await runtime.run(
-                        goal=text,
-                        model=active_model,
-                        message_history=message_history,
-                        summarized_context=summarized_context,
-                    )
-                    usage = runtime.last_usage
-                except asyncio.CancelledError:
-                    final_output = "Execution cancelled by user."
-                    usage = None
-                    logger.info("Agent execution task was cancelled by user.", thread_id=tid)
-                except Exception as e:
-                    logger.error("Agent execution failed", error=str(e), thread_id=tid)
-                    raise e
-                finally:
-                    self._active_runtimes.pop(tid, None)
+
+                import os as _os
+                use_langgraph = _os.environ.get("USE_LANGGRAPH", "true").lower() in ("1", "true", "yes")
+
+                if use_langgraph:
+                    # ── LangGraph path ──────────────────────────────────────────
+                    logger.info("Using LangGraph orchestration", thread_id=tid)
+                    from graph.graph import run_graph
                     manager.sync_notification_state()
+                    try:
+                        final_output = await run_graph(
+                            goal=text,
+                            model=active_model,
+                            deps=self.deps,
+                            ws_handler=self,
+                            memory_manager=memory_manager,
+                            thread_id=tid,
+                            message_history=message_history,
+                            summarized_context=summarized_context,
+                        )
+                        usage = None  # tokens accumulated via ws.accumulate_and_update_tokens inside nodes
+                    except asyncio.CancelledError:
+                        final_output = "Execution cancelled by user."
+                        usage = None
+                    except Exception as e:
+                        logger.error("LangGraph execution failed", error=str(e), thread_id=tid)
+                        raise e
+                else:
+                    # ── Legacy AgentRuntime path ────────────────────────────────
+                    from agent_runtime import AgentRuntime
+                    runtime = AgentRuntime(
+                        ws_handler=self,
+                        agent=agent,
+                        observer=observer,
+                        deps=self.deps,
+                        memory_manager=memory_manager,
+                        thread_id=tid
+                    )
+                    self._active_runtimes[tid] = runtime
+                    manager.sync_notification_state()
+                    try:
+                        final_output = await runtime.run(
+                            goal=text,
+                            model=active_model,
+                            message_history=message_history,
+                            summarized_context=summarized_context,
+                        )
+                        usage = runtime.last_usage
+                    except asyncio.CancelledError:
+                        final_output = "Execution cancelled by user."
+                        usage = None
+                        logger.info("Agent execution task was cancelled by user.", thread_id=tid)
+                    except Exception as e:
+                        logger.error("Agent execution failed", error=str(e), thread_id=tid)
+                        raise e
+                    finally:
+                        self._active_runtimes.pop(tid, None)
+                        manager.sync_notification_state()
 
             ast_msg_id = str(uuid.uuid4())
             ast_timestamp = int(time.time() * 1000)
@@ -439,9 +461,6 @@ class Session:
                 "content": final_output,
                 "timestamp": ast_timestamp,
                 "is_voice": source == "voice",
-                "token_request": req_t,
-                "token_response": res_t,
-                "token_total": tot_t,
                 "usage": {
                     "request_tokens": req_t,
                     "response_tokens": res_t,
@@ -466,6 +485,11 @@ class Session:
         except Exception as e:
             logger.error("Agent execution failed", error=str(e), thread_id=tid)
             await self.send_message("error", {"error": str(e)}, thread_id=tid)
+        finally:
+            if getattr(self, "_session_active", False):
+                import os
+                if os.environ.get("OPENSARTHI_PLATFORM") != "android":
+                    self.start_listen_loop()
 
 
     async def process_incoming(self, data: dict):
@@ -520,10 +544,9 @@ class Session:
                 await self.send_message("voice_state", {"state": "idle"})
         elif msg_type == "new_chat":
             import db
+            old_tid = payload.get("old_thread_id") or self.thread_id
             new_tid = db.create_thread()
             self.thread_id = new_tid
-            # Clean up the old orchestrator so the next one is fresh
-            old_tid = payload.get("old_thread_id") or self.thread_id
             self._orchestrators.pop(old_tid, None)
             logger.info("Created new chat thread", thread_id=new_tid)
         elif msg_type == "cancel_execution":
@@ -558,8 +581,8 @@ class Session:
                 manager.sync_notification_state()
         elif msg_type == "permission_response":
             tid = payload.get("thread_id") or self.thread_id
-            if tid in self._pending_inputs and not self._pending_inputs[tid].done():
-                self._pending_inputs[tid].set_result(payload)
+            if tid in self._pending_permissions and not self._pending_permissions[tid].done():
+                self._pending_permissions[tid].set_result(payload)
         elif msg_type == "input_response":
             tid = payload.get("thread_id") or self.thread_id
             if tid in self._pending_inputs and not self._pending_inputs[tid].done():
@@ -699,8 +722,9 @@ class Session:
             # Propagate to running voice pipeline
             if hasattr(self, 'voice_pipeline') and self.voice_pipeline:
                 try:
-                    self.voice_pipeline.wake_detector.update_phrases(settings.wake_words)
-                    self.voice_pipeline.wake_detector.threshold = settings.wake_word_threshold
+                    if hasattr(self.voice_pipeline, 'wake_detector') and self.voice_pipeline.wake_detector:
+                        self.voice_pipeline.wake_detector.update_phrases(settings.wake_words)
+                        self.voice_pipeline.wake_detector.threshold = settings.wake_word_threshold
                 except Exception as ve:
                     logger.warning("Failed to propagate wake word updates to pipeline", error=str(ve))
 
@@ -725,7 +749,11 @@ class Session:
         """Simulate sending transcript updates."""
         try:
             async for transcript in self.voice_pipeline.start_listening():
-                await self.send_message("transcript_update", {"text": transcript})
+                await self.send_message("transcript_update", {
+                    "text": transcript,
+                    "engine": "local",
+                    "is_final": True
+                })
         except asyncio.CancelledError:
             logger.info("Voice listen loop cancelled")
         except Exception as e:
@@ -796,9 +824,13 @@ class ConnectionManager:
                     if any(getattr(r, "_paused", False) for r in session._active_runtimes.values()):
                         is_paused = True
                     break
-            
-            from dev.opensarthi.android import RuntimeService
-            RuntimeService.updateTaskState(is_task_active, is_paused)
+
+            try:
+                import opensarthi_android_callbacks as _cb
+                if hasattr(_cb, 'update_task_state'):
+                    _cb.update_task_state(is_task_active, is_paused)
+            except ImportError:
+                pass  # Running outside Chaquopy (dev mode) — no-op
         except Exception as e:
             logger.warning("Failed to sync notification state to Android", error=str(e))
 
