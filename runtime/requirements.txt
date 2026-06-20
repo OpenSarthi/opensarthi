@@ -18,3 +18,7 @@ aiosqlite>=0.20
 structlog>=24.4
 psutil>=6.0
 gtts
+# LangGraph orchestration layer (USE_LANGGRAPH=true to activate)
+langgraph>=0.4
+langchain-core>=0.3
+langgraph-checkpoint-sqlite; sys_platform != 'android'

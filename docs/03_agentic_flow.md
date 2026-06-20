@@ -2,6 +2,8 @@
 
 This document describes the complete execution lifecycle of OpenSarthi from user input to final response, with Mermaid flowcharts for each major stage.
 
+> **Updated:** June 2026 — LangGraph integration, word-by-word streaming, and 23 bug fixes applied.
+
 ---
 
 ## 1. Packaged App Bootstrap & Startup Flow
@@ -14,7 +16,7 @@ flowchart TD
     TAURI --> SPAWN[Spawn sidecar bootstrap launcher]
     
     SPAWN --> PATH_CHECK{Check ~/.config/opensarthi/venv}
-    PATH_CHECK -->|Venv exists| IMPORT_CHECK{Validate package imports\nfastapi, pydantic_ai, etc.}
+    PATH_CHECK -->|Venv exists| IMPORT_CHECK{Validate package imports\nfastapi, pydantic_ai, langgraph, etc.}
     PATH_CHECK -->|Venv missing| SETUP_VENV[Use bundled 'uv' to download\nstandalone Python 3.12]
     
     IMPORT_CHECK -->|Imports succeed| BOOT_FASTAPI[Launch FastAPI via Uvicorn]
@@ -48,11 +50,15 @@ flowchart TD
     C -->|resume_execution| RESUME[resume\nset asyncio.Event]
     C -->|update_settings| SETTINGS[save_settings_to_env\nrebuild AgentDeps]
 
-    D -->|Chat: question/explain/code| CHAT[agent.run\nstreaming response\nassistant_response →WS]
-    D -->|Task: desktop action needed| TASK[AgentRuntime.run\nagentic loop]
+    D -->|Chat: question/explain/code| CHAT[chat_agent.run\nstream_text word-by-word\nassistant_response → WS]
+    D -->|Task: desktop action needed| TASK{USE_LANGGRAPH?}
+
+    TASK -->|true| LG[LangGraph graph.ainvoke\nStateful graph execution]
+    TASK -->|false| AR[AgentRuntime.run\nLegacy agentic loop]
 
     CHAT --> DONE([assistant_response\nto frontend])
-    TASK --> DONE
+    LG --> DONE
+    AR --> DONE
     JP --> DONE
 ```
 

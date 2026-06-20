@@ -17,6 +17,8 @@ OpenSarthi is an **agentic AI assistant** that can:
 - 🤖 **Work with any LLM** — Google Gemini, OpenAI, Anthropic, Groq, OpenRouter, or local Ollama
 - 🧵 **Manage conversations** — multi-thread history, per-thread context, token tracking
 - 🔧 **Extend with skills** — configurable capability profiles per user
+- 🔀 **LangGraph Orchestration** — optional stateful graph with crash-recovery checkpointing (`USE_LANGGRAPH=true`)
+- 💬 **Word-by-word streaming** — typing animation on both Desktop and Android chat responses
 
 ---
 
@@ -39,6 +41,7 @@ The desktop application built with **Tauri** (Rust) and **React**. Communicates 
 - System tray integration
 - Native file system and shell access
 - Multi-tab conversation threads
+- Word-by-word streaming chat responses
 
 → [Desktop README](apps/desktop/README.md)
 
@@ -47,17 +50,19 @@ The Android application built with **Capacitor** and **React**. The Python runti
 - Native Android STT via `SpeechRecognizer` with continuous listening
 - Native TTS via `TextToSpeech` with pause/resume during speech
 - Wake word detection via partial transcript monitoring
+- Word-by-word streaming typing animation (identical to desktop)
 - Onboarding, settings, thread history — full feature parity with desktop (minus MCP)
 
 → [Android README](apps/android/README.md)
 
 ### `runtime/`
 The shared Python backend — a **FastAPI** server with WebSocket endpoint on port 8765. Contains:
-- Agent orchestration (planning, tool execution, self-healing)
+- **Dual execution mode**: LangGraph stateful graph (`USE_LANGGRAPH=true`) or legacy `AgentRuntime`
 - LLM provider adapters (Gemini, OpenAI, Anthropic, Groq, OpenRouter, Ollama)
 - Voice pipeline (desktop: Vosk + pyttsx3 / Android: native SpeechRecognizer + TTS)
 - Tool implementations (shell, file, browser, screen, app launcher, etc.)
 - Thread persistence and token tracking
+- Word-by-word streaming via `Session.stream_text()`
 
 → [Runtime README](runtime/README.md)
 

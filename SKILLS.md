@@ -3,6 +3,8 @@
 > **Purpose:** This file is the single source of truth for any LLM (Gemini, Claude, GPT, Copilot, Cursor, Codex, etc.) working on this codebase.  
 > Read this **first** before writing or modifying any code. It captures architecture, conventions, invariants, contracts, and pitfalls that are not obvious from the code alone.
 
+> **Last updated:** June 2026 — LangGraph integration, 23 bug fixes, word-by-word streaming.
+
 ---
 
 ## 1. Project Identity
@@ -29,14 +31,15 @@
                         │  WebSocket (ws://127.0.0.1:<port>/ws)
 ┌───────────────────────▼──────────────────────────────────┐
 │              Python Runtime Sidecar                       │
-│           FastAPI + PydanticAI + uvicorn                  │
-│   Agent · Planner · Tools · Voice · Memory · Providers    │
+│     FastAPI + PydanticAI + LangGraph + uvicorn           │
+│   Agent · Planner · Tools · Voice · Memory · Providers   │
+│   graph/ (LangGraph nodes, edges, state, checkpointing)  │
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
 │           Android App (Capacitor + Chaquopy)              │
 │   React 19 + TypeScript + Vite (WebView via Capacitor)   │
-│   Mobile UI · Voice · Chat · Tasks · Onboarding          │
+│   Mobile UI · Voice · Chat · Tasks · Streaming Bubbles   │
 └───────────────────────┬──────────────────────────────────┘
                         │  WebSocket (ws://127.0.0.1:8765/ws)
 ┌───────────────────────▼──────────────────────────────────┐
@@ -49,10 +52,12 @@
 ### Key Architectural Facts
 
 1. **Two-process model (Desktop)** — Tauri (Rust + WebView) spawns the Python runtime as a sidecar process. They communicate exclusively over a **local WebSocket** on a dynamically negotiated port.
-2. **In-process model (Android)** — Chaquopy embeds Python inside the APK. The Python FastAPI server runs in a `RuntimeService` foreground service on port 8765.
+2. **In-process model (Android)** — Chaquopy embeds Python inside the APK. The Python FastAPI server runs in a `RuntimeService` foreground service on port 8765. `OPENSARTHI_PLATFORM=android` **must be set before any imports** in `main_android.py`.
 3. **No REST API** — All communication is WebSocket-based. There are no HTTP endpoints used by the frontend.
 4. **Monorepo** — pnpm workspaces. `apps/desktop/` is the Tauri+React app. `apps/android/` is the Capacitor+React app. `runtime/` is the Python sidecar/embedded server.
 5. **Linux-first, Windows in progress, Android active** — Android uses `OPENSARTHI_PLATFORM=android` env var to switch tool registry and voice pipeline.
+6. **Dual execution mode** — `USE_LANGGRAPH=true` activates `runtime/graph/` (LangGraph stateful graph with `SqliteSaver` checkpointing). Default is the legacy `AgentRuntime` agentic loop.
+7. **Word-by-word streaming** — Both Desktop and Android receive `stream_chunk` / `stream_end` WebSocket events during chat responses, powering a typing animation in the UI.
 
 ---
 
@@ -78,6 +83,8 @@
 | Python | **3.12** | 3.14+ is NOT supported (no wheels for ML packages) |
 | API | **FastAPI** + **uvicorn** | Single WebSocket endpoint at `/ws` |
 | Agent | **PydanticAI ≥ 0.2** | `Agent` with `deps_type=AgentDependencies` |
+| Graph | **LangGraph ≥ 0.4** | Optional; `runtime/graph/` — activate with `USE_LANGGRAPH=true` |
+| Checkpoints | **langgraph-checkpoint-sqlite** | SqliteSaver at `~/.config/opensarthi/checkpoints.db` |
 | Validation | **Pydantic v2** | All schemas in `planner/schemas.py` |
 | Config | **pydantic-settings** | Loads from `~/.config/opensarthi/.env` |
 | DB | **SQLite** via **aiosqlite** | Chat history + token tracking |
