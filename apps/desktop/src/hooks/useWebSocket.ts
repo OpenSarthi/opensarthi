@@ -54,8 +54,11 @@ export function useWebSocket(port: number | null) {
           const escapedWakeWords = wakeWords.map((w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
           const hasSarthi = wakeWords.some((w: string) => w.toLowerCase().includes("sarthi") || w.toLowerCase().includes("sarathi"));
           if (hasSarthi) {
-            escapedWakeWords.push("sanati", "farati", "sarath", "sarth", "sorthi", "sorathi", "sorth", "sharthi", "sharathi", "sharth", "sarty", "sarathy", "sarti");
+            escapedWakeWords.push("sanati", "farati", "sarath", "sarth", "sorthi", "sorathi", "sorth", "sharthi", "sharathi", "sharth", "sarty", "sarathy", "sarti", "sarathi", "sarthii", "sarathii");
           }
+
+          // Sort by length descending to match longer phrases first and prevent partial word shadowing
+          escapedWakeWords.sort((a: string, b: string) => b.length - a.length);
 
           const wakeWordRegex = new RegExp(`(?:${escapedWakeWords.join('|')})`, 'i');
           const hasWakeWord = wakeWordRegex.test(lowerText);
@@ -74,9 +77,10 @@ export function useWebSocket(port: number | null) {
             oscillator.start();
             oscillator.stop(audioCtx.currentTime + 0.2);
             
+            // Clean the text by discarding everything up to and including the matched wake word
+            const wakeWordRegexFull = new RegExp(`^(?:.*?)(?:hey|hello|hi|he)?\\s*(?:${escapedWakeWords.join('|')})`, 'i');
             const cleanText = text
-              .replace(new RegExp(`(?:hey|hello|hi|he)?\\s*(?:${escapedWakeWords.join('|')})`, 'gi'), "")
-              .replace(/hey!/gi, "")
+              .replace(wakeWordRegexFull, "")
               .replace(/^[\s,;:.!?]+/, "")
               .replace(/[\s,;:.!?]+$/, "")
               .trim();

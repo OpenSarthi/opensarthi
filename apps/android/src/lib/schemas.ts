@@ -47,6 +47,8 @@ export const WSMessageTypeSchema = z.enum([
   "token_update",
   "agent_state",
   "manual_voice_trigger",
+  "stream_chunk",
+  "stream_end",
 ]);
 export type WSMessageType = z.infer<typeof WSMessageTypeSchema>;
 

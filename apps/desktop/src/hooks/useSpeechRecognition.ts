@@ -78,10 +78,19 @@ export function useSpeechRecognition() {
 
       // If final, send as user message
       if (finalTranscript) {
-        // Remove wake words from final message
+        const { wakeWords } = useAssistantStore.getState();
+        const escapedWakeWords = wakeWords.map((w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const hasSarthi = wakeWords.some((w: string) => w.toLowerCase().includes("sarthi") || w.toLowerCase().includes("sarathi"));
+        if (hasSarthi) {
+          escapedWakeWords.push("sanati", "farati", "sarath", "sarth", "sorthi", "sorathi", "sorth", "sharthi", "sharathi", "sharth", "sarty", "sarathy", "sarti", "sarathi", "sarthii", "sarathii");
+        }
+        escapedWakeWords.sort((a, b) => b.length - a.length);
+
+        const wakeWordRegexFull = new RegExp(`^(?:.*?)(?:hey|hello|hi|he)?\\s*(?:${escapedWakeWords.join('|')})`, 'i');
         const cleanText = finalTranscript
-          .replace(/hey sarthi/gi, '')
-          .replace(/hello sarthi/gi, '')
+          .replace(wakeWordRegexFull, "")
+          .replace(/^[\s,;:.!?]+/, "")
+          .replace(/[\s,;:.!?]+$/, "")
           .trim();
           
         if (cleanText) {
