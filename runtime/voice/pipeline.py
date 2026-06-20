@@ -21,6 +21,7 @@ class VoicePipeline:
         self.is_speaking = False
         self.is_recording_command = False
         self.current_playback_id = ""
+        self._active_processes = []  # Tracks spawned subprocesses for clean cancellation
         self.on_voice_state = None
         self.last_speech_time = 0.0
         self.start_recording_time = 0.0
@@ -166,6 +167,22 @@ class VoicePipeline:
         """Immediately interrupt any active speech playback."""
         self.current_playback_id = ""
         import os
+        import signal
+        # Cleanly terminate specifically spawned processes first
+        for p in list(self._active_processes):
+            try:
+                if platform.system() == "Windows":
+                    p.kill()
+                else:
+                    os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+            except Exception:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+        self._active_processes.clear()
+
+        # Fallback system-wide cleanup as last resort
         if platform.system() == "Windows":
             os.system("taskkill /F /IM wmplayer.exe >NUL 2>&1")
         else:
@@ -179,6 +196,27 @@ class VoicePipeline:
             except Exception:
                 pass
         logger.info("Interrupted and stopped speech synthesis")
+
+    def _execute_subprocess(self, cmd: str) -> int:
+        """Executes a command via subprocess, tracking it for targeted cancellation."""
+        import subprocess
+        import os
+        try:
+            preexec = None
+            if platform.system() != "Windows":
+                preexec = os.setsid
+            
+            p = subprocess.Popen(cmd, shell=True, preexec_fn=preexec)
+            self._active_processes.append(p)
+            exit_code = p.wait()
+            try:
+                self._active_processes.remove(p)
+            except ValueError:
+                pass
+            return exit_code
+        except Exception as e:
+            logger.warning(f"Subprocess run failed: {e}")
+            return -1
 
     async def speak(self, text: str) -> str:
         """Synthesize and speak text using the best available voice engine, awaiting completion."""
@@ -224,15 +262,12 @@ class VoicePipeline:
                     import time
                     import re
                     
+                    # Instantly terminate any active audio players to interrupt speech immediately
+                    self.stop_speaking()
+
                     # Generate new unique playback ID to isolate this speech run and prevent overlaps
                     playback_id = str(uuid.uuid4())
                     self.current_playback_id = playback_id
-                    
-                    # Instantly terminate any active audio players to interrupt speech immediately
-                    if platform.system() == "Windows":
-                        os.system("taskkill /F /IM wmplayer.exe >NUL 2>&1")
-                    else:
-                        os.system("killall -9 mpg123 mpv paplay aplay >/dev/null 2>&1")
                     
                     from config import settings
                     voice_config = getattr(settings, "voice_accent", "ie")
@@ -297,7 +332,7 @@ class VoicePipeline:
                                 speedup_mp3_path = os.path.join(_tmpdir, f"opensarthi_voice_fast_{idx}.mp3")
                                 if shutil.which("ffmpeg"):
                                     try:
-                                        if os.system(f"ffmpeg -y -i {mp3_path} -filter:a 'atempo={speed}' {speedup_mp3_path} >/dev/null 2>&1") == 0:
+                                        if self._execute_subprocess(f"ffmpeg -y -i {mp3_path} -filter:a 'atempo={speed}' {speedup_mp3_path} >/dev/null 2>&1") == 0:
                                             mp3_path = speedup_mp3_path
                                     except Exception as fe:
                                         logger.warning(f"ffmpeg speedup failed on chunk {idx}: {fe}")
@@ -305,13 +340,13 @@ class VoicePipeline:
                                 wav_converted = False
                                 if shutil.which("mpg123"):
                                     try:
-                                        os.system(f"mpg123 -w {wav_path} {mp3_path} >/dev/null 2>&1")
+                                        self._execute_subprocess(f"mpg123 -w {wav_path} {mp3_path} >/dev/null 2>&1")
                                         wav_converted = True
                                     except Exception:
                                         pass
                                 if not wav_converted and shutil.which("ffmpeg"):
                                     try:
-                                        os.system(f"ffmpeg -y -i {mp3_path} {wav_path} >/dev/null 2>&1")
+                                        self._execute_subprocess(f"ffmpeg -y -i {mp3_path} {wav_path} >/dev/null 2>&1")
                                         wav_converted = True
                                     except Exception:
                                         pass
@@ -322,38 +357,38 @@ class VoicePipeline:
                                 played = False
                                 if shutil.which("mpv"):
                                     if mp3_path == speedup_mp3_path:
-                                        os.system(f"mpv {mp3_path} >/dev/null 2>&1")
+                                        self._execute_subprocess(f"mpv {mp3_path} >/dev/null 2>&1")
                                     else:
-                                        os.system(f"mpv --speed={speed} {mp3_path} >/dev/null 2>&1")
+                                        self._execute_subprocess(f"mpv --speed={speed} {mp3_path} >/dev/null 2>&1")
                                     played = True
                                     
                                 if not played and shutil.which("mpg123"):
                                     for driver in ["pulse", "alsa"]:
-                                        exit_code = os.system(f"mpg123 -o {driver} {mp3_path} >/dev/null 2>&1")
+                                        exit_code = self._execute_subprocess(f"mpg123 -o {driver} {mp3_path} >/dev/null 2>&1")
                                         if exit_code == 0:
                                             played = True
                                             break
                                     if not played:
-                                        os.system(f"mpg123 {mp3_path} >/dev/null 2>&1")
+                                        self._execute_subprocess(f"mpg123 {mp3_path} >/dev/null 2>&1")
                                         played = True
                                         
                                 if not played and wav_converted:
                                     if shutil.which("paplay"):
-                                        os.system(f"paplay {wav_path} >/dev/null 2>&1")
+                                        self._execute_subprocess(f"paplay {wav_path} >/dev/null 2>&1")
                                         played = True
                                     elif shutil.which("aplay"):
-                                        os.system(f"aplay {wav_path} >/dev/null 2>&1")
+                                        self._execute_subprocess(f"aplay {wav_path} >/dev/null 2>&1")
                                         played = True
                                         
                                 if not played:
                                     for player in ["mpg321", "play", "cvlc"]:
                                         if shutil.which(player):
                                             if player == "cvlc":
-                                                os.system(f"cvlc --play-and-exit {mp3_path} >/dev/null 2>&1")
+                                                self._execute_subprocess(f"cvlc --play-and-exit {mp3_path} >/dev/null 2>&1")
                                             elif player == "play":
-                                                os.system(f"play {mp3_path} >/dev/null 2>&1")
+                                                self._execute_subprocess(f"play {mp3_path} >/dev/null 2>&1")
                                             else:
-                                                os.system(f"{player} {mp3_path} >/dev/null 2>&1")
+                                                self._execute_subprocess(f"{player} {mp3_path} >/dev/null 2>&1")
                                             played = True
                                             break
                         except Exception as ex:

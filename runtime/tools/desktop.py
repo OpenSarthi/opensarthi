@@ -220,8 +220,13 @@ def _get_pinned_window_id() -> Optional[str]:
 
 
 async def _ensure_window_focus(window_id: str) -> bool:
-    """Ensure the target window is active/focused before executing actions."""
+    """Ensure the target window is active/focused before executing actions.
+        Skip xdotool calls when running on Wayland (YdotoolProvider).
+    """
     if not window_id:
+        return True
+    # Wayland: xdotool getactivewindow is unsupported — skip silently
+    if isinstance(_provider, YdotoolProvider):
         return True
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -408,9 +413,14 @@ class OpenAppTool(BaseTool):
         if app not in candidates:
             candidates = [app] + candidates
 
-        # Reset window session when opening a new app — new task target
-        from window_session import reset_session
-        reset_session()
+        # Only reset window session when switching to a different app
+        from window_session import get_session, reset_session
+        current_session = get_session()
+        if not current_session.is_pinned or (
+            current_session.pinned_window_title and
+            app_lower not in (current_session.pinned_window_title or "").lower()
+        ):
+            reset_session()
 
         tried = []
         for binary in candidates:
@@ -530,7 +540,8 @@ class ClickElementTool(BaseTool):
             "role": {"type": "string", "description": "AT-SPI role, e.g. 'push button', 'list item', 'menu item', 'check box'"},
             "name": {"type": "string", "description": "Visible element label or text, e.g. 'OK', 'Music', 'Play'"},
         },
-        "required": [],
+        # Require at least name to prevent zero-arg LLM calls
+        "required": ["name"],
     }
 
     async def execute(self, args: dict) -> ToolResult:
