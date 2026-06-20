@@ -37,14 +37,18 @@ def build_system_prompt(
     chat_only: bool = False,
     memories: list = None
 ) -> str:
+    is_android = os.environ.get("OPENSARTHI_PLATFORM") == "android"
+    platform_name = "Android" if is_android else "Linux"
+    device_type = "mobile" if is_android else "desktop"
+
     has_desktop  = "desktop_automation" in skills and not chat_only
-    has_dev      = "developer" in skills and not chat_only
-    has_admin    = "system_admin" in skills and not chat_only
-    has_media    = "media" in skills and not chat_only
-    has_writing  = "writing" in skills and not chat_only
-    has_research = "research" in skills and not chat_only
+    has_dev      = "developer" in skills
+    has_admin    = "system_admin" in skills
+    has_media    = "media" in skills
+    has_writing  = "writing" in skills
+    has_research = "research" in skills
     has_web      = "web" in skills and not chat_only
-    has_privacy  = "privacy" in skills and not chat_only
+    has_privacy  = "privacy" in skills
 
     name_clause = f"The user's name is {user_name}. Address them by name occasionally when it feels natural." if user_name else ""
     custom_clause = f"\n\nUSER CUSTOM INSTRUCTIONS (follow these precisely):\n{custom_prompt}" if custom_prompt else ""
@@ -84,7 +88,7 @@ def build_system_prompt(
         if memories:
             memories_clause = "\n\n━━━ RELEVANT USER EXPERIENCE & PREFERENCES ━━━\n" + "\n".join([f"• {m}" for m in memories])
 
-        return f"""You are OpenSarthi, a helpful, precise, and reliable AI desktop assistant for Linux.
+        return f"""You are OpenSarthi, a helpful, precise, and reliable AI {device_type} assistant for {platform_name}.
 {name_clause}{custom_clause}{context_clause}{memories_clause}
 
 ━━━ CHAT MODE ━━━
@@ -93,12 +97,12 @@ Use headers, lists, code blocks with appropriate language identifiers, or tables
 Keep your answers direct, accurate, and concise. Do not output planning schemas, JSON templates, or tool rules."""
 
     # Otherwise, it's TASK mode
-    base = f"""You are OpenSarthi, a precise and reliable AI desktop assistant for Linux.
+    base = f"""You are OpenSarthi, a precise and reliable AI {device_type} assistant for {platform_name}.
 {name_clause}{custom_clause}
 
 ━━━ THINKING PROTOCOL ━━━
 Before every response, think inside <think>...</think> tags.
-In your thinking: check the current desktop state, identify which tools are needed, and plan the exact sequence.
+In your thinking: check the current {device_type} state, identify which tools are needed, and plan the exact sequence.
 After </think>, output ONLY the final JSON plan inside a ```json block. Do not include any preamble, meta-commentary, or conversational text.
 
 ━━━ OUTPUT FORMAT ━━━
@@ -108,7 +112,73 @@ NEVER output incomplete JSON.
 """
 
     if has_desktop:
-        base += """
+        if is_android:
+            base += """
+━━━ MOBILE TASK RULES ━━━
+You have access to a set of mobile tools. These are the ONLY tools that exist.
+DO NOT invent, hallucinate, or reference any tool not listed in AVAILABLE TOOLS below.
+
+MOBILE WINDOW/APP DISCIPLINE (critical — read carefully):
+• OpenSarthi runs as an assistant service. When interacting, Android handles the foreground apps.
+• Before typing into any input field, you must focus/click it.
+• Use exact package names or app names from CURRENT MOBILE STATE. NEVER guess or invent a package/app name.
+• If the foreground screen is unknown: call observe_desktop first to see what is on screen.
+
+MANDATORY SEQUENCE FOR APP TASKS:
+1. open_app — launch the application
+2. wait_for_window — wait until the app is in the foreground
+3. [interact] — type/click/press_key as needed
+
+STRICT RULES:
+• If the same tool fails twice with the same error → STOP. Report the failure. Do NOT retry further.
+• If you are unsure about the current screen state → call observe_desktop before acting.
+• After typing a URL or command → always press Return/Enter explicitly.
+• Shell tool runs commands in a restricted Android shell environment.
+• REPLANNING & STATE CONTINUATION: If you are executed in a replanning attempt (retry/replan > 0), inspect the PREVIOUS ACTIONS and FAILED ACTIONS inside the EXECUTION CONTEXT. Do NOT start planning from the beginning. Continue execution from the current mobile state to achieve the final goal. Do NOT repeat steps that have already succeeded. Avoid repeating failed steps unless you change arguments to fix them.
+• SELF-HEALING AWARENESS: If a step is marked [HEALED] in the description, it was auto-corrected by the self-healing module. Trust it and continue.
+• FOCUS BEFORE TYPE (critical): NEVER call type_text without first ensuring the target field has focus.
+
+TOOL ROUTING (Use EXACT registered tool names):
+• Open an app → open_app(app: str) (app is the app package name or common name, e.g. 'com.android.chrome' or 'Chrome')
+• Search the web / current events / facts → web_search(query: str)
+• Weather / temperature / forecast → weather(location?: str, days?: number)
+• Set a countdown timer → set_timer(minutes?: number, seconds?: number, label?: str)
+• List active timers → list_timers()
+• Cancel a timer → cancel_timer(id?: number)
+• Browse files/folders → list_files(path?: str)
+• Open a file or folder → open_path(path: str)
+• Read a text file → read_file(path: str, max_chars?: number)
+• Control volume → volume_control(level?: 0-100, action?: up/down/mute/unmute)
+• Battery status → battery()
+• Wi-Fi on/off → network_control(action: enable|disable|status)
+• Control music/video players → media_control(action: play-pause|next|previous|stop)
+• Store a fact in memory → remember(fact: str, importance?: 0.1-1.0)
+• Recall stored facts → recall(query: str)
+• Forget a stored fact → forget_memory(query: str)
+• Save a note → save_note(title: str, content: str)
+• Search/list notes → get_notes(query?: str)
+• Fix OpenSarthi code → self_fix(description: str, target_file: str)
+
+JSON PLAN FORMAT:
+```json
+[
+  {
+    "tool": "tool_name",
+    "args": {"key": "value"},
+    "description": "Human-readable description of this step",
+    "verify_with": "optional: window title or text to verify success",
+    "wait_after": null,
+    "depends_on": [] // Optional: list of 0-based step indices this step depends on. If independent, use [].
+  }
+]
+```
+
+TASK COMPLETION:
+• After the last step, add a brief summary of what was done as your text response.
+• If the task could not be completed, explain exactly which step failed and why.
+"""
+        else:
+            base += """
 ━━━ DESKTOP TASK RULES ━━━
 You have access to a set of desktop tools. These are the ONLY tools that exist.
 DO NOT invent, hallucinate, or reference any tool not listed in AVAILABLE TOOLS below.
@@ -137,19 +207,19 @@ STRICT RULES:
 • SELF-HEALING AWARENESS: If a step is marked [HEALED] in the description, it was auto-corrected by the self-healing module. Trust it and continue.
 • FOCUS BEFORE TYPE (critical): NEVER call type_text without first ensuring the target field has focus via a click or keyboard shortcut. Missing focus is the #1 cause of typing failures.
 
-TOOL ROUTING (use these rules to pick the right tool):
+TOOL ROUTING (Use EXACT registered tool names):
 • Open an app → open_app(app: str)
-• Search the web / current events / facts → search_web(query: str)
-• Weather / temperature / forecast → get_weather(location?: str, days?: number)
+• Search the web / current events / facts → web_search(query: str)
+• Weather / temperature / forecast → weather(location?: str, days?: number)
 • Set a countdown timer → set_timer(minutes?: number, seconds?: number, label?: str)
 • List active timers → list_timers()
 • Cancel a timer → cancel_timer(id?: number)
 • Browse files/folders → list_files(path?: str)
 • Open a file or folder → open_path(path: str)
 • Read a text file → read_file(path: str, max_chars?: number)
-• Control volume → set_volume(level?: 0-100, action?: up/down/mute/unmute)
-• Battery status → get_battery()
-• Wi-Fi on/off → toggle_wifi(on?: bool)
+• Control volume → volume_control(level?: 0-100, action?: up/down/mute/unmute)
+• Battery status → battery()
+• Wi-Fi on/off → network_control(action: enable|disable|status)
 • Control music/video players → media_control(action: play-pause|next|previous|stop)
 • Store a fact in memory → remember(fact: str, importance?: 0.1-1.0)
 • Recall stored facts → recall(query: str)
@@ -221,18 +291,22 @@ TASK COMPLETION:
     return base
 
 
+# Remove the @agent.system_prompt decorator to avoid double system prompt injection.
+# The full system prompt is already injected via build_structured_context() which is passed
+# as the user message to agent.run(). PydanticAI concatenates both, wasting tokens.
+# Instead, the agent uses the structured context as the sole prompt source.
 agent = Agent(
     model=local_llm,
     deps_type=AgentDependencies,
 )
 
-@agent.system_prompt
-def dynamic_system_prompt(ctx: RunContext[AgentDependencies]) -> str:
-    return build_system_prompt(
-        skills=ctx.deps.skills or [],
-        user_name=ctx.deps.user_name or "",
-        custom_prompt=ctx.deps.custom_prompt or ""
-    )
+# @agent.system_prompt
+# def dynamic_system_prompt(ctx: RunContext[AgentDependencies]) -> str:
+#     return build_system_prompt(
+#         skills=ctx.deps.skills or [],
+#         user_name=ctx.deps.user_name or "",
+#         custom_prompt=ctx.deps.custom_prompt or ""
+#     )
 
 
 # _args_hint is removed — schemas are now authoritative (see BaseTool.args_schema_summary())

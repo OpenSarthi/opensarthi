@@ -40,8 +40,10 @@ async def classify_intent_with_usage(model, text: str) -> tuple[Classification, 
         logger.info("LLM Classifier classified intent", input=text[:80], classification=classification)
         return classification, getattr(result, "usage", None)
     except Exception as e:
-        logger.warning("LLM Classifier failed, falling back to CHAT", error=str(e))
-        return "CHAT", None
+        # Fallback to TASK (not CHAT) so automation requests are not silently dropped.
+        # The AgentRuntime will surface the real LLM error if the model is broken.
+        logger.warning("LLM Classifier failed, falling back to TASK", error=str(e))
+        return "TASK", None
 
 async def classify_intent(model, text: str) -> Classification:
     classification, _ = await classify_intent_with_usage(model, text)

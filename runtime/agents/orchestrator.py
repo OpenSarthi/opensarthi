@@ -62,15 +62,8 @@ class OrchestratorAgent:
         ])
 
         try:
-            from llm import build_model
-            from config import settings, get_active_api_key
-            provider = settings.ai_provider.lower()
-            model_name = settings.local_model if provider == "ollama" else settings.cloud_model
-            api_key = get_active_api_key()
-            summarizer_model = build_model(provider, model_name, api_key)
-
             from pydantic_ai import Agent as PydanticAgent
-            summarizer = PydanticAgent(model=summarizer_model)
+            summarizer = PydanticAgent(model=self.model) 
 
             prompt = f"""Compress the following conversation history into a single dense paragraph (max 150 words).
 Preserve: key facts, completed actions, user preferences, current task state.
