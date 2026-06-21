@@ -4,6 +4,7 @@ import { Loader2, CheckCircle2, XCircle, Clock, Pause, Play, Square, Terminal } 
 import type { Message, Plan } from "../../lib/schemas";
 import { useAssistantStore } from "../../stores/assistantStore";
 import { wsClient } from "../../lib/ws";
+import { parseToolActionsFromContent } from "../execution/ActionLog";
 
 interface AgenticTask {
   id: string;           // user message id
@@ -35,11 +36,16 @@ interface TaskListProps {
 
 /** Returns true if the assistant response indicates it ran tool calls */
 function responseHasToolCalls(content: string): boolean {
+  const c = content.trim();
   return (
     content.includes("✓ ") ||
     content.includes("Task completed successfully") ||
     content.includes("❌ Failed at step") ||
-    content.includes("Execution cancelled by user.")
+    content.includes("Execution cancelled by user.") ||
+    content.includes("<summary>✓") ||
+    content.includes("<summary>❌") ||
+    c.startsWith("[") ||
+    c.startsWith("{")
   );
 }
 
@@ -129,21 +135,7 @@ export function TaskList({
       status = "error";
     }
 
-    const toolActions: AgenticTask["toolActions"] = [];
-    const lines = nextAssistant.content.split("\n");
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("✓ ")) {
-        const desc = trimmed.slice(2);
-        const isHeal = desc.toLowerCase().includes("self-healing") || desc.toLowerCase().includes("self_heal");
-        toolActions.push({ tool: isHeal ? "self_heal" : "step", description: desc, status: "success", timestamp: nextAssistant.timestamp });
-      } else if (trimmed.startsWith("❌")) {
-        const cleanDesc = trimmed.startsWith("❌ ") ? trimmed.slice(2) : trimmed.slice(1);
-        const stepStatus = cleanDesc.includes("(Reason: Terminated)") ? "terminated" : "error";
-        const isHeal = cleanDesc.toLowerCase().includes("self-healing") || cleanDesc.toLowerCase().includes("self_heal");
-        toolActions.push({ tool: isHeal ? "self_heal" : "step", description: cleanDesc, status: stepStatus, timestamp: nextAssistant.timestamp });
-      }
-    }
+    const toolActions = parseToolActionsFromContent(nextAssistant.content, nextAssistant.timestamp);
 
     agenticTasks.push({
       id: msg.id, userMsgId: msg.id, title, icon,

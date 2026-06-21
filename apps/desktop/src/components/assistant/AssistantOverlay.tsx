@@ -61,10 +61,16 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         const appWindow = getCurrentWindow();
         const max = await appWindow.isMaximized();
         setIsMaximized(max);
+        if (max) {
+          await appWindow.setAlwaysOnTop(false);
+        }
 
         const unsub = await appWindow.onResized(async () => {
           const m = await appWindow.isMaximized();
           setIsMaximized(m);
+          if (m) {
+            await appWindow.setAlwaysOnTop(false);
+          }
         });
         unlisten = unsub;
       } catch (err) {
@@ -88,6 +94,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const [rightWidth, setRightWidth] = useState(240); // Default Right panel width in px
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastContainerWidth = useRef<number | null>(null);
   const isDraggingLeft = useRef(false);
   const isDraggingRight = useRef(false);
 
@@ -140,8 +147,21 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     const handleWindowResize = () => {
       if (!containerRef.current) return;
       const w = containerRef.current.clientWidth;
-      setLeftWidth(prev => Math.max(250, Math.min(prev, Math.floor(w * 0.38))));
-      setRightWidth(prev => Math.max(230, Math.min(prev, Math.floor(w * 0.33))));
+      if (lastContainerWidth.current && lastContainerWidth.current !== w) {
+        const ratio = w / lastContainerWidth.current;
+        setLeftWidth(prev => {
+          const next = Math.round(prev * ratio);
+          return Math.max(250, Math.min(next, 320));
+        });
+        setRightWidth(prev => {
+          const next = Math.round(prev * ratio);
+          return Math.max(230, Math.min(next, 300));
+        });
+      } else {
+        setLeftWidth(Math.max(260, Math.min(Math.floor(w * 0.23), 320)));
+        setRightWidth(Math.max(240, Math.min(Math.floor(w * 0.21), 300)));
+      }
+      lastContainerWidth.current = w;
     };
     window.addEventListener("resize", handleWindowResize);
     // Debounce/delay initial call slightly to ensure DOM is fully ready
@@ -793,6 +813,76 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 />
               </div>
             </div>
+
+            {/* QUICK ACTIONS PANEL */}
+            <div className="hud-panel" style={{ flexShrink: 0, display: "flex", flexDirection: "column" }}>
+              <div className="hud-panel-title">// QUICK ACTIONS</div>
+              <div style={{ padding: "8px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px" }}>
+                {[
+                  { icon: "🌤️", label: "Weather", cmd: "What's the current weather like?" },
+                  { icon: "🔋", label: "Battery", cmd: "Check my battery status" },
+                  { icon: "🔍", label: "Web Search", cmd: "Search the web for: " },
+                  { icon: "📸", label: "Screenshot", cmd: "Take a screenshot and describe what's on my screen" },
+                  { icon: "⏱️", label: "5min Timer", cmd: "Set a 5 minute timer" },
+                  { icon: "💻", label: "System Info", cmd: "Show me my system information (CPU, RAM, disk usage)" },
+                  { icon: "📁", label: "Downloads", cmd: "List files in my Downloads folder" },
+                  { icon: "🌐", label: "IP Address", cmd: "What is my current IP address and network info?" },
+                ].map(({ icon, label, cmd }) => (
+                  <button
+                    key={label}
+                    title={cmd}
+                    onClick={() => {
+                      if (!isConnected) return;
+                      const text = cmd.endsWith(": ") ? cmd : cmd;
+                      if (cmd.endsWith(": ")) {
+                        // Focus the text input with the prefix
+                        setTextInput(cmd);
+                        const inputEl = document.getElementById("sarthi-text-input");
+                        if (inputEl) { (inputEl as HTMLInputElement).focus(); }
+                        return;
+                      }
+                      addMessage({ id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now() });
+                      wsClient.send("user_message", { text, source: "text", thread_id: activeThreadId });
+                      setVoiceState("processing");
+                    }}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "3px",
+                      padding: "7px 4px",
+                      borderRadius: "var(--radius-sm)",
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid var(--border)",
+                      color: "var(--text-secondary)",
+                      fontSize: "9px",
+                      fontFamily: "var(--font-mono)",
+                      fontWeight: "bold",
+                      letterSpacing: "0.04em",
+                      cursor: isConnected ? "pointer" : "not-allowed",
+                      opacity: isConnected ? 1 : 0.5,
+                      transition: "all 0.15s",
+                    }}
+                    onMouseOver={e => {
+                      if (isConnected) {
+                        e.currentTarget.style.background = "rgba(var(--accent-rgb, 255,80,80), 0.1)";
+                        e.currentTarget.style.borderColor = "var(--border-accent)";
+                        e.currentTarget.style.color = "var(--accent)";
+                      }
+                    }}
+                    onMouseOut={e => {
+                      e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.color = "var(--text-secondary)";
+                    }}
+                  >
+                    <span style={{ fontSize: "15px", lineHeight: 1 }}>{icon}</span>
+                    <span>{label.toUpperCase()}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="hud-panel" style={{ height: "180px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
               <div className="hud-panel-title">// AGENT STATUS & SYSTEMS</div>
               <div style={{ padding: "12px", fontSize: "12px", color: "var(--text-secondary)", flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -1111,6 +1201,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 <VoiceButton voiceState={voiceState} onClick={handleVoiceClick} disabled={!isConnected} />
                 <Waveform voiceState={voiceState} />
                 <input
+                  id="sarthi-text-input"
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
                   onKeyDown={handleKeyDown}

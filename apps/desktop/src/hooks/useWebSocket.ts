@@ -54,8 +54,7 @@ export function useWebSocket(port: number | null) {
           const escapedWakeWords = wakeWords.map((w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
           const hasSarthi = wakeWords.some((w: string) => w.toLowerCase().includes("sarthi") || w.toLowerCase().includes("sarathi"));
           if (hasSarthi) {
-            // Only closest phonetic variants — avoid common words/names that cause false positives
-            escapedWakeWords.push("sarthii", "sarathii", "sorthi", "sarthy", "sarrthi");
+            escapedWakeWords.push("sanati", "farati", "sarath", "sarth", "sorthi", "sorathi", "sorth", "sharthi", "sharathi", "sharth", "sarty", "sarathy", "sarti", "sarathi", "sarthii", "sarathii");
           }
 
           // Sort by length descending to match longer phrases first and prevent partial word shadowing
@@ -111,6 +110,9 @@ export function useWebSocket(port: number | null) {
 
       wsClient.on("tool_started", (msg) => {
         const { index, thread_id, tool, description, args } = msg.payload as any;
+        if (tool === "shell") {
+          useAssistantStore.getState().clearShellOutput();
+        }
         setExecutingStep(index, thread_id);
         updateStepStatus(index, { 
           status: "running", 
