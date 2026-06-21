@@ -66,8 +66,17 @@ class VoicePipeline:
 
         try:
             with sr.Microphone() as source:
-                self.recognizer.adjust_for_ambient_noise(source, duration=1)
-                logger.info("Microphone initialized and calibrated.")
+                self.recognizer.adjust_for_ambient_noise(source, duration=2)
+                # Boost threshold above calibrated ambient floor to reduce false triggers
+                self.recognizer.energy_threshold = max(
+                    self.recognizer.energy_threshold * 1.8,
+                    500  # hard minimum to avoid super-quiet environments triggering
+                )
+                # Prevent the dynamic threshold from drifting too low
+                self.recognizer.dynamic_energy_threshold = True
+                self.recognizer.dynamic_energy_adjustment_damping = 0.25  # slower drift
+                self.recognizer.dynamic_energy_ratio = 1.8  # higher ratio = less sensitive
+                logger.info(f"Microphone initialized and calibrated. Energy threshold: {self.recognizer.energy_threshold:.1f}")
         except Exception as e:
             logger.warning(f"Could not initialize microphone: {e}")
         finally:
@@ -144,10 +153,23 @@ class VoicePipeline:
                         raw_data = audio.get_raw_data(convert_rate=16000, convert_width=2)
                         audio_array = np.frombuffer(raw_data, dtype=np.int16).astype(np.float32) / 32767.0
 
+                        # Pre-screen: skip very short or very quiet audio to prevent phantom triggers
+                        # Minimum 0.4 seconds of audio at 16kHz = 6400 samples
+                        if len(audio_array) < 6400:
+                            continue
+                        rms = float(np.sqrt(np.mean(audio_array ** 2)))
+                        if rms < 0.008:  # Very quiet — likely ambient noise or silence
+                            continue
+
                         loop = asyncio.get_running_loop()
                         text, confidence, engine = await loop.run_in_executor(None, self.stt.transcribe, audio_array)
 
                         if text:
+                            # Reject single-word transcripts shorter than 2 chars (noise artifacts)
+                            words = text.split()
+                            if len(words) == 1 and len(words[0]) <= 2:
+                                logger.debug(f"STT [{engine}] rejected short noise artifact: '{text}'")
+                                continue
                             logger.info(f"STT [{engine}] transcribed: {text}")
                             yield text
                     except Exception as e:

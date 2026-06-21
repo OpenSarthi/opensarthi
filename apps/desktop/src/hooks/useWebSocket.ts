@@ -54,13 +54,16 @@ export function useWebSocket(port: number | null) {
           const escapedWakeWords = wakeWords.map((w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
           const hasSarthi = wakeWords.some((w: string) => w.toLowerCase().includes("sarthi") || w.toLowerCase().includes("sarathi"));
           if (hasSarthi) {
-            escapedWakeWords.push("sanati", "farati", "sarath", "sarth", "sorthi", "sorathi", "sorth", "sharthi", "sharathi", "sharth", "sarty", "sarathy", "sarti", "sarathi", "sarthii", "sarathii");
+            // Only closest phonetic variants — avoid common words/names that cause false positives
+            escapedWakeWords.push("sarthii", "sarathii", "sorthi", "sarthy", "sarrthi");
           }
 
           // Sort by length descending to match longer phrases first and prevent partial word shadowing
           escapedWakeWords.sort((a: string, b: string) => b.length - a.length);
 
-          const wakeWordRegex = new RegExp(`(?:${escapedWakeWords.join('|')})`, 'i');
+          // Wake word must appear with optional prefix (hey/hello/hi) and as a whole word (boundary check)
+          const wakeWordPattern = escapedWakeWords.join('|');
+          const wakeWordRegex = new RegExp(`(?:^|\\s)(?:hey|hello|hi)?\\s*(?:${wakeWordPattern})(?:\\s|$|[,;:.!?])`, 'i');
           const hasWakeWord = wakeWordRegex.test(lowerText);
           
           if (hasWakeWord) {
@@ -77,8 +80,8 @@ export function useWebSocket(port: number | null) {
             oscillator.start();
             oscillator.stop(audioCtx.currentTime + 0.2);
             
-            // Clean the text by discarding everything up to and including the matched wake word
-            const wakeWordRegexFull = new RegExp(`^(?:.*?)(?:hey|hello|hi|he)?\\s*(?:${escapedWakeWords.join('|')})`, 'i');
+            // Strip everything up to and including the full wake phrase (prefix + wake word)
+            const wakeWordRegexFull = new RegExp(`^(?:.*?)(?:hey|hello|hi)?\\s*(?:${wakeWordPattern})`, 'i');
             const cleanText = text
               .replace(wakeWordRegexFull, "")
               .replace(/^[\s,;:.!?]+/, "")

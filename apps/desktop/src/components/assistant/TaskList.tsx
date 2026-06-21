@@ -78,7 +78,7 @@ export function TaskList({
 
   const taskPaused = useAssistantStore((s) => s.taskPaused);
   const shellOutputLines = useAssistantStore((s) => s.shellOutputLines);
-  const lastClassification = useAssistantStore((s) => s.lastClassification);
+
   const shellEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll shell output to bottom
@@ -162,17 +162,7 @@ export function TaskList({
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", gap: "6px" }}>
 
-      {/* Classification badge */}
-      {lastClassification && (
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "3px 8px",
-          fontSize: "9px", fontWeight: "bold", letterSpacing: "0.08em",
-          borderRadius: "var(--radius-sm)", width: "fit-content",
-          background: lastClassification === "TASK" ? "rgba(var(--accent-rgb,255,80,80),0.12)" : "rgba(255,255,255,0.06)",
-          border: "1px solid rgba(255,255,255,0.1)",
-          color: lastClassification === "TASK" ? "var(--accent)" : "var(--text-secondary)" }}>
-          {lastClassification === "TASK" ? "⚡" : lastClassification === "CHAT" ? "💬" : "❓"} {lastClassification}
-        </div>
-      )}
+
 
       {agenticTasks.length === 0 ? (
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.5 }}>
