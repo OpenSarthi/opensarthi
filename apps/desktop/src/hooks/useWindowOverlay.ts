@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAssistantStore } from "../stores/assistantStore";
 
 export function useWindowOverlay() {
-  const { isOverlayMode, setOverlayMode, currentPlan, setSnapAlign } = useAssistantStore();
-  const isTaskRunning = !!currentPlan;
+  const { isOverlayMode, setOverlayMode, currentPlan, executingStepIndex, setSnapAlign } = useAssistantStore();
   const [prevTaskRunning, setPrevTaskRunning] = useState(false);
 
   const originalSize = useRef<{ width: number; height: number } | null>(null);
@@ -12,14 +11,34 @@ export function useWindowOverlay() {
   const snapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-collapse to overlay mode when a task starts, and auto-restore to full window when completed.
+  // Skip collapse/minimize if the active tool step is a shell command.
   useEffect(() => {
-    if (isTaskRunning && !prevTaskRunning) {
-      setOverlayMode(true);
-    } else if (!isTaskRunning && prevTaskRunning) {
-      setOverlayMode(false);
+    const isTaskRunning = !!currentPlan;
+    let isShellRunning = false;
+    if (currentPlan && executingStepIndex !== null && executingStepIndex !== undefined) {
+      const step = currentPlan.steps.find(s => s.index === executingStepIndex);
+      if (step && step.tool === "shell") {
+        isShellRunning = true;
+      }
+    }
+
+    if (isTaskRunning) {
+      if (isShellRunning) {
+        if (isOverlayMode) {
+          setOverlayMode(false);
+        }
+      } else {
+        if (!isOverlayMode) {
+          setOverlayMode(true);
+        }
+      }
+    } else if (prevTaskRunning) {
+      if (isOverlayMode) {
+        setOverlayMode(false);
+      }
     }
     setPrevTaskRunning(isTaskRunning);
-  }, [isTaskRunning, prevTaskRunning, setOverlayMode]);
+  }, [currentPlan, executingStepIndex, isOverlayMode, prevTaskRunning, setOverlayMode]);
 
   // Handle window sizing and positioning when overlay mode toggles.
   useEffect(() => {
@@ -51,6 +70,8 @@ export function useWindowOverlay() {
 
           if (maximized) {
             await appWindow.unmaximize();
+            // Wait for window manager to register unmaximize before setting alwaysOnTop
+            await new Promise(resolve => setTimeout(resolve, 150));
           }
 
           await appWindow.setAlwaysOnTop(true);
@@ -144,6 +165,8 @@ export function useWindowOverlay() {
 
           if (originalMaximized.current) {
             await appWindow.maximize();
+            // Explicitly call setAlwaysOnTop(false) again to prevent focus lock on Linux window managers
+            await appWindow.setAlwaysOnTop(false);
           }
 
           await appWindow.setFocus();
