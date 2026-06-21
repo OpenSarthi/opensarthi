@@ -117,8 +117,15 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         auto_recalled_memories=reconstructed_prefs if reconstructed_prefs else None,
     )
 
+    logger_instance = config["configurable"].get("dev_logger")
+    if logger_instance:
+        logger_instance.log_planning_context(state.retry_count, context)
+
     try:
         result = await agent.run(context, deps=deps, model=model, message_history=state.messages)
+        if logger_instance:
+            logger_instance.log_llm_response(state.retry_count, result.output)
+            
         usage = getattr(result, "usage", None)
         token_delta = _extract_tokens(usage)
 
@@ -216,6 +223,16 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
         res = await tool.safe_execute(step.args, permission_manager=ws)
     except asyncio.CancelledError:
         res_dict = {"success": False, "error": "Cancelled by user", "retryable": False}
+        logger_instance = config["configurable"].get("dev_logger")
+        if logger_instance:
+            logger_instance.log_tool_call(
+                attempt=state.retry_count,
+                step_index=idx,
+                tool_name=step.tool,
+                args=step.args,
+                result_status="cancelled",
+                result_obs="Cancelled by user"
+            )
         return {"is_cancelled": True, "last_tool_result": res_dict, "cumulative_steps": updated_steps}
     except Exception as e:
         res_dict = {"success": False, "error": str(e), "retryable": True}
@@ -226,6 +243,16 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
             })
         if idx < len(updated_steps):
             updated_steps[idx] = {**updated_steps[idx], "status": "error", "error": str(e)}
+        logger_instance = config["configurable"].get("dev_logger")
+        if logger_instance:
+            logger_instance.log_tool_call(
+                attempt=state.retry_count,
+                step_index=idx,
+                tool_name=step.tool,
+                args=step.args,
+                result_status="error",
+                result_obs=str(e)
+            )
         return {
             "last_tool_result": res_dict,
             "failed_actions": state.failed_actions + [f"{step.description}: {e}"],
@@ -269,6 +296,17 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
         # Handle wait_after
         if step.wait_after:
             await asyncio.sleep(step.wait_after)
+
+    logger_instance = config["configurable"].get("dev_logger")
+    if logger_instance:
+        logger_instance.log_tool_call(
+            attempt=state.retry_count,
+            step_index=idx,
+            tool_name=step.tool,
+            args=step.args,
+            result_status=status_str,
+            result_obs=res.observation if res.success else (res.error or "Unknown error")
+        )
 
     return {
         "last_tool_result": res_dict,

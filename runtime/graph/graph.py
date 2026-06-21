@@ -190,6 +190,52 @@ def get_compiled_graph(use_sqlite: bool = False):
     return _compiled_graph
 
 
+def format_graph_response(final_res: str, cumulative_steps: list) -> str:
+    if not cumulative_steps:
+        return final_res
+    lines = [final_res, ""]
+    for s in cumulative_steps:
+        desc = s.get("description") or s.get("tool")
+        tool_name = s.get("tool")
+        args = s.get("args") or {}
+
+        if desc == tool_name or desc == "shell" or not desc:
+            if tool_name == "shell" and args.get("command"):
+                cmd = args.get("command")
+                short_cmd = cmd[:45] + "..." if len(cmd) > 48 else cmd
+                desc = f"shell: {short_cmd}"
+            elif tool_name == "click" and "x" in args and "y" in args:
+                desc = f"click at ({args['x']}, {args['y']})"
+            elif tool_name == "type_text" and args.get("text"):
+                txt = args["text"]
+                short_txt = txt[:25] + "..." if len(txt) > 28 else txt
+                desc = f"type \"{short_txt}\""
+            elif tool_name == "press_key" and args.get("key"):
+                desc = f"press key {args['key']}"
+            elif tool_name == "click_element" and args.get("name"):
+                desc = f"click element \"{args['name']}\""
+            elif tool_name == "open_app" and args.get("name"):
+                desc = f"open app \"{args['name']}\""
+            elif tool_name == "focus_window" and args.get("title"):
+                desc = f"focus window \"{args['title']}\""
+
+        status = s.get("status")
+        result = s.get("result")
+        error = s.get("error")
+        
+        if status == "success":
+            if result:
+                lines.append(f"<details>\n<summary>✓ {desc}</summary>\n\n```\n{result}\n```\n</details>")
+            else:
+                lines.append(f"✓ {desc}")
+        elif status == "error":
+            err_msg = error or "Error"
+            lines.append(f"<details>\n<summary>❌ {desc}</summary>\n\n```\nReason: {err_msg}\n```\n</details>")
+        elif status == "terminated":
+            lines.append(f"❌ {desc} (Reason: Terminated)")
+    return "\n".join(lines)
+
+
 async def run_graph(
     goal: str,
     model,
@@ -205,6 +251,26 @@ async def run_graph(
 
     Returns the final response string (same interface as AgentRuntime.run()).
     """
+    from dev_logger import DevLogger
+    model_name = getattr(model, "model_name", str(model))
+    provider_name = "unknown"
+    if hasattr(model, "client"):
+        provider_name = model.__class__.__name__
+
+    logger_instance = DevLogger(goal=goal, model_name=model_name, provider=provider_name)
+
+    # Log system prompt
+    try:
+        from planner.agent import build_system_prompt
+        sys_prompt = build_system_prompt(
+            skills=getattr(deps, "skills", ["general"]),
+            user_name=getattr(deps, "user_name", ""),
+            custom_prompt=getattr(deps, "custom_prompt", "")
+        )
+        logger_instance.log_system_prompt(sys_prompt)
+    except Exception as e:
+        logger_instance.log(f"Failed to compile and log system prompt: {e}")
+
     graph = get_compiled_graph()
 
     config = {
@@ -214,6 +280,7 @@ async def run_graph(
             "deps": deps,
             "ws_handler": ws_handler,
             "memory_manager": memory_manager,
+            "dev_logger": logger_instance,
         }
     }
 
@@ -242,10 +309,39 @@ async def run_graph(
 
     try:
         result = await graph.ainvoke(initial_state, config=config)
-        return result.get("final_response") or "Task completed."
+        final_res = result.get("final_response") or "Task completed."
+        final_res = format_graph_response(final_res, result.get("cumulative_steps") or [])
+        if logger_instance:
+            logger_instance.finalize(final_res)
+        return final_res
     except Exception as e:
-        logger.error("LangGraph run_graph failed", error=str(e))
-        return f"❌ Execution failed: {e}"
+        err_str = str(e)
+        # Handle stale checkpoint data from old state schema (e.g. after add_messages removal).
+        # The MemorySaver replays old checkpoint state that contains pydantic_ai message objects
+        # serialised under the previous schema. Reset the singleton and retry once with a clean graph.
+        if "Unsupported message type" in err_str or "MESSAGE_COERCION" in err_str or "Deserializing unregistered" in err_str:
+            logger.warning("LangGraph checkpoint appears stale (schema mismatch) — resetting compiled graph and retrying", error=err_str)
+            global _compiled_graph
+            _compiled_graph = None  # Force fresh MemorySaver with no stale checkpoints
+            graph = get_compiled_graph()
+            try:
+                result = await graph.ainvoke(initial_state, config=config)
+                final_res = result.get("final_response") or "Task completed."
+                final_res = format_graph_response(final_res, result.get("cumulative_steps") or [])
+                if logger_instance:
+                    logger_instance.finalize(final_res)
+                return final_res
+            except Exception as retry_e:
+                logger.error("LangGraph run_graph failed after reset", error=str(retry_e))
+                err_response = f"❌ Execution failed: {retry_e}"
+                if logger_instance:
+                    logger_instance.finalize(err_response)
+                return err_response
+        logger.error("LangGraph run_graph failed", error=err_str)
+        err_response = f"❌ Execution failed: {e}"
+        if logger_instance:
+            logger_instance.finalize(err_response)
+        return err_response
 
 
 async def stream_graph_events(

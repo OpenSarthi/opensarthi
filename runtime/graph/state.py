@@ -5,9 +5,8 @@ All graph nodes read from and write to OpenSarthiState. LangGraph merges
 partial dicts returned from each node into the running state.
 """
 from __future__ import annotations
-from typing import Annotated, Any, Optional
+from typing import Optional
 from pydantic import BaseModel, Field
-from langgraph.graph.message import add_messages
 
 
 class OpenSarthiState(BaseModel):
@@ -18,8 +17,11 @@ class OpenSarthiState(BaseModel):
     thread_id: Optional[str] = None
     classification: Optional[str] = None   # CHAT | TASK | CLARIFY
 
-    # ── Message history (LangGraph-managed accumulator) ─────────────────
-    messages: Annotated[list, add_messages] = Field(default_factory=list)
+    # ── Message history (pydantic_ai format, passed as-is to agents) ────
+    # NOTE: Do NOT use Annotated[list, add_messages] here — that would force
+    # LangChain message coercion on pydantic_ai ModelRequest/ModelResponse types
+    # causing MESSAGE_COERCION_FAILURE at runtime.
+    messages: list = Field(default_factory=list)
 
     # ── Execution plan ──────────────────────────────────────────────────
     plan_steps: list = Field(default_factory=list)          # List[PlanStep dicts]
