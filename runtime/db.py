@@ -9,10 +9,13 @@ LOCAL_DEV_DB = os.path.join(os.path.dirname(__file__), "opensarthi.db")
 USER_CONFIG_DIR = Path.home() / ".config" / "opensarthi"
 USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
-DB_PATH = str(USER_CONFIG_DIR / "opensarthi.db")
+if os.environ.get("OPENSARTHI_TESTING") == "1":
+    DB_PATH = os.path.join(os.path.dirname(__file__), "opensarthi_test.db")
+else:
+    DB_PATH = str(USER_CONFIG_DIR / "opensarthi.db")
 
 # If local dev database exists but home database doesn't, migrate it so no history is lost!
-if os.path.exists(LOCAL_DEV_DB) and not os.path.exists(DB_PATH):
+if os.environ.get("OPENSARTHI_TESTING") != "1" and os.path.exists(LOCAL_DEV_DB) and not os.path.exists(DB_PATH):
     try:
         shutil.copy2(LOCAL_DEV_DB, DB_PATH)
     except Exception:
