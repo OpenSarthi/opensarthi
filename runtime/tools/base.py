@@ -45,6 +45,15 @@ class BaseTool(ABC):
         if self.risk_level == RiskLevel.FORBIDDEN:
             return ToolResult.fail("This action is forbidden.", retryable=False)
 
+        if not isinstance(args, dict):
+            args = {}
+
+        # Check required fields before asking for permission
+        required_fields = self.schema.get("required", [])
+        for field in required_fields:
+            if field not in args or args[field] is None or args[field] == "":
+                return ToolResult.fail(f"Missing or empty required argument: {field}", retryable=False)
+
         if self.risk_level == RiskLevel.DANGEROUS and permission_manager:
             approved = await permission_manager.request_permission(self.name, args)
             if not approved:

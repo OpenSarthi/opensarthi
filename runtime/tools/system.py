@@ -15,13 +15,22 @@ class ShellTool(BaseTool):
         "properties": {
             "command": {"type": "string", "description": "Shell command to execute"},
             "timeout": {"type": "number", "description": "Timeout in seconds (default: 30)"},
+            "cwd": {"type": "string", "description": "Optional directory to run the command in. Defaults to the user's home directory."},
         },
         "required": ["command"],
     }
 
     async def execute(self, args: dict, permission_manager=None) -> ToolResult:
+        from pathlib import Path
+        import os
+
         command = args.get("command", "")
         timeout = float(args.get("timeout", 30))
+        
+        default_cwd = str(Path.home())
+        cwd = args.get("cwd", default_cwd) or default_cwd
+        if not os.path.exists(cwd):
+            cwd = default_cwd
 
         if not command:
             return ToolResult.fail("No command provided", retryable=False)
@@ -68,6 +77,7 @@ class ShellTool(BaseTool):
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
             )
 
             async def _stream_stdout():
