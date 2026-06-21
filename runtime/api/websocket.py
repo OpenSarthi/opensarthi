@@ -48,6 +48,7 @@ class Session:
         self._pending_inputs: dict = {}       # thread_id -> asyncio.Future
         self._manual_tts = False  # True when user manually triggered TTS via listen button
         self._session_active = False  # True after onboarding complete + API key confirmed
+        self._permanent_grants: set[str] = set()
 
     async def send_message(self, msg_type: str, payload: dict, thread_id: str = None):
         if payload is None:
@@ -98,6 +99,14 @@ class Session:
     async def request_permission(self, tool_name: str, args: dict, thread_id: str = None) -> bool:
         """Ask user for permission to execute a dangerous tool, yielding control back on response."""
         from state_machine import AgentState
+        import json
+
+        # Check permanent grants cache using sorted JSON string
+        grant_key = f"{tool_name}:{json.dumps(args or {}, sort_keys=True)}"
+        if grant_key in self._permanent_grants:
+            logger.info("Permission automatically granted via permanent grant cache", tool=tool_name)
+            return True
+
         tid = thread_id or self.thread_id
         self._pending_permissions[tid] = asyncio.Future()
         try:
@@ -114,7 +123,14 @@ class Session:
                 await self._current_runtime._transition(AgentState.ASKING_PERMISSION)
 
             response = await self._pending_permissions[tid]
-            return response.get("allow", response.get("approved", False))
+            allowed = response.get("allow", response.get("approved", False))
+            
+            # Save to permanent grants if user specified remember/allow always
+            if allowed and response.get("remember", False):
+                self._permanent_grants.add(grant_key)
+                logger.info("Saved permanent grant for tool execution", tool=tool_name)
+            
+            return allowed
         finally:
             self._pending_permissions.pop(tid, None)
 
@@ -148,15 +164,40 @@ class Session:
         """
         tid = thread_id or self.thread_id
         words = text.split(" ")
-        buffer = []
-        for i, word in enumerate(words):
-            buffer.append(word)
-            if len(buffer) >= chunk_size or i == len(words) - 1:
-                await self.send_message("stream_chunk", {
-                    "chunk": " ".join(buffer) + (" " if i < len(words) - 1 else ""),
-                }, thread_id=tid)
-                buffer = []
-                await asyncio.sleep(0.03)  # ~33 chunks/sec — smooth typing effect
+        total_words = len(words)
+        if total_words == 0:
+            await self.send_message("stream_end", {}, thread_id=tid)
+            return
+
+        # Target: Complete execution within at most 5 seconds (~100 ticks max)
+        max_chunks = 100
+        remaining_words = total_words
+        tick = 0
+        i = 0
+        
+        while i < total_words:
+            remaining_ticks = max(1, max_chunks - tick)
+            target_chunk = (remaining_words + remaining_ticks - 1) // remaining_ticks
+            
+            # Start small (word-by-word / 2-3 words) to immediately show typing, then accelerate
+            if tick < 10:
+                chunk_len = min(2 + tick, target_chunk)
+            else:
+                chunk_len = target_chunk
+                
+            chunk_len = max(1, chunk_len)
+            chunk_words = words[i:i+chunk_len]
+            i += chunk_len
+            remaining_words -= chunk_len
+            
+            await self.send_message("stream_chunk", {
+                "chunk": " ".join(chunk_words) + (" " if i < total_words else ""),
+            }, thread_id=tid)
+            
+            tick += 1
+            sleep_time = 0.03 if tick < 15 else 0.015
+            await asyncio.sleep(sleep_time)
+            
         await self.send_message("stream_end", {}, thread_id=tid)
 
 

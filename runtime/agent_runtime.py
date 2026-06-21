@@ -774,6 +774,9 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
                             s["description"] = s.pop("comment")
                         elif "description" not in s:
                             s["description"] = ""
+                        for p_key in ("params", "arguments", "parameters"):
+                            if "args" not in s and p_key in s:
+                                s["args"] = s.pop(p_key)
                         if "args" not in s or s["args"] is None:
                             s["args"] = {}
                         elif isinstance(s["args"], list):
