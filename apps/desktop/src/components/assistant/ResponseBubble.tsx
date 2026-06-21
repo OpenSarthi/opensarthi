@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, User, Volume2, Copy, Check } from "lucide-react";
+import { Bot, User, Volume2, Copy, Check, Terminal } from "lucide-react";
 import type { Message } from "../../lib/schemas";
 import { wsClient } from "../../lib/ws";
 import ReactMarkdown from "react-markdown";
@@ -392,6 +392,284 @@ const markdownComponents = {
   )
 };
 
+interface ResponseBlock {
+  type: "markdown" | "details" | "execute";
+  content: string;
+  summary?: string;
+}
+
+function parseResponseBlocks(text: string): ResponseBlock[] {
+  const blocks: ResponseBlock[] = [];
+  
+  // Robust case-insensitive tags matches
+  const detailsRegex = /<details[^>]*>([\s\S]*?)<\/details>/gi;
+  const executeRegex = /<execute[^>]*>([\s\S]*?)<\/execute>/gi;
+  
+  interface MatchItem {
+    type: "details" | "execute";
+    start: number;
+    end: number;
+    content: string;
+  }
+  
+  const matches: MatchItem[] = [];
+  
+  let match;
+  detailsRegex.lastIndex = 0;
+  while ((match = detailsRegex.exec(text)) !== null) {
+    matches.push({
+      type: "details",
+      start: match.index,
+      end: detailsRegex.lastIndex,
+      content: match[1]
+    });
+  }
+  
+  executeRegex.lastIndex = 0;
+  while ((match = executeRegex.exec(text)) !== null) {
+    matches.push({
+      type: "execute",
+      start: match.index,
+      end: executeRegex.lastIndex,
+      content: match[1]
+    });
+  }
+  
+  matches.sort((a, b) => a.start - b.start);
+  
+  let lastIdx = 0;
+  for (const m of matches) {
+    if (m.start > lastIdx) {
+      const preceding = text.substring(lastIdx, m.start);
+      if (preceding) {
+        blocks.push({ type: "markdown", content: preceding });
+      }
+    }
+    
+    if (m.type === "details") {
+      const inside = m.content;
+      const summaryStart = inside.indexOf("<summary>");
+      const summaryEnd = inside.indexOf("</summary>");
+      
+      let summaryText = "Details";
+      let bodyText = inside;
+      
+      if (summaryStart !== -1 && summaryEnd !== -1 && summaryEnd > summaryStart) {
+        summaryText = inside.substring(summaryStart + 9, summaryEnd).trim();
+        bodyText = inside.substring(0, summaryStart) + inside.substring(summaryEnd + 10);
+      }
+      
+      blocks.push({
+        type: "details",
+        summary: summaryText,
+        content: bodyText.trim()
+      });
+    } else {
+      blocks.push({
+        type: "execute",
+        content: m.content.trim()
+      });
+    }
+    
+    lastIdx = m.end;
+  }
+  
+  if (lastIdx < text.length) {
+    const remaining = text.substring(lastIdx);
+    if (remaining) {
+      blocks.push({ type: "markdown", content: remaining });
+    }
+  }
+  
+  return blocks;
+}
+
+function ExecuteBlock({ actionJson }: { actionJson: string }) {
+  try {
+    let cleanJson = actionJson.trim();
+    if (cleanJson.startsWith("```json")) {
+      cleanJson = cleanJson.substring(7);
+    } else if (cleanJson.startsWith("```")) {
+      cleanJson = cleanJson.substring(3);
+    }
+    if (cleanJson.endsWith("```")) {
+      cleanJson = cleanJson.substring(0, cleanJson.length - 3);
+    }
+    cleanJson = cleanJson.trim();
+    
+    const parsed = JSON.parse(cleanJson);
+    const tool = parsed.action || parsed.tool || "step";
+    const params = parsed.params || parsed.args || {};
+    
+    let detailText = "";
+    if (tool === "shell" && params.command) {
+      detailText = `$ ${params.command}`;
+    } else {
+      detailText = Object.entries(params)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(" | ");
+    }
+    
+    return (
+      <div style={{
+        margin: "12px 0",
+        padding: "10px 14px",
+        background: "rgba(0, 230, 180, 0.02)",
+        border: "1px solid rgba(0, 230, 180, 0.15)",
+        borderLeft: "3px solid var(--accent)",
+        borderRadius: "var(--radius-md)",
+        fontFamily: "var(--font-mono)",
+        fontSize: "12px",
+        color: "var(--text-primary)",
+        boxShadow: "0 0 15px rgba(0, 230, 180, 0.05)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "6px"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: "bold", fontSize: "9px", color: "var(--accent)", letterSpacing: "0.05em" }}>
+            <Terminal size={12} />
+            <span>SYSTEM DIRECTIVE</span>
+          </div>
+          <span style={{ fontSize: "8px", background: "rgba(0, 230, 180, 0.15)", color: "var(--accent)", padding: "1px 5px", borderRadius: "3px", fontWeight: "bold" }}>
+            READY
+          </span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <div style={{ display: "flex", gap: "6px", alignItems: "baseline" }}>
+            <span style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase" }}>Action:</span>
+            <span style={{ fontWeight: "bold", color: "var(--accent)", textTransform: "uppercase" }}>{tool}</span>
+          </div>
+          {detailText && (
+            <div style={{ display: "flex", gap: "6px", alignItems: "baseline", marginTop: "2px" }}>
+              <span style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase" }}>Params:</span>
+              <span style={{ color: "var(--text-secondary)", wordBreak: "break-all", fontFamily: "var(--font-mono)", fontSize: "11px" }}>{detailText}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  } catch (e) {
+    return (
+      <div style={{
+        margin: "12px 0",
+        padding: "10px 14px",
+        background: "rgba(255, 60, 60, 0.02)",
+        border: "1px solid rgba(255, 60, 60, 0.15)",
+        borderLeft: "3px solid var(--danger)",
+        borderRadius: "var(--radius-md)",
+        fontFamily: "var(--font-mono)",
+        fontSize: "12px",
+        color: "var(--text-primary)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "6px"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: "bold", fontSize: "9px", color: "var(--danger)", letterSpacing: "0.05em" }}>
+            <Terminal size={12} />
+            <span>RAW DIRECTIVE</span>
+          </div>
+          <span style={{ fontSize: "8px", background: "rgba(255, 60, 60, 0.15)", color: "var(--danger)", padding: "1px 5px", borderRadius: "3px", fontWeight: "bold" }}>
+            PARSED
+          </span>
+        </div>
+        <pre style={{
+          background: "rgba(0, 0, 0, 0.25)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-sm)",
+          padding: "8px 10px",
+          fontSize: "11px",
+          fontFamily: "var(--font-mono)",
+          color: "var(--text-secondary)",
+          margin: 0,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all"
+        }}>
+          <code>{actionJson}</code>
+        </pre>
+      </div>
+    );
+  }
+}
+
+function CustomDetailsBlock({ summary, content }: { summary: string; content: string }) {
+  const isShell = summary.toLowerCase().includes("shell");
+  const [isOpen, setIsOpen] = useState(isShell);
+  const isHeal = summary.toLowerCase().includes("self-healing") || summary.toLowerCase().includes("self_heal");
+  const isSuccess = summary.includes("✓") || summary.toLowerCase().includes("success") || summary.toLowerCase().includes("completed");
+  const isError = summary.includes("❌") || summary.toLowerCase().includes("fail") || summary.toLowerCase().includes("error");
+  
+  let headerColor = "var(--text-secondary)";
+  let headerBg = "rgba(0,0,0,0.2)";
+  let borderStyle = "1px solid var(--border)";
+  
+  if (isSuccess) {
+    headerColor = isHeal ? "var(--warning)" : "var(--success, #00e6b4)";
+    headerBg = isHeal ? "rgba(255, 170, 0, 0.06)" : "rgba(0, 230, 180, 0.05)";
+    borderStyle = isHeal ? "1px dashed rgba(255, 170, 0, 0.25)" : "1px solid rgba(0, 230, 180, 0.15)";
+  } else if (isError) {
+    headerColor = "var(--danger)";
+    headerBg = "rgba(255, 60, 60, 0.04)";
+    borderStyle = "1px solid rgba(255, 60, 60, 0.15)";
+  }
+
+  return (
+    <div style={{
+      border: borderStyle,
+      background: "rgba(0, 0, 0, 0.15)",
+      borderRadius: "var(--radius-md)",
+      margin: "8px 0",
+      overflow: "hidden",
+      backdropFilter: "blur(4px)",
+      WebkitBackdropFilter: "blur(4px)"
+    }}>
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          padding: "8px 12px",
+          background: headerBg,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          cursor: "pointer",
+          fontSize: "11.5px",
+          color: headerColor,
+          fontWeight: 600,
+          userSelect: "none",
+          fontFamily: "var(--font-mono)",
+          letterSpacing: "0.03em"
+        }}
+      >
+        <span>{summary}</span>
+        <span style={{ fontSize: "9px", opacity: 0.6 }}>
+          {isOpen ? "COLLAPSE ▲" : "EXPAND ▼"}
+        </span>
+      </div>
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            style={{
+              borderTop: borderStyle,
+              background: "rgba(0,0,0,0.18)",
+              padding: "2px 12px 10px 12px"
+            }}
+          >
+            <div style={{ fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {content}
+              </ReactMarkdown>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export function ResponseBubble({ message }: ResponseBubbleProps) {
   const isUser = message.role === "user";
   const [displayedContent, setDisplayedContent] = useState("");
@@ -404,23 +682,46 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
     }
 
     const ageMs = Date.now() - message.timestamp;
-    if (ageMs > 4000) {
+    if (ageMs > 5000) {
       setDisplayedContent(message.content);
       return;
     }
 
-    const words = message.content.split(" ");
+    const tokens = message.content.split(/(\s+)/).filter(t => t !== "");
+    const totalTokens = tokens.length;
+    if (totalTokens === 0) {
+      setDisplayedContent("");
+      return;
+    }
+
+    // Target: complete in at most 5 seconds (5000ms)
+    const intervalMs = 40;
+    const maxTicks = Math.floor(5000 / intervalMs); // 125 ticks
+    
     let currentIdx = 0;
+    let tick = 0;
 
     const timer = setInterval(() => {
-      if (currentIdx >= words.length) {
+      if (currentIdx >= totalTokens) {
         clearInterval(timer);
         setDisplayedContent(message.content);
       } else {
-        setDisplayedContent(words.slice(0, currentIdx + 1).join(" "));
-        currentIdx++;
+        const remainingTokens = totalTokens - currentIdx;
+        const remainingTicks = Math.max(1, maxTicks - tick);
+        const targetChunk = Math.ceil(remainingTokens / remainingTicks);
+        
+        let chunkLen = targetChunk;
+        if (tick < 15) {
+          // Slow start: do 2 tokens at first (approx 1 word + whitespace) and progressively grow
+          chunkLen = Math.min(2 + Math.floor(tick / 2) * 2, targetChunk);
+        }
+        chunkLen = Math.max(1, chunkLen);
+        
+        currentIdx += chunkLen;
+        setDisplayedContent(tokens.slice(0, currentIdx).join(""));
+        tick++;
       }
-    }, 75);
+    }, intervalMs);
 
     return () => clearInterval(timer);
   }, [message.content, message.timestamp, isUser]);
@@ -519,10 +820,31 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
           )}
           
           {response && (
-            <div style={{ flex: 1 }}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                {response}
-              </ReactMarkdown>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
+              {parseResponseBlocks(response).map((block, idx) => {
+                if (block.type === "details") {
+                  return (
+                    <CustomDetailsBlock 
+                      key={idx} 
+                      summary={block.summary || "Details"} 
+                      content={block.content} 
+                    />
+                  );
+                }
+                if (block.type === "execute") {
+                  return (
+                    <ExecuteBlock 
+                      key={idx} 
+                      actionJson={block.content} 
+                    />
+                  );
+                }
+                return (
+                  <ReactMarkdown key={idx} remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                    {block.content}
+                  </ReactMarkdown>
+                );
+              })}
             </div>
           )}
 
