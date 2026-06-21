@@ -148,7 +148,23 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     "depends_on": getattr(s, "depends_on", []) or [],
                 })
             updates["plan_steps"] = steps_data
-            updates["cumulative_steps"] = steps_data
+            
+            # Preserve finished steps
+            finished_prev_steps = [s for s in (state.cumulative_steps or []) if s.get("status") in ("success", "error", "terminated", "divider")]
+            if finished_prev_steps:
+                divider = {
+                    "index": len(finished_prev_steps),
+                    "tool": "divider",
+                    "status": "divider",
+                    "description": f"Replan / Attempt {state.retry_count + 1}",
+                }
+                offset = len(finished_prev_steps) + 1
+                for i, s in enumerate(steps_data):
+                    s["index"] = offset + i
+                updates["cumulative_steps"] = finished_prev_steps + [divider] + steps_data
+            else:
+                updates["cumulative_steps"] = steps_data
+
             updates["current_step_index"] = 0
 
             if ws:
@@ -156,7 +172,7 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                 await ws.send_message("plan_created", {
                     "id": str(uuid.uuid4()),
                     "goal": plan.goal or state.goal,
-                    "steps": steps_data,
+                    "steps": updates["cumulative_steps"],
                     "recovery_hint": plan.recovery_hint,
                 })
         else:
@@ -181,6 +197,10 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
     if idx >= len(state.plan_steps):
         return {"final_response": "Task completed successfully.", "plan_steps": []}
 
+    # Find the cumulative index for updates
+    finished_prev_steps = [s for s in (state.cumulative_steps or []) if s.get("status") in ("success", "error", "terminated", "divider")]
+    cumulative_idx = len(finished_prev_steps) + idx
+
     step_data = state.plan_steps[idx]
     from planner.schemas import PlanStep, ToolResult
     from tools.registry import get as get_tool
@@ -192,12 +212,12 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
         err = f"Unknown tool: {step.tool}"
         if ws:
             await ws.send_message("tool_error", {
-                "index": idx, "error": err, "tool": step.tool,
+                "index": cumulative_idx, "error": err, "tool": step.tool,
                 "description": step.description, "args": step.args,
             })
         updated_steps = list(state.cumulative_steps)
-        if idx < len(updated_steps):
-            updated_steps[idx] = {**updated_steps[idx], "status": "error", "error": err}
+        if cumulative_idx < len(updated_steps):
+            updated_steps[cumulative_idx] = {**updated_steps[cumulative_idx], "status": "error", "error": err}
         return {
             "last_tool_result": {"success": False, "error": err, "retryable": False},
             "failed_actions": state.failed_actions + [f"{step.description}: {err}"],
@@ -206,7 +226,7 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
 
     if ws:
         await ws.send_message("tool_started", {
-            "index": idx, "tool": step.tool,
+            "index": cumulative_idx, "tool": step.tool,
             "description": step.description, "args": step.args,
         })
         await ws.send_message("tool_action", {
@@ -216,8 +236,8 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
 
     # Update step status to running
     updated_steps = list(state.cumulative_steps)
-    if idx < len(updated_steps):
-        updated_steps[idx] = {**updated_steps[idx], "status": "running"}
+    if cumulative_idx < len(updated_steps):
+        updated_steps[cumulative_idx] = {**updated_steps[cumulative_idx], "status": "running"}
 
     try:
         res = await tool.safe_execute(step.args, permission_manager=ws)
@@ -227,7 +247,7 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
         if logger_instance:
             logger_instance.log_tool_call(
                 attempt=state.retry_count,
-                step_index=idx,
+                step_index=cumulative_idx,
                 tool_name=step.tool,
                 args=step.args,
                 result_status="cancelled",
@@ -238,16 +258,16 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
         res_dict = {"success": False, "error": str(e), "retryable": True}
         if ws:
             await ws.send_message("tool_error", {
-                "index": idx, "error": str(e), "tool": step.tool,
+                "index": cumulative_idx, "error": str(e), "tool": step.tool,
                 "description": step.description, "args": step.args,
             })
-        if idx < len(updated_steps):
-            updated_steps[idx] = {**updated_steps[idx], "status": "error", "error": str(e)}
+        if cumulative_idx < len(updated_steps):
+            updated_steps[cumulative_idx] = {**updated_steps[cumulative_idx], "status": "error", "error": str(e)}
         logger_instance = config["configurable"].get("dev_logger")
         if logger_instance:
             logger_instance.log_tool_call(
                 attempt=state.retry_count,
-                step_index=idx,
+                step_index=cumulative_idx,
                 tool_name=step.tool,
                 args=step.args,
                 result_status="error",
@@ -270,23 +290,23 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
         })
         if res.success:
             await ws.send_message("tool_completed", {
-                "index": idx, "result": res.observation,
+                "index": cumulative_idx, "result": res.observation,
                 "tool": step.tool, "description": step.description, "args": step.args,
             })
         else:
             await ws.send_message("tool_error", {
-                "index": idx, "error": res.error or "Unknown error",
+                "index": cumulative_idx, "error": res.error or "Unknown error",
                 "tool": step.tool, "description": step.description, "args": step.args,
             })
 
     # Update cumulative step status
-    if idx < len(updated_steps):
-        step_update = {**updated_steps[idx], "status": status_str}
+    if cumulative_idx < len(updated_steps):
+        step_update = {**updated_steps[cumulative_idx], "status": status_str}
         if res.success:
             step_update["result"] = res.observation
         else:
             step_update["error"] = res.error or "Unknown error"
-        updated_steps[idx] = step_update
+        updated_steps[cumulative_idx] = step_update
 
     new_completed = list(state.completed_actions)
     new_failed = list(state.failed_actions)
@@ -301,7 +321,7 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
     if logger_instance:
         logger_instance.log_tool_call(
             attempt=state.retry_count,
-            step_index=idx,
+            step_index=cumulative_idx,
             tool_name=step.tool,
             args=step.args,
             result_status=status_str,

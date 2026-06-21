@@ -121,7 +121,9 @@ class AgentRuntime:
         for s in cumulative_steps:
             desc = s.get("description") or s.get("tool")
             status = s.get("status")
-            if status == "success":
+            if status == "divider":
+                lines.append(f"--- {desc} ---")
+            elif status == "success":
                 lines.append(f"✓ {desc}")
             elif status == "error":
                 err = s.get("error", "Error")
@@ -283,6 +285,16 @@ class AgentRuntime:
                 import uuid
                 plan_id = str(uuid.uuid4())
                 
+                # Insert a divider between replanning attempts
+                if replanning_attempts > 0 and self.cumulative_steps:
+                    self.cumulative_steps.append({
+                        "index": len(self.cumulative_steps),
+                        "tool": "divider",
+                        "status": "divider",
+                        "description": f"Replan / Attempt {replanning_attempts + 1}",
+                        "args": {},
+                    })
+
                 # Append the new steps to our global cumulative steps list
                 start_idx = len(self.cumulative_steps)
                 for idx, s in enumerate(plan.steps):
@@ -783,6 +795,25 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
                             tool_name = s.get("tool", "")
                             arg_keys = TOOL_ARG_ORDER.get(tool_name, [])
                             s["args"] = {k: v for k, v in zip(arg_keys, s["args"])}
+                        # Hoist root-level known tool arg keys into args.
+                        # LLMs sometimes emit {"tool":"shell","command":"...","args":{}}
+                        # instead of {"tool":"shell","args":{"command":"..."}}.
+                        tool_name = s.get("tool", "")
+                        known_arg_keys = TOOL_ARG_ORDER.get(tool_name, [])
+                        # Generic extra keys that are never top-level step fields
+                        generic_arg_keys = ["command", "cwd", "timeout", "app",
+                                           "x", "y", "button", "text", "key",
+                                           "title", "role", "name", "query",
+                                           "location", "fact", "content",
+                                           "duration_minutes", "label", "path"]
+                        all_arg_keys = set(known_arg_keys) | set(generic_arg_keys)
+                        reserved_step_keys = {"tool", "action", "args", "description",
+                                              "comment", "params", "arguments",
+                                              "parameters", "verify_with", "wait_after",
+                                              "depends_on"}
+                        for k in list(s.keys()):
+                            if k not in reserved_step_keys and k in all_arg_keys:
+                                s["args"].setdefault(k, s.pop(k))
                         return s
 
                     if isinstance(data, list):

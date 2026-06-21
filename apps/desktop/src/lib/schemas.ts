@@ -61,9 +61,9 @@ export type WSMessage = z.infer<typeof WSMessageSchema>;
 export const PlanStepSchema = z.object({
   index: z.number(),
   tool: z.string(),
-  args: z.record(z.unknown()),
-  description: z.string(),
-  status: z.enum(["pending", "running", "success", "error", "skipped", "terminated"]),
+  args: z.record(z.unknown()).optional().default({}),
+  description: z.string().optional().default(""),
+  status: z.enum(["pending", "running", "success", "error", "skipped", "terminated", "divider"]),
   error: z.string().optional(),
   result: z.unknown().optional(),
   timestamp: z.number().optional(),

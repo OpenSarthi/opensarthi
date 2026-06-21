@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAssistantStore } from "../stores/assistantStore";
 
 export function useWindowOverlay() {
-  const { isOverlayMode, setOverlayMode, currentPlan, executingStepIndex, setSnapAlign } = useAssistantStore();
+  const { isOverlayMode, setOverlayMode, currentPlan, setSnapAlign } = useAssistantStore();
   const [prevTaskRunning, setPrevTaskRunning] = useState(false);
 
   const originalSize = useRef<{ width: number; height: number } | null>(null);
@@ -11,26 +11,12 @@ export function useWindowOverlay() {
   const snapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-collapse to overlay mode when a task starts, and auto-restore to full window when completed.
-  // Skip collapse/minimize if the active tool step is a shell command.
   useEffect(() => {
     const isTaskRunning = !!currentPlan;
-    let isShellRunning = false;
-    if (currentPlan && executingStepIndex !== null && executingStepIndex !== undefined) {
-      const step = currentPlan.steps.find(s => s.index === executingStepIndex);
-      if (step && step.tool === "shell") {
-        isShellRunning = true;
-      }
-    }
 
     if (isTaskRunning) {
-      if (isShellRunning) {
-        if (isOverlayMode) {
-          setOverlayMode(false);
-        }
-      } else {
-        if (!isOverlayMode) {
-          setOverlayMode(true);
-        }
+      if (!isOverlayMode) {
+        setOverlayMode(true);
       }
     } else if (prevTaskRunning) {
       if (isOverlayMode) {
@@ -38,7 +24,7 @@ export function useWindowOverlay() {
       }
     }
     setPrevTaskRunning(isTaskRunning);
-  }, [currentPlan, executingStepIndex, isOverlayMode, prevTaskRunning, setOverlayMode]);
+  }, [currentPlan, isOverlayMode, prevTaskRunning, setOverlayMode]);
 
   // Handle window sizing and positioning when overlay mode toggles.
   useEffect(() => {

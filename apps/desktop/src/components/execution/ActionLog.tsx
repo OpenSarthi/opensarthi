@@ -12,7 +12,7 @@ interface ActionLogProps {
 export interface ParsedToolAction {
   tool: string;
   description: string;
-  status: "pending" | "running" | "success" | "error" | "skipped" | "terminated";
+  status: "pending" | "running" | "success" | "error" | "skipped" | "terminated" | "divider";
   result?: string;
   timestamp?: number;
   args?: Record<string, any>;
@@ -352,6 +352,18 @@ export function parseToolActionsFromContent(content: string, timestamp?: number)
       continue;
     }
 
+    // 3. Detect replan divider lines: --- text ---
+    if (trimmed.startsWith("---") && trimmed.endsWith("---") && trimmed.length > 6) {
+      const dividerText = trimmed.replace(/^---\s*/, "").replace(/\s*---$/, "").trim();
+      toolActions.push({
+        tool: "divider",
+        description: dividerText,
+        status: "divider",
+        timestamp,
+      });
+      continue;
+    }
+
     // Standard non-collapsible lines
     if (trimmed.startsWith("✓ ")) {
       const desc = trimmed.slice(2);
@@ -482,6 +494,44 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
     <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%" }}>
       <AnimatePresence initial={false}>
         {reversedActions.map((action, idx) => {
+          // ─── Divider Rendering ──────────────────────────────────────────
+          if (action.status === "divider") {
+            return (
+              <motion.div
+                layout
+                key={`divider-${idx}`}
+                initial={{ opacity: 0, scaleX: 0.8 }}
+                animate={{ opacity: 1, scaleX: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ type: "spring", damping: 28, stiffness: 300 }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "4px 0",
+                  margin: "2px 0",
+                }}
+              >
+                <div style={{ flex: 1, height: "1px", background: "linear-gradient(to right, transparent, rgba(0,255,120,0.3), transparent)" }} />
+                <span style={{
+                  fontSize: "8px",
+                  fontFamily: "var(--font-mono)",
+                  color: "rgba(0,255,120,0.6)",
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  whiteSpace: "nowrap",
+                  padding: "2px 6px",
+                  border: "1px solid rgba(0,255,120,0.2)",
+                  borderRadius: "var(--radius-sm)",
+                  background: "rgba(0,255,120,0.04)",
+                }}>
+                  ↺ {action.description}
+                </span>
+                <div style={{ flex: 1, height: "1px", background: "linear-gradient(to left, transparent, rgba(0,255,120,0.3), transparent)" }} />
+              </motion.div>
+            );
+          }
+
           const isRunning = action.status === "running";
           const isSuccess = action.status === "success";
           const isError = action.status === "error" || action.status === "failed";

@@ -222,8 +222,10 @@ def format_graph_response(final_res: str, cumulative_steps: list) -> str:
         status = s.get("status")
         result = s.get("result")
         error = s.get("error")
-        
-        if status == "success":
+
+        if status == "divider":
+            lines.append(f"--- {desc} ---")
+        elif status == "success":
             if result:
                 lines.append(f"<details>\n<summary>✓ {desc}</summary>\n\n```\n{result}\n```\n</details>")
             else:

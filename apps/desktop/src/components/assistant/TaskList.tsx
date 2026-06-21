@@ -17,7 +17,7 @@ interface AgenticTask {
   toolActions: Array<{
     tool: string;
     description: string;
-    status: "pending" | "running" | "success" | "error" | "skipped" | "terminated";
+    status: "pending" | "running" | "success" | "error" | "skipped" | "terminated" | "divider";
     result?: any;
     timestamp?: number;
   }>;
