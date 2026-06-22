@@ -393,7 +393,7 @@ const markdownComponents = {
 };
 
 interface ResponseBlock {
-  type: "markdown" | "details" | "execute";
+  type: "markdown" | "details" | "execute" | "next_action";
   content: string;
   summary?: string;
 }
@@ -404,9 +404,10 @@ function parseResponseBlocks(text: string): ResponseBlock[] {
   // Robust case-insensitive tags matches
   const detailsRegex = /<details[^>]*>([\s\S]*?)<\/details>/gi;
   const executeRegex = /<execute[^>]*>([\s\S]*?)<\/execute>/gi;
+  const nextActionRegex = /<next_action[^>]*>([\s\S]*?)<\/next_action>/gi;
   
   interface MatchItem {
-    type: "details" | "execute";
+    type: "details" | "execute" | "next_action";
     start: number;
     end: number;
     content: string;
@@ -431,6 +432,16 @@ function parseResponseBlocks(text: string): ResponseBlock[] {
       type: "execute",
       start: match.index,
       end: executeRegex.lastIndex,
+      content: match[1]
+    });
+  }
+
+  nextActionRegex.lastIndex = 0;
+  while ((match = nextActionRegex.exec(text)) !== null) {
+    matches.push({
+      type: "next_action",
+      start: match.index,
+      end: nextActionRegex.lastIndex,
       content: match[1]
     });
   }
@@ -464,9 +475,14 @@ function parseResponseBlocks(text: string): ResponseBlock[] {
         summary: summaryText,
         content: bodyText.trim()
       });
-    } else {
+    } else if (m.type === "execute") {
       blocks.push({
         type: "execute",
+        content: m.content.trim()
+      });
+    } else {
+      blocks.push({
+        type: "next_action",
         content: m.content.trim()
       });
     }
@@ -591,6 +607,43 @@ function ExecuteBlock({ actionJson }: { actionJson: string }) {
       </div>
     );
   }
+}
+
+function NextActionBlock({ content }: { content: string }) {
+  return (
+    <div style={{
+      margin: "12px 0",
+      padding: "10px 14px",
+      background: "rgba(255, 170, 0, 0.03)",
+      border: "1px solid rgba(255, 170, 0, 0.15)",
+      borderLeft: "3px solid var(--warning)",
+      borderRadius: "var(--radius-md)",
+      fontFamily: "var(--font-mono)",
+      fontSize: "12px",
+      color: "var(--text-primary)",
+      boxShadow: "0 0 15px rgba(255, 170, 0, 0.05)",
+      display: "flex",
+      flexDirection: "column",
+      gap: "6px"
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: "bold", fontSize: "9px", color: "var(--warning)", letterSpacing: "0.05em" }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "pulseDot 1.5s infinite" }}>
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+          <span>NEXT ACTION REQUIRED</span>
+        </div>
+        <span style={{ fontSize: "8px", background: "rgba(255, 170, 0, 0.15)", color: "var(--warning)", padding: "1px 5px", borderRadius: "3px", fontWeight: "bold" }}>
+          AWAITING INPUT
+        </span>
+      </div>
+      <div style={{ color: "var(--text-secondary)", lineHeight: "1.5" }}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          {content.trim()}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
 }
 
 function CustomDetailsBlock({ summary, content }: { summary: string; content: string }) {
@@ -839,6 +892,14 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
                     />
                   );
                 }
+                if (block.type === "next_action") {
+                  return (
+                    <NextActionBlock 
+                      key={idx} 
+                      content={block.content} 
+                    />
+                  );
+                }
                 return (
                   <ReactMarkdown key={idx} remarkPlugins={[remarkGfm]} components={markdownComponents}>
                     {block.content}
@@ -895,8 +956,9 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
                   </button>
                   <button
                     onClick={() => {
-                      // Strip thinking tag before TTS read-out
+                      // Strip thinking tag and next_action XML tags before TTS read-out
                       const clean = response
+                        .replace(/<\/?next_action>/gi, "")
                         .replace(/```[\s\S]*?```/g, "")
                         .replace(/`([^`]+)`/g, "$1")
                         .replace(/[*#_\-]/g, "")

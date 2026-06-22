@@ -506,9 +506,9 @@ export const useAssistantStore = create<AssistantState>((set) => ({
         return {
           ...t,
           tokenUsage: {
-            requestTokens: usage.request_tokens,
-            responseTokens: usage.response_tokens,
-            totalTokens: usage.total_tokens,
+            requestTokens: t.tokenUsage.requestTokens + (usage.request_tokens || 0),
+            responseTokens: t.tokenUsage.responseTokens + (usage.response_tokens || 0),
+            totalTokens: t.tokenUsage.totalTokens + (usage.total_tokens || 0),
             sessionTotalTokens: t.tokenUsage.sessionTotalTokens + (usage.total_tokens || 0),
           }
         };
