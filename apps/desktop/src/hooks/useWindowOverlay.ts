@@ -10,23 +10,38 @@ export function useWindowOverlay() {
   const originalMaximized = useRef<boolean>(false);
   const snapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-collapse to overlay mode when a task starts, and auto-restore to full window when completed.
+  // When a user manually clicks "Expand" while a task is running, we set this
+  // so the auto-collapse effect is suppressed for the lifetime of that task.
+  // It resets when a genuinely new task starts from idle.
+  const userExpandedDuringTask = useRef(false);
+
+  // ── Auto-collapse / restore effect ────────────────────────────────────────
   useEffect(() => {
     const isTaskRunning = !!currentPlan;
 
-    if (isTaskRunning) {
+    // Detect a genuinely new task starting from idle
+    if (isTaskRunning && !prevTaskRunning) {
+      // Fresh task → clear the user-override so we auto-collapse again
+      userExpandedDuringTask.current = false;
+    }
+
+    if (isTaskRunning && !userExpandedDuringTask.current) {
+      // Auto-collapse — unless user already manually expanded this task
       if (!isOverlayMode) {
         setOverlayMode(true);
       }
-    } else if (prevTaskRunning) {
+    } else if (!isTaskRunning && prevTaskRunning) {
+      // Task just finished → always restore to full window
+      userExpandedDuringTask.current = false;
       if (isOverlayMode) {
         setOverlayMode(false);
       }
     }
+
     setPrevTaskRunning(isTaskRunning);
   }, [currentPlan, isOverlayMode, prevTaskRunning, setOverlayMode]);
 
-  // Handle window sizing and positioning when overlay mode toggles.
+  // ── Window sizing / positioning when overlay mode changes ─────────────────
   useEffect(() => {
     let active = true;
     let unlistenMoved: (() => void) | undefined;
@@ -38,11 +53,11 @@ export function useWindowOverlay() {
         const appWindow = getCurrentWindow();
 
         if (isOverlayMode) {
-          // ─── Transition to Overlay Mode ───
+          // ─── Collapse to Overlay Mode ─────────────────────────────
           const monitor = await primaryMonitor();
           const scale = monitor?.scaleFactor || 1;
 
-          // Save current window metrics
+          // Save window metrics before shrinking
           const maximized = await appWindow.isMaximized();
           originalMaximized.current = maximized;
 
@@ -56,12 +71,12 @@ export function useWindowOverlay() {
 
           if (maximized) {
             await appWindow.unmaximize();
-            // Wait for window manager to register unmaximize before setting alwaysOnTop
+            // Give the WM time to register unmaximize before resizing
             await new Promise(resolve => setTimeout(resolve, 150));
           }
 
           await appWindow.setAlwaysOnTop(true);
-          
+
           try {
             await appWindow.setDecorations(false);
           } catch (e) {
@@ -70,7 +85,7 @@ export function useWindowOverlay() {
 
           document.body.classList.add("overlay-mode");
 
-          // Resize window to overlay size
+          // Resize to overlay strip (280×560)
           const overlayWidth = 280;
           const overlayHeight = 560;
           try {
@@ -80,14 +95,16 @@ export function useWindowOverlay() {
           }
           await appWindow.setSize(new LogicalSize(overlayWidth, overlayHeight));
 
-          // Position to right side of screen by default
-          const monitorSizeLogical = monitor ? monitor.size.toLogical(scale) : { width: 1920, height: 1080 };
+          // Position on RIGHT edge of screen by default
+          const monitorSizeLogical = monitor
+            ? monitor.size.toLogical(scale)
+            : { width: 1920, height: 1080 };
           const defaultX = monitorSizeLogical.width - overlayWidth - 8;
           const defaultY = Math.max(40, (monitorSizeLogical.height - overlayHeight) / 2);
           await appWindow.setPosition(new LogicalPosition(defaultX, defaultY));
           setSnapAlign("right");
 
-          // Listen for movement to perform left/right edge snapping
+          // Edge-snapping listener while in overlay mode
           const unsub = await appWindow.onMoved(async (event) => {
             if (!active) return;
             const { x, y } = event.payload; // PhysicalPosition
@@ -99,20 +116,55 @@ export function useWindowOverlay() {
                 const currentMonitor = await primaryMonitor();
                 const currentScale = currentMonitor?.scaleFactor || 1;
                 const logicalX = x / currentScale;
-                const monitorWidth = currentMonitor ? currentMonitor.size.toLogical(currentScale).width : 1920;
+                const monitorWidth = currentMonitor
+                  ? currentMonitor.size.toLogical(currentScale).width
+                  : 1920;
 
-                // Snapping threshold of 100px
                 const snapThreshold = 100;
+                
+                // Get the current snap status from store to know what width we are currently at
+                const currentSnap = useAssistantStore.getState().snapAlign;
+                const currentWidth = currentSnap === "none" ? 320 : 280;
+
+                let nextSnap: "left" | "right" | "none" = "none";
+                let targetWidth = 320;
+                let targetHeight = 440;
+
                 if (logicalX < snapThreshold) {
-                  // Snap to LEFT edge
-                  await appWindow.setPosition(new LogicalPosition(8, y / currentScale));
-                  setSnapAlign("left");
-                } else if (monitorWidth - (logicalX + overlayWidth) < snapThreshold) {
-                  // Snap to RIGHT edge
-                  await appWindow.setPosition(new LogicalPosition(monitorWidth - overlayWidth - 8, y / currentScale));
-                  setSnapAlign("right");
+                  nextSnap = "left";
+                  targetWidth = 280;
+                  targetHeight = 560;
+                } else if (monitorWidth - (logicalX + currentWidth) < snapThreshold) {
+                  nextSnap = "right";
+                  targetWidth = 280;
+                  targetHeight = 560;
                 } else {
-                  setSnapAlign("none");
+                  nextSnap = "none";
+                  targetWidth = 320;
+                  targetHeight = 440;
+                }
+
+                // Get current actual window size
+                const currentSize = await appWindow.innerSize();
+                const logicalSize = currentSize.toLogical(currentScale);
+
+                // If snap or size changes, update it
+                if (
+                  nextSnap !== currentSnap || 
+                  Math.abs(logicalSize.width - targetWidth) > 5 || 
+                  Math.abs(logicalSize.height - targetHeight) > 5
+                ) {
+                  await appWindow.setSize(new LogicalSize(targetWidth, targetHeight));
+                  
+                  if (nextSnap === "left") {
+                    await appWindow.setPosition(new LogicalPosition(8, y / currentScale));
+                  } else if (nextSnap === "right") {
+                    await appWindow.setPosition(
+                      new LogicalPosition(monitorWidth - targetWidth - 8, y / currentScale)
+                    );
+                  }
+                  
+                  setSnapAlign(nextSnap);
                 }
               } catch (err) {
                 console.error("Snap error:", err);
@@ -121,9 +173,14 @@ export function useWindowOverlay() {
           });
           unlistenMoved = unsub;
         } else {
-          // ─── Transition back to Full Mode ───
+          // ─── Restore to Full Mode ─────────────────────────────────
+          // If the task is still running, this expansion was user-initiated
+          if (useAssistantStore.getState().currentPlan) {
+            userExpandedDuringTask.current = true;
+          }
+
           await appWindow.setAlwaysOnTop(false);
-          
+
           try {
             await appWindow.setDecorations(true);
           } catch (e) {
@@ -131,6 +188,7 @@ export function useWindowOverlay() {
           }
 
           document.body.classList.remove("overlay-mode");
+          setSnapAlign("none");
 
           try {
             await appWindow.setMinSize(new LogicalSize(800, 600));
@@ -140,18 +198,22 @@ export function useWindowOverlay() {
 
           // Restore saved dimensions
           if (originalSize.current) {
-            await appWindow.setSize(new LogicalSize(originalSize.current.width, originalSize.current.height));
+            await appWindow.setSize(
+              new LogicalSize(originalSize.current.width, originalSize.current.height)
+            );
           } else {
             await appWindow.setSize(new LogicalSize(1100, 700));
           }
 
           if (originalPos.current) {
-            await appWindow.setPosition(new LogicalPosition(originalPos.current.x, originalPos.current.y));
+            await appWindow.setPosition(
+              new LogicalPosition(originalPos.current.x, originalPos.current.y)
+            );
           }
 
           if (originalMaximized.current) {
             await appWindow.maximize();
-            // Explicitly call setAlwaysOnTop(false) again to prevent focus lock on Linux window managers
+            // Call setAlwaysOnTop(false) again — Linux WMs need this after maximize
             await appWindow.setAlwaysOnTop(false);
           }
 

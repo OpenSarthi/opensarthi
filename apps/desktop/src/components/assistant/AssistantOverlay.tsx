@@ -63,6 +63,9 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         setIsMaximized(max);
         if (max) {
           await appWindow.setAlwaysOnTop(false);
+          if (useAssistantStore.getState().isOverlayMode) {
+            useAssistantStore.getState().setOverlayMode(false);
+          }
         }
 
         const unsub = await appWindow.onResized(async () => {
@@ -70,6 +73,9 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           setIsMaximized(m);
           if (m) {
             await appWindow.setAlwaysOnTop(false);
+            if (useAssistantStore.getState().isOverlayMode) {
+              useAssistantStore.getState().setOverlayMode(false);
+            }
           }
         });
         unlisten = unsub;
@@ -277,7 +283,9 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           }
 
           // Strip markdown code blocks (including JSON plans)
-          let clean = textToSpeak.replace(/```[\s\S]*?```/g, "");
+          let clean = textToSpeak
+            .replace(/<\/?next_action>/gi, "")
+            .replace(/```[\s\S]*?```/g, "");
 
           // Strip raw JSON array blocks (in case LLM output JSON without backticks)
           clean = clean.replace(/\[\s*\{[\s\S]*\}\s*\]/g, "");
@@ -346,30 +354,58 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, isConnected]);
 
+  // ── Corner-radius logic: per snap position ────────────────────────────────
+  // Right edge: free side (left) is curved, wall side (right) is 0
+  // Left edge: free side (right) is curved, wall side (left) is 0
+  // Floating (none): all corners curved
+  const overlayRadius = {
+    borderTopLeftRadius:
+      snapAlign === "right" ? "20px" : snapAlign === "left" ? "0px" : "20px",
+    borderBottomLeftRadius:
+      snapAlign === "right" ? "20px" : snapAlign === "left" ? "0px" : "20px",
+    borderTopRightRadius:
+      snapAlign === "left" ? "20px" : snapAlign === "right" ? "0px" : "20px",
+    borderBottomRightRadius:
+      snapAlign === "left" ? "20px" : snapAlign === "right" ? "0px" : "20px",
+  };
+
+  // ── Border: only on free sides (none on the wall side) ───────────────────
+  const overlayBorder = {
+    borderTop: "1.5px solid var(--border-accent)",
+    borderBottom: "1.5px solid var(--border-accent)",
+    borderLeft: snapAlign === "right" ? "1.5px solid var(--border-accent)" : snapAlign === "left" ? "none" : "1.5px solid var(--border-accent)",
+    borderRight: snapAlign === "left" ? "1.5px solid var(--border-accent)" : snapAlign === "right" ? "none" : "1.5px solid var(--border-accent)",
+  };
+
+  // Computed step counts for progress bar
+  const overlaySteps = currentPlan?.steps ?? [];
+  const overlayDoneCount = overlaySteps.filter(s => s.status === "success" || s.status === "error" || s.status === "terminated").length;
+  const overlayTotalCount = overlaySteps.filter(s => s.status !== "divider").length;
+  const overlayProgress = overlayTotalCount > 0 ? (overlayDoneCount / overlayTotalCount) * 100 : 0;
+  const overlayRunningStep = overlaySteps.find(s => s.status === "running");
+
   if (isOverlayMode) {
     return (
       <div
-        className="hud-panel animate-fade-in"
         style={{
           width: "100vw",
           height: "100vh",
           display: "flex",
           flexDirection: "column",
-          background: "var(--bg-glass)",
-          backdropFilter: "var(--blur-glass)",
-          WebkitBackdropFilter: "var(--blur-glass)",
-          border: "1.5px solid var(--border-accent)",
-          boxShadow: "0 0 20px var(--accent-glow), inset 0 0 12px rgba(255,255,255,0.02)",
-          padding: "12px",
-          gap: "10px",
+          background: "var(--bg-secondary)",
+          boxShadow: snapAlign === "right"
+            ? "-4px 0 40px rgba(0,0,0,0.7), 0 0 0 1px var(--border-accent)"
+            : snapAlign === "left"
+            ? "4px 0 40px rgba(0,0,0,0.7), 0 0 0 1px var(--border-accent)"
+            : "0 8px 40px rgba(0,0,0,0.7), 0 0 24px var(--accent-glow)",
+          padding: "0",
+          gap: "0",
           overflow: "hidden",
-          borderTopLeftRadius: snapAlign === "right" || snapAlign === "none" ? "16px" : "0px",
-          borderBottomLeftRadius: snapAlign === "right" || snapAlign === "none" ? "16px" : "0px",
-          borderTopRightRadius: snapAlign === "left" || snapAlign === "none" ? "16px" : "0px",
-          borderBottomRightRadius: snapAlign === "left" || snapAlign === "none" ? "16px" : "0px",
+          ...overlayRadius,
+          ...overlayBorder,
         }}
       >
-        {/* Drag handle header / top bar */}
+        {/* ─── Drag-handle Top Bar ─────────────────────────────────────── */}
         <div
           style={{
             display: "flex",
@@ -377,9 +413,10 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             justifyContent: "space-between",
             flexShrink: 0,
             cursor: "grab",
-            paddingBottom: "8px",
-            borderBottom: "1px solid var(--border)",
+            padding: "10px 12px 8px",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
             userSelect: "none",
+            background: "rgba(255,255,255,0.02)",
           }}
           onMouseDown={async () => {
             try {
@@ -390,131 +427,161 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             }
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            {/* Grab Dots Indicator */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginRight: "4px", opacity: 0.5 }}>
-              <div style={{ display: "flex", gap: "2px" }}>
-                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
-                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
-              </div>
-              <div style={{ display: "flex", gap: "2px" }}>
-                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
-                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
-              </div>
-              <div style={{ display: "flex", gap: "2px" }}>
-                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
-                <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
-              </div>
+          {/* Left: logo + status */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {/* Drag dots */}
+            <div style={{ display: "grid", gridTemplateColumns: "3px 3px", gap: "2px", opacity: 0.35 }}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
+              ))}
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "var(--accent)" }}>
-              <Activity size={14} className="animate-glow" />
-              <span style={{ fontSize: "12px", fontWeight: "bold", letterSpacing: "0.08em" }}>
-                SARTHI ACTIVE
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {/* Pulsing status dot */}
+              <div style={{
+                width: "7px", height: "7px", borderRadius: "50%",
+                background: isConnected ? "var(--accent)" : "rgba(255,80,80,0.7)",
+                boxShadow: isConnected ? "0 0 6px var(--accent)" : "none",
+                animation: isConnected && isTaskRunning ? "pulse 1.4s ease-in-out infinite" : "none",
+              }} />
+              <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
+                SARTHI
               </span>
+              {isTaskRunning && (
+                <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em", fontFamily: "var(--font-mono)" }}>
+                  {taskPaused ? "PAUSED" : "RUNNING"}
+                </span>
+              )}
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: "6px", alignItems: "center" }} onMouseDown={(e) => e.stopPropagation()}>
-            {/* Expand / Restore Button */}
+          {/* Right: action buttons */}
+          <div
+            style={{ display: "flex", gap: "4px", alignItems: "center" }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* Expand button */}
             <button
               onClick={() => useAssistantStore.getState().setOverlayMode(false)}
               title="Expand to Full View"
               style={{
-                width: "24px",
-                height: "24px",
-                borderRadius: "3px",
+                width: "26px", height: "26px",
+                borderRadius: "6px",
                 background: "rgba(255,255,255,0.06)",
-                border: "1px solid var(--border)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                border: "1px solid rgba(255,255,255,0.1)",
+                display: "flex", alignItems: "center", justifyContent: "center",
                 color: "var(--text-secondary)",
+                cursor: "pointer",
+                transition: "all 0.15s",
               }}
+              onMouseEnter={e => { (e.target as HTMLButtonElement).style.background = "rgba(255,255,255,0.12)"; (e.target as HTMLButtonElement).style.color = "var(--accent)"; }}
+              onMouseLeave={e => { (e.target as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)"; (e.target as HTMLButtonElement).style.color = "var(--text-secondary)"; }}
             >
-              {/* Maximize/Expand Icon */}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+              </svg>
             </button>
           </div>
         </div>
 
-        {/* Token Tracking Dashboard */}
-        <div style={{
-          background: "rgba(0, 0, 0, 0.4)",
-          border: "1px solid var(--border)",
-          borderRadius: "8px",
-          padding: "8px 10px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "6px",
-          fontSize: "11px",
-          fontFamily: "var(--font-mono)",
-          boxShadow: "inset 0 1px 5px rgba(0,0,0,0.5)",
-          flexShrink: 0
-        }}>
-          {/* <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-secondary)", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid rgba(255,255,255,0.06)", paddingBottom: "4px" }}>
-            <span>📊 RESOURCE MONITOR</span>
-            <span className="animate-pulse" style={{ color: "var(--accent)" }}>● LIVE</span>
-          </div> */}
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--text-muted)" }}>Run Tokens:</span>
-            <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{tokenUsage.totalTokens.toLocaleString()}</span>
-          </div>
-          {/* <div style={{ display: "flex", gap: "12px", color: "var(--text-secondary)" }}>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-              <span style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase" }}>Prompt</span>
-              <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{tokenUsage.requestTokens.toLocaleString()}</span>
-            </div>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-              <span style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase" }}>Completion</span>
-              <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{tokenUsage.responseTokens.toLocaleString()}</span>
-            </div>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-              <span style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase" }}>Session</span>
-              <span style={{ color: "var(--accent)", fontWeight: 500 }}>{globalSessionCount.toLocaleString()}</span>
-            </div>
-          </div> */}
-        </div>
-
-        {/* Plan / Execution Steps View */}
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", minHeight: 0 }}>
-          <div className="hud-panel-title" style={{ fontSize: "11px", borderBottom: "none", padding: "2px 4px" }}>
-            // PROGRESS & ACTIVITY
-          </div>
+        {/* ─── Main scrollable content ──────────────────────────────────── */}
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "0", minHeight: 0 }}>
 
           {currentPlan ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "4px" }}>
-              {/* Goal Card */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", padding: "12px" }}>
+
+              {/* Goal card */}
               <div style={{
-                background: "rgba(255, 255, 255, 0.02)",
-                border: "1px solid rgba(255, 255, 255, 0.05)",
-                borderRadius: "6px",
-                padding: "8px 10px",
+                background: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.07)",
+                borderRadius: "10px",
+                padding: "10px 12px",
                 display: "flex",
                 flexDirection: "column",
-                gap: "4px"
+                gap: "6px",
               }}>
-                <span style={{ fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Current Directive</span>
-                <div className="selectable" style={{ fontSize: "12px", color: "var(--accent)", fontWeight: 600, lineHeight: "1.4" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{
+                    fontSize: "9px", color: "var(--accent)",
+                    textTransform: "uppercase", letterSpacing: "0.1em",
+                    fontFamily: "var(--font-mono)", opacity: 0.8
+                  }}>⚡ Current Task</span>
+                </div>
+                <div className="selectable" style={{
+                  fontSize: "12px", color: "rgba(255,255,255,0.85)",
+                  fontWeight: 600, lineHeight: "1.45",
+                  display: "-webkit-box", WebkitLineClamp: "3",
+                  WebkitBoxOrient: "vertical", overflow: "hidden",
+                }}>
                   {currentPlan.goal}
                 </div>
+
+                {/* Progress bar */}
+                {overlayTotalCount > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginTop: "2px" }}>
+                    <div style={{
+                      height: "3px", borderRadius: "2px",
+                      background: "rgba(255,255,255,0.08)",
+                      overflow: "hidden",
+                    }}>
+                      <div style={{
+                        height: "100%", borderRadius: "2px",
+                        width: `${overlayProgress}%`,
+                        background: "linear-gradient(to right, var(--accent), rgba(0,255,120,0.6))",
+                        transition: "width 0.4s ease",
+                        boxShadow: "0 0 6px var(--accent)",
+                      }} />
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", color: "rgba(255,255,255,0.3)", fontFamily: "var(--font-mono)" }}>
+                      <span>{overlayDoneCount}/{overlayTotalCount} steps</span>
+                      {overlayRunningStep && (
+                        <span style={{ color: "var(--accent)", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          ↻ {overlayRunningStep.description || overlayRunningStep.tool}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Execution action log timeline */}
+              {/* Tokens row */}
+              <div style={{
+                display: "flex", justifyContent: "space-between",
+                fontSize: "10px", fontFamily: "var(--font-mono)",
+                color: "rgba(255,255,255,0.3)",
+                padding: "0 2px",
+              }}>
+                <span>Tokens</span>
+                <span style={{ color: "var(--accent)" }}>{tokenUsage.totalTokens.toLocaleString()}</span>
+              </div>
+
+              {/* Action log */}
               <ActionLog plan={currentPlan} selectedTaskId={null} messages={messages} />
             </div>
           ) : (
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", fontSize: "12px", textAlign: "center", padding: "16px" }}>
-              Waiting for tasks to execute...
+            <div style={{
+              flex: 1, display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center",
+              color: "rgba(255,255,255,0.2)", fontSize: "12px",
+              textAlign: "center", padding: "24px", gap: "10px",
+              fontFamily: "var(--font-mono)",
+            }}>
+              <Activity size={24} style={{ opacity: 0.2 }} />
+              <span>Waiting for task...</span>
             </div>
           )}
         </div>
 
-        {/* Live Audio / TTS visualizer visual */}
-        <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--border)", paddingTop: "8px" }}>
+        {/* ─── Footer Controls ─────────────────────────────────────────── */}
+        <div style={{
+          flexShrink: 0, display: "flex", flexDirection: "column", gap: "8px",
+          borderTop: "1px solid rgba(255,255,255,0.06)",
+          padding: "10px 12px",
+          background: "rgba(0,0,0,0.2)",
+        }}>
+          {/* Pause / Stop controls — only when a task is running */}
           {isTaskRunning && (
-            <div style={{ display: "flex", gap: "8px" }}>
-              {/* Pause/Resume button */}
+            <div style={{ display: "flex", gap: "6px" }}>
               <button
                 onClick={() => {
                   if (taskPaused) {
@@ -524,29 +591,29 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   }
                 }}
                 style={{
-                  flex: 1,
-                  padding: "6px",
-                  fontSize: "11px",
-                  fontWeight: "bold",
-                  borderColor: taskPaused ? "var(--success)" : "var(--warning)",
-                  color: taskPaused ? "var(--success)" : "var(--warning)",
+                  flex: 1, padding: "7px 0",
+                  fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em",
+                  fontFamily: "var(--font-mono)",
+                  borderRadius: "8px",
+                  background: "rgba(255,255,255,0.03)",
+                  border: `1px solid ${taskPaused ? "rgba(60,220,100,0.4)" : "rgba(255,160,30,0.4)"}`,
+                  color: taskPaused ? "rgb(60,220,100)" : "rgb(255,160,30)",
+                  cursor: "pointer",
                 }}
               >
                 {taskPaused ? "▶ RESUME" : "⏸ PAUSE"}
               </button>
-
-              {/* Stop/Cancel button */}
               <button
-                onClick={() => {
-                  wsClient.send("cancel_execution", { thread_id: activeThreadId });
-                }}
+                onClick={() => { wsClient.send("cancel_execution", { thread_id: activeThreadId }); }}
                 style={{
-                  flex: 1,
-                  padding: "6px",
-                  fontSize: "11px",
-                  fontWeight: "bold",
-                  borderColor: "var(--danger)",
-                  color: "var(--danger)",
+                  flex: 1, padding: "7px 0",
+                  fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em",
+                  fontFamily: "var(--font-mono)",
+                  borderRadius: "8px",
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,60,60,0.4)",
+                  color: "rgb(255,80,80)",
+                  cursor: "pointer",
                 }}
               >
                 ■ STOP
@@ -554,9 +621,18 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             </div>
           )}
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", color: "var(--text-secondary)" }}>
-            <span>ONLINE: <span style={{ color: isConnected ? "var(--accent)" : "var(--text-muted)", fontWeight: "bold" }}>{isConnected ? "YES" : "NO"}</span></span>
-            <span style={{ fontFamily: "var(--font-mono)" }}>{getFormattedTime()}</span>
+          {/* Status row */}
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            fontSize: "9px", color: "var(--text-secondary)",
+            fontFamily: "var(--font-mono)", letterSpacing: "0.05em",
+          }}>
+            <span>ONLINE: <span style={{ 
+              color: isConnected ? "var(--accent)" : "var(--danger)", 
+              fontWeight: 700,
+              textShadow: isConnected ? "0 0 6px var(--accent-glow)" : "none"
+            }}>{isConnected ? "YES" : "NO"}</span></span>
+            <span style={{ color: "var(--text-secondary)" }}>{getFormattedTime()}</span>
           </div>
         </div>
       </div>
