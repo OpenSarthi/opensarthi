@@ -15,7 +15,7 @@
 <a href="https://github.com/OpenSarthi/opensarthi/network/members"><img src="https://img.shields.io/github/forks/OpenSarthi/opensarthi?style=for-the-badge&logo=git&logoColor=white&color=7B2FFE&labelColor=0D1117" alt="Forks"/></a>&nbsp;
 <a href="https://github.com/OpenSarthi/opensarthi/issues"><img src="https://img.shields.io/github/issues/OpenSarthi/opensarthi?style=for-the-badge&logo=github-actions&logoColor=white&color=FF5722&labelColor=0D1117" alt="Issues"/></a>&nbsp;
 <a href="https://github.com/OpenSarthi/opensarthi/pulls"><img src="https://img.shields.io/github/issues-pr/OpenSarthi/opensarthi?style=for-the-badge&logo=git-pull-request&logoColor=white&color=2F8D46&labelColor=0D1117" alt="PRs"/></a>&nbsp;
-<a href="https://github.com/OpenSarthi/opensarthi/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-7B2FFE?style=for-the-badge&logo=open-source-initiative&logoColor=white&labelColor=0D1117" alt="License"/></a>&nbsp;
+<a href="https://github.com/OpenSarthi/opensarthi/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-7B2FFE?style=for-the-badge&logo=apache&logoColor=white&labelColor=0D1117" alt="License"/></a>&nbsp;
 <a href="mailto:kumarkartik147359@gmail.com"><img src="https://img.shields.io/badge/Gmail-EA4335?style=for-the-badge&logo=gmail&logoColor=white&labelColor=0D1117" alt="Email"/></a>
 
 </div>
