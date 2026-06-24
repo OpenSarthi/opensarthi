@@ -574,22 +574,43 @@ Microphone
 Single store manages:
 - `messages[]` — chat messages for current thread
 - `currentPlan` / `planSteps[]` — active execution plan
-- `tokenUsage` — per-request and session-total token counts
+- `tokenUsage` — tokens consumed in the current active thread context (restored on thread switch)
+- `sessionTotal` — tokens accumulated globally by the active model across all threads in the session (survives thread changes, resets on model change)
 - `activeProvider` / `activeLocalModel` / `activeCloudModel` — model settings
 - `onboardingCompleted` — cold-start gate
 - `personalization` — user name, skills, custom prompt
 - `activeTheme` — one of 5 theme token sets
 
-### Theme System
+### Theme System & Transparency Invariants
 
 5 built-in themes via CSS custom properties on `document.body`:
-- `theme-red-black` (Glass Red — default)
+- `theme-red-black` (Red HUD — default)
 - `theme-green-black` (Forest Green)
 - `theme-purple-black` (Deep Purple)
 - `theme-sky-white` (Cyber Sky)
 - `theme-pink-white` (Sakura Pink)
 
-**Convention:** Theme is applied by toggling class on `document.body`. All CSS uses `var(--token-name)`.
+**Convention:** Theme is applied by toggling a class on `document.body`. All CSS rules use `var(--token-name)`.
+**Tauri Rounded Corner Glass Blur Invariant:** To prevent WebKit/Tauri rounded corner rendering glitches (where glass blurs spill outside the rounded borders as solid rectangular boxes), `backdrop-filter: blur(...)` is completely removed. Theme backgrounds must use solid, opaque custom colors (`var(--bg-secondary)`) on rounded layouts.
+
+### Overlay HUD Window Snapping Layouts
+
+The desktop app HUD implements a responsive overlay snapping behavior (`useWindowOverlay.ts`):
+- **Snapped Edge Layouts**: When snapped to the left or right edges of the screen, the window dimensions adjust to `280x560`.
+  - **Left Edge Snapped**: Sharp corners on the left; curved corners on the right (`border-top-right-radius`, `border-bottom-right-radius`).
+  - **Right Edge Snapped**: Sharp corners on the right; curved corners on the left (`border-top-left-radius`, `border-bottom-left-radius`).
+- **Floating Layout**: When not snapped to an edge, the window behaves as a floating, small square popup layout with dimensions `320x440` and all corners rounded (`border-radius: 12px` or similar).
+
+### Task List UI & Auto-Collapse Invariants
+
+During agent task executions (in `AssistantOverlay.tsx`):
+- When plan updates or retries occur, the task list auto-collapse behavior must **not** override active user selection/state. This avoids loop collapse/expand triggers.
+- Action logs must persist tool execution history chronologically across multiple agent replan phases, separated by visual thin dividers.
+
+### XML Tag Parsing & Speech Gating
+
+- **`<next_action>` rendering**: Assistant responses are parsed for custom `<next_action>` tags. These blocks are rendered in the response bubble as warning-themed boxes with yellow backgrounds, matching warning typography, and warning SVG icons.
+- **Voice Synthesis Sanitation**: Before passing response text to the TTS voice engine (e.g. Kokoro or native Speech Synthesizer), the text must be sanitized. All `<next_action>...</next_action>` tags and their inner content must be stripped to prevent the reader from speaking technical tool parameters or XML syntax.
 
 ### Three-Panel HUD Layout
 
@@ -666,6 +687,10 @@ These are rules that **must not be violated**. Breaking them will cause subtle b
 
 6. **WebSocket message handlers in `process_incoming()` must be non-blocking for long-running operations.** Use `asyncio.create_task()` for operations like `handle_json_plan`. The `handle_user_message` is awaited directly (blocking is acceptable — one message at a time per session).
 
+7. **Tauri rounded corner blurs are forbidden.** WebKit/Tauri on Linux renders `backdrop-filter: blur(...)` as a boxy background that bleeds outside rounded borders. Use solid backgrounds (`var(--bg-secondary)`) instead.
+
+8. **TTS must sanitize XML tags.** Always strip `<next_action>...</next_action>` blocks before queueing voice synthesis to keep the speech clean.
+
 ### Naming Conventions
 
 | Context | Convention | Example |
@@ -706,6 +731,8 @@ These are rules that **must not be violated**. Breaking them will cause subtle b
 9. **`open_app` has an extensive alias table** — LLMs often generate display names like "Chrome" instead of binary names like "google-chrome-stable". The alias table handles this, but new apps need to be added manually.
 
 10. **Sudo password handling** pipes the password via `echo | sudo -S`, which is visible in process listings. This is a known security concern documented for future improvement.
+
+11. **Auto-collapse loop on plan updates**: When updating execution states during graph runs, do not trigger collapsibility overrides, as this will lead to a visual auto-collapse flicker loop between replans.
 
 ---
 
