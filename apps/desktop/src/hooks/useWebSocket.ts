@@ -91,7 +91,9 @@ export function useWebSocket(port: number | null) {
             setTranscript(cleanText);
           }
         } else if (voiceState === "listening") {
-          setTranscript(text);
+          const currentTranscript = useAssistantStore.getState().currentTranscript;
+          const newTranscript = currentTranscript ? `${currentTranscript} ${text}`.trim() : text;
+          setTranscript(newTranscript);
         }
       }),
 
@@ -188,6 +190,7 @@ export function useWebSocket(port: number | null) {
         const { continuousListening } = useAssistantStore.getState();
         if (continuousListening) {
           setVoiceState("listening");
+          setTranscript(null);
         } else {
           setVoiceState("idle");
         }

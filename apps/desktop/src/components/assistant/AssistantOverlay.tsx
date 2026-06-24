@@ -44,7 +44,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     voiceState, isConnected, currentTranscript,
     messages, currentPlan, activeLocalModel, activeCloudModel, activeProvider,
     tokenUsage, globalSessionTokens, taskPaused, isOverlayMode, snapAlign,
-    setVoiceState, addMessage,
+    setVoiceState, addMessage, setTranscript,
     tabs, activeThreadId, addTab, removeTab, setActiveThreadId
   } = useAssistantStore();
 
@@ -218,7 +218,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     wsClient.send("user_message", { text: msg, source: "voice", thread_id: activeThreadId });
     setTextInput("");
     setVoiceState("processing");
-  }, [isConnected, setVoiceState, addMessage, activeThreadId]);
+    setTranscript(null);
+  }, [isConnected, setVoiceState, addMessage, activeThreadId, setTranscript]);
 
   const handleTextSend = useCallback(() => {
     const msg = textInput.trim();
@@ -248,7 +249,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         } else {
           setVoiceState("idle");
         }
-      }, (currentTranscript && currentTranscript.trim()) ? 1500 : 10000); // 10s wait for STT lag after wake word, 1.5s for snappy speech silence!
+      }, (currentTranscript && currentTranscript.trim()) ? 3000 : 10000); // 10s wait for STT lag after wake word, 3.0s for natural narration pauses!
     } else {
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);

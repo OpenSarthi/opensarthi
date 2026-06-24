@@ -99,7 +99,7 @@ class VoicePipeline:
         try:
             with sr.Microphone() as source:
                 while self.is_listening:
-                    if self.is_speaking or (time.time() - getattr(self, 'last_speech_stop_time', 0.0) < 1.5):
+                    if self.is_speaking or (time.time() - getattr(self, 'last_speech_stop_time', 0.0) < 2.0):
                         # Empty queue continuously during active speech and cooldown period
                         while not self.audio_queue.empty():
                             try:
@@ -112,7 +112,7 @@ class VoicePipeline:
                         # Listen for audio phrase
                         audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=8)
                         # Re-verify that speaking/cooldown didn't trigger while listening
-                        if not self.is_speaking and (time.time() - getattr(self, 'last_speech_stop_time', 0.0) >= 1.5):
+                        if not self.is_speaking and (time.time() - getattr(self, 'last_speech_stop_time', 0.0) >= 2.0):
                             self.audio_queue.put(audio)
                     except sr.WaitTimeoutError:
                         continue
@@ -146,7 +146,7 @@ class VoicePipeline:
             while self.is_listening:
                 while not self.audio_queue.empty():
                     audio = self.audio_queue.get()
-                    if self.is_speaking or (time.time() - getattr(self, 'last_speech_stop_time', 0.0) < 1.5):
+                    if self.is_speaking or (time.time() - getattr(self, 'last_speech_stop_time', 0.0) < 2.0):
                         continue
                     try:
                         # Convert audio to numpy float32 array at 16kHz
@@ -286,6 +286,7 @@ class VoicePipeline:
                     
                     # Instantly terminate any active audio players to interrupt speech immediately
                     self.stop_speaking()
+                    self.is_speaking = True  # Restore speaking state for the new stream
 
                     # Generate new unique playback ID to isolate this speech run and prevent overlaps
                     playback_id = str(uuid.uuid4())
