@@ -96,37 +96,98 @@ class VoicePipeline:
             logger.error(f"Could not pre-load STT model: {e}")
 
     def _listen_worker(self):
+        import pyaudio
+        p = pyaudio.PyAudio()
+
+        FORMAT = pyaudio.paInt16
+        CHANNELS = 1
+        RATE = 16000
+        CHUNK = 512  # 32ms frames @ 16kHz
+
+        from voice.vad import SileroVAD
+        vad = SileroVAD(sample_rate=RATE, threshold=0.45)
+
         try:
-            with sr.Microphone() as source:
-                while self.is_listening:
-                    if self.is_speaking or (time.time() - getattr(self, 'last_speech_stop_time', 0.0) < 2.0):
-                        # Empty queue continuously during active speech and cooldown period
-                        while not self.audio_queue.empty():
-                            try:
-                                self.audio_queue.get_nowait()
-                            except Exception:
-                                pass
-                        time.sleep(0.1)
-                        continue
-                    try:
-                        # Listen for audio phrase
-                        audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=8)
-                        # Re-verify that speaking/cooldown didn't trigger while listening
-                        if not self.is_speaking and (time.time() - getattr(self, 'last_speech_stop_time', 0.0) >= 2.0):
-                            self.audio_queue.put(audio)
-                    except sr.WaitTimeoutError:
-                        continue
-                    except Exception as e:
-                        logger.error(f"Mic error: {e}")
-                        time.sleep(1)
+            stream = p.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                input=True,
+                frames_per_buffer=CHUNK
+            )
         except Exception as e:
-            logger.error(f"Failed to open microphone: {e}")
+            logger.error("Failed to open microphone stream", error=str(e))
+            p.terminate()
+            return
+
+        logger.info("Microphone stream opened successfully for VAD listening")
+
+        voiced_frames = []
+        silence_frames = 0
+        is_speaking = False
+
+        # 1.2 seconds of silence to detect end of speech
+        SILENCE_LIMIT = int(1.2 * RATE / CHUNK)
+        # Minimum speech frames (approx 200ms) to filter out clicks
+        MIN_SPEECH_LIMIT = int(0.20 * RATE / CHUNK)
+
+        try:
+            while self.is_listening:
+                # Do not listen if actively speaking or in the post-speaking cooldown
+                if self.is_speaking or (time.time() - getattr(self, 'last_speech_stop_time', 0.0) < 1.5):
+                    # Clear buffer to avoid processing old echo
+                    voiced_frames = []
+                    is_speaking = False
+                    silence_frames = 0
+                    time.sleep(0.05)
+                    continue
+
+                try:
+                    data = stream.read(CHUNK, exception_on_overflow=False)
+                except Exception as e:
+                    logger.warning("Error reading audio frame", error=str(e))
+                    continue
+
+                audio_frame = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32767.0
+                is_voiced = vad.is_speech(audio_frame)
+
+                if is_voiced:
+                    voiced_frames.append(audio_frame)
+                    silence_frames = 0
+                    if not is_speaking and len(voiced_frames) >= MIN_SPEECH_LIMIT:
+                        is_speaking = True
+                        logger.debug("VAD: Speech started")
+                else:
+                    if is_speaking:
+                        voiced_frames.append(audio_frame)
+                        silence_frames += 1
+                        if silence_frames >= SILENCE_LIMIT:
+                            logger.debug("VAD: Speech ended, yielding audio")
+                            audio_data = np.concatenate(voiced_frames)
+                            self.audio_queue.put(audio_data)
+
+                            voiced_frames = []
+                            is_speaking = False
+                            silence_frames = 0
+                    else:
+                        # Maintain a tiny history of pre-speech frames to avoid clipping the first word
+                        voiced_frames.append(audio_frame)
+                        if len(voiced_frames) > 6:
+                            voiced_frames.pop(0)
+        except Exception as e:
+            logger.error("VAD listening loop exception", error=str(e))
         finally:
-            logger.info("Mic listening thread exiting")
+            try:
+                stream.stop_stream()
+                stream.close()
+            except Exception:
+                pass
+            p.terminate()
+            logger.info("VAD listening thread exited")
 
     async def start_listening(self) -> AsyncGenerator[str, None]:
         self.is_listening = True
-        logger.info("Started native Python listening")
+        logger.info("Started native Python VAD listening")
         
         # Clear queue on startup
         while not self.audio_queue.empty():
@@ -138,37 +199,32 @@ class VoicePipeline:
         if self.listen_thread is None or not self.listen_thread.is_alive():
             self.listen_thread = threading.Thread(target=self._listen_worker, daemon=True)
             self.listen_thread.start()
-            logger.info("Spawned new mic listening thread")
+            logger.info("Spawned new VAD mic listening thread")
         else:
-            logger.info("Reusing existing active mic listening thread")
+            logger.info("Reusing existing VAD mic listening thread")
         
         try:
             while self.is_listening:
                 while not self.audio_queue.empty():
-                    audio = self.audio_queue.get()
-                    if self.is_speaking or (time.time() - getattr(self, 'last_speech_stop_time', 0.0) < 2.0):
+                    audio_array = self.audio_queue.get()
+                    if self.is_speaking or (time.time() - getattr(self, 'last_speech_stop_time', 0.0) < 1.5):
                         continue
                     try:
-                        # Convert audio to numpy float32 array at 16kHz
-                        raw_data = audio.get_raw_data(convert_rate=16000, convert_width=2)
-                        audio_array = np.frombuffer(raw_data, dtype=np.int16).astype(np.float32) / 32767.0
-
-                        # Pre-screen: skip very short or very quiet audio to prevent phantom triggers
-                        # Minimum 0.4 seconds of audio at 16kHz = 6400 samples
-                        if len(audio_array) < 6400:
+                        # audio_array is already a numpy float32 array
+                        if len(audio_array) < 6400:  # Minimum 0.4s
                             continue
                         rms = float(np.sqrt(np.mean(audio_array ** 2)))
-                        if rms < 0.008:  # Very quiet — likely ambient noise or silence
+                        if rms < 0.008:
                             continue
 
                         loop = asyncio.get_running_loop()
                         text, confidence, engine = await loop.run_in_executor(None, self.stt.transcribe, audio_array)
 
                         if text:
-                            # Reject single-word transcripts shorter than 2 chars (noise artifacts)
+                            # Reject short noise artifacts
                             words = text.split()
                             if len(words) == 1 and len(words[0]) <= 2:
-                                logger.debug(f"STT [{engine}] rejected short noise artifact: '{text}'")
+                                logger.debug(f"STT [{engine}] rejected short noise: '{text}'")
                                 continue
                             logger.info(f"STT [{engine}] transcribed: {text}")
                             yield text
