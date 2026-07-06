@@ -137,6 +137,48 @@ const sectionStyle: React.CSSProperties = {
   gap: "12px",
 };
 
+function Toggle({ id, checked, onChange, label, sublabel }: { id: string; checked: boolean; onChange: (v: boolean) => void; label: string; sublabel?: string }) {
+  return (
+    <div
+      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", cursor: "pointer" }}
+      onClick={() => onChange(!checked)}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+        <label htmlFor={id} style={{ ...labelStyle, marginBottom: 0, cursor: "pointer" }}>{label}</label>
+        {sublabel && <span style={{ fontSize: "10px", color: "var(--text-muted)", letterSpacing: "0.04em" }}>{sublabel}</span>}
+      </div>
+      <div
+        id={id}
+        style={{
+          width: "42px",
+          height: "24px",
+          borderRadius: "12px",
+          background: checked ? "var(--accent)" : "rgba(255,255,255,0.08)",
+          border: `1.5px solid ${checked ? "var(--border-accent)" : "var(--border)"}`,
+          position: "relative",
+          flexShrink: 0,
+          transition: "background 0.22s, border-color 0.22s, box-shadow 0.22s",
+          boxShadow: checked ? "0 0 10px var(--accent-glow)" : "none",
+        }}
+      >
+        <div
+          style={{
+            width: "16px",
+            height: "16px",
+            borderRadius: "50%",
+            background: checked ? "#000" : "var(--text-muted)",
+            position: "absolute",
+            top: "3px",
+            left: checked ? "21px" : "3px",
+            transition: "left 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s",
+            boxShadow: checked ? "0 1px 4px rgba(0,0,0,0.4)" : "none",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
     <h3 style={{ fontSize: "11px", color: "var(--text-secondary)", letterSpacing: "0.05em", margin: 0, display: "flex", alignItems: "center", gap: "6px" }}>
@@ -463,14 +505,16 @@ export function SettingsView({
               <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
                 <label style={labelStyle}>ACTIVE STYLING MATRIX</label>
                 <select value={theme} onChange={(e) => setTheme(e.target.value)} style={selectStyle}>
-                  <option value="theme-red-black">🔴 Dark Crimson (HUD Default)</option>
+                  <option value="theme-green-black">🟢 Matrix Green (Default)</option>
+                  <option value="theme-red-black">🔴 Dark Crimson (HUD)</option>
                   <option value="theme-mono-dark">⚫ Mono Dark (Black &amp; White)</option>
-                  <option value="theme-green-black">🟢 Dark Forest (Matrix Green)</option>
                   <option value="theme-purple-black">🟣 Dark Nebula (Cyberpunk Purple)</option>
                   <option value="theme-blue-black">🌊 Dark Ocean (Neon Cyan)</option>
                   <option value="theme-light-sakura">🌸 Light Sakura (Pink &amp; White)</option>
                   <option value="theme-light-slate">🏙️ Light Slate (Sky Blue &amp; Gray)</option>
                   <option value="theme-light-clean">⬜ Light Clean (Pure White)</option>
+                  <option value="theme-multicolor-dark">🌌 Cyberpunk Neon (Multicolor Dark)</option>
+                  <option value="theme-multicolor-light">🌈 Vivid Rainbow (Multicolor Light)</option>
                 </select>
               </div>
             </div>
@@ -517,34 +561,23 @@ export function SettingsView({
                 </div>
               </div>
 
-              {/* Continuous Listening Toggle */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "4px", paddingBottom: "12px", borderBottom: "1px dashed rgba(255,255,255,0.07)" }}>
-                <label style={{ ...labelStyle, marginBottom: 0, cursor: "pointer" }} htmlFor="continuous-listening">
-                  CONTINUOUS BACKGROUND LISTENING
-                </label>
-                <input
-                  id="continuous-listening"
-                  type="checkbox"
-                  checked={continuousListening}
-                  onChange={(e) => setContinuousListening(e.target.checked)}
-                  style={{ width: "16px", height: "16px", accentColor: "var(--accent)", cursor: "pointer" }}
-                />
-              </div>
+              <Toggle
+                id="continuous-listening"
+                checked={continuousListening}
+                onChange={setContinuousListening}
+                label="CONTINUOUS BACKGROUND LISTENING"
+                sublabel="Listens continuously after wake word — no gaps"
+              />
 
               {/* Wake Word Detection Options */}
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "4px", paddingTop: "12px", borderTop: "1px dashed rgba(255,255,255,0.07)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <label style={{ ...labelStyle, marginBottom: 0, cursor: "pointer" }} htmlFor="wake-word-enabled">
-                    ENABLE WAKE WORD DETECTION
-                  </label>
-                  <input
+                <Toggle
                     id="wake-word-enabled"
-                    type="checkbox"
                     checked={wakeWordEnabled}
-                    onChange={(e) => setWakeWordEnabled(e.target.checked)}
-                    style={{ width: "16px", height: "16px", accentColor: "var(--accent)", cursor: "pointer" }}
+                    onChange={setWakeWordEnabled}
+                    label="ENABLE WAKE WORD DETECTION"
+                    sublabel='Say "hey sarthi" to activate'
                   />
-                </div>
 
                 {wakeWordEnabled && (
                   <>

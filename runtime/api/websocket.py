@@ -43,6 +43,7 @@ class Session:
         self._active_runtimes = {}
         self._message_tasks = {}
         self._orchestrators = {}
+        self._paused_threads: dict[str, asyncio.Event] = {}
         # Separate futures for permission vs text input to avoid collision
         self._pending_permissions: dict = {}  # thread_id -> asyncio.Future
         self._pending_inputs: dict = {}       # thread_id -> asyncio.Future
@@ -69,6 +70,11 @@ class Session:
             await self.ws.send_json(msg)
         except Exception as e:
             logger.warning("Failed to send websocket message (client probably disconnected)", error=str(e), msg_type=msg_type)
+
+    async def check_pause(self, thread_id: str):
+        """Await if the thread is currently paused."""
+        if thread_id in self._paused_threads:
+            await self._paused_threads[thread_id].wait()
 
     async def accumulate_and_update_tokens(self, usage, thread_id: str = None):
         if not usage:
@@ -426,6 +432,8 @@ class Session:
                     raise e
             else:
                 logger.info("Routing to TASK planner", thread_id=tid)
+                self._paused_threads[tid] = asyncio.Event()
+                self._paused_threads[tid].set()  # Initial state: running (unpaused)
                 from memory import MemoryManager
                 memory_manager = MemoryManager(tid)
 
@@ -592,10 +600,13 @@ class Session:
             logger.info("Created new chat thread", thread_id=new_tid)
         elif msg_type == "cancel_execution":
             thread_id = payload.get("thread_id") or self.thread_id
+            # Cancel legacy AgentRuntime path
             if thread_id in self._active_runtimes:
                 self._active_runtimes[thread_id].request_cancel()
+            # Cancel LangGraph / message task path (covers both USE_LANGGRAPH=true and false)
             if thread_id in self._message_tasks and not self._message_tasks[thread_id].done():
                 self._message_tasks[thread_id].cancel()
+                logger.info("Cancelled message task for thread", thread_id=thread_id)
             await self.send_message("agent_state", {
                 "state": "idle",
                 "goal": None,
@@ -608,18 +619,24 @@ class Session:
             manager.sync_notification_state()
         elif msg_type == "pause_execution":
             thread_id = payload.get("thread_id") or self.thread_id
+            if thread_id not in self._paused_threads:
+                self._paused_threads[thread_id] = asyncio.Event()
+            self._paused_threads[thread_id].clear()  # clearing event pauses execution
             if thread_id in self._active_runtimes:
                 self._active_runtimes[thread_id].pause()
-                await self.send_message("task_paused", {}, thread_id=thread_id)
-                logger.info("Task execution paused", thread_id=thread_id)
-                manager.sync_notification_state()
+            await self.send_message("task_paused", {}, thread_id=thread_id)
+            logger.info("Task execution paused", thread_id=thread_id)
+            manager.sync_notification_state()
         elif msg_type == "resume_execution":
             thread_id = payload.get("thread_id") or self.thread_id
+            if thread_id not in self._paused_threads:
+                self._paused_threads[thread_id] = asyncio.Event()
+            self._paused_threads[thread_id].set()  # setting event resumes execution
             if thread_id in self._active_runtimes:
                 self._active_runtimes[thread_id].resume()
-                await self.send_message("task_resumed", {}, thread_id=thread_id)
-                logger.info("Task execution resumed", thread_id=thread_id)
-                manager.sync_notification_state()
+            await self.send_message("task_resumed", {}, thread_id=thread_id)
+            logger.info("Task execution resumed", thread_id=thread_id)
+            manager.sync_notification_state()
         elif msg_type == "permission_response":
             tid = payload.get("thread_id") or self.thread_id
             if tid in self._pending_permissions and not self._pending_permissions[tid].done():
@@ -832,7 +849,7 @@ class ConnectionManager:
             "voice_accent": settings.voice_accent,
             "voice_speed": settings.voice_speed,
             "continuous_listening": settings.continuous_listening,
-            "active_theme": getattr(settings, "active_theme", "theme-red-black"),
+            "active_theme": getattr(settings, "active_theme", "theme-green-black"),
             "wake_words": getattr(settings, "wake_words", ["hey sarthi", "hello sarthi"]),
             "wake_word_enabled": getattr(settings, "wake_word_enabled", True),
             "wake_word_threshold": getattr(settings, "wake_word_threshold", 0.5),

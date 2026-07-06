@@ -100,6 +100,8 @@ interface AssistantState {
   executingStepIndex: number | null;
   taskPaused: boolean;
   isOverlayMode: boolean;
+  userOverrodeMinimize: boolean;
+  setUserOverrodeMinimize: (val: boolean) => void;
   snapAlign: "left" | "right" | "none";
 
   // Model settings
@@ -189,6 +191,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   executingStepIndex: null,
   taskPaused: false,
   isOverlayMode: false,
+  userOverrodeMinimize: false,
   snapAlign: "right",
   activeLocalModel: "qwen2.5-coder:3b",
   activeCloudModel: "gemini-2.5-flash",
@@ -199,10 +202,10 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   anthropicApiKey: "",
   groqApiKey: "",
   openrouterApiKey: "",
-  activeTheme: "theme-red-black",
+  activeTheme: "theme-green-black",
   voiceAccent: "ie",
   voiceSpeed: 1.35,
-  continuousListening: false,
+  continuousListening: true,
   wakeWords: ["hey sarthi", "hello sarthi"],
   wakeWordEnabled: true,
   wakeWordThreshold: 0.5,
@@ -674,6 +677,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   }),
 
   setOverlayMode: (isOverlayMode) => set({ isOverlayMode }),
+  setUserOverrodeMinimize: (userOverrodeMinimize) => set({ userOverrodeMinimize }),
   setSnapAlign: (snapAlign) => set({ snapAlign }),
 
   appendShellOutputLine: (line) => set((s) => ({
