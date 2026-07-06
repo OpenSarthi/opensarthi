@@ -100,6 +100,8 @@ export function useWebSocket(port: number | null) {
       wsClient.on("plan_created", (msg) => {
         const { thread_id } = msg.payload as { thread_id?: string };
         const plan = PlanSchema.parse(msg.payload);
+        const store = useAssistantStore.getState();
+        store.setUserOverrodeMinimize(false);
         setPlan(plan, thread_id);
         setVoiceState("processing");
       }),
@@ -303,6 +305,45 @@ export function useWebSocket(port: number | null) {
           total_tokens,
           delta_total_tokens,
         });
+      }),
+
+      // Smart minimize: AI signals that screen access is needed, auto-minimize if user hasn't overridden
+      wsClient.on("window_control", (msg) => {
+        const { action } = msg.payload as { action: string; reason?: string };
+        const store = useAssistantStore.getState();
+        if (action === "minimize_hint") {
+          // Only auto-minimize if the user hasn't manually set their preference this task
+          if (!store.isOverlayMode && !store.userOverrodeMinimize) {
+            store.setOverlayMode(true);
+          }
+        } else if (action === "restore_hint") {
+          // Optionally restore when non-screen tasks start if user hasn't manually set overlay preference
+          if (store.isOverlayMode && !store.userOverrodeMinimize) {
+            store.setOverlayMode(false);
+          }
+        }
+      }),
+
+      // Streaming text response chunks
+      wsClient.on("stream_chunk", (msg) => {
+        const { chunk, thread_id } = msg.payload as { chunk: string; thread_id?: string };
+        const store = useAssistantStore.getState();
+        const tid = thread_id || store.activeThreadId;
+        // Append chunk to the last assistant message if streaming, or update transcript
+        store.setTranscript((store.currentTranscript || "") + chunk);
+        // Store in streaming buffer for the tab
+        if (!(store as any)._streamBuffer) (store as any)._streamBuffer = {};
+        (store as any)._streamBuffer[tid] = ((store as any)._streamBuffer[tid] || "") + chunk;
+      }),
+
+      wsClient.on("stream_end", (msg) => {
+        const { thread_id } = msg.payload as { thread_id?: string };
+        const store = useAssistantStore.getState();
+        const tid = thread_id || store.activeThreadId;
+        // Clear the streaming buffer
+        if ((store as any)._streamBuffer) {
+          delete (store as any)._streamBuffer[tid];
+        }
       }),
     ];
 

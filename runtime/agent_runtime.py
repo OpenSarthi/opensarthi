@@ -850,6 +850,30 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
                 self.cumulative_steps[index]["error"] = err_res.error
             return err_res
 
+        # ── Smart minimize hint for legacy path ──
+        SCREEN_TOOLS = {
+            "click", "type_text", "press_key", "click_element", "focus_window",
+            "observe_desktop", "wait_for_window", "wait_for_text", "open_app",
+            "scroll", "drag", "right_click", "double_click", "screenshot",
+        }
+        NON_SCREEN_TOOLS = {
+            "shell", "read_file", "write_file", "append_file", "delete_file",
+            "list_dir", "web_search", "open_url", "python_eval",
+        }
+
+        if self.ws:
+            if step.tool in SCREEN_TOOLS:
+                await self.ws.send_message("window_control", {
+                    "action": "minimize_hint",
+                    "reason": f"Tool '{step.tool}' requires screen access",
+                    "tool": step.tool,
+                })
+            elif step.tool in NON_SCREEN_TOOLS:
+                await self.ws.send_message("window_control", {
+                    "action": "restore_hint",
+                    "tool": step.tool,
+                })
+
         await self.ws.send_message("tool_action", {
             "tool": step.tool,
             "description": step.description,
