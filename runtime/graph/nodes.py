@@ -224,6 +224,30 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
             "cumulative_steps": updated_steps,
         }
 
+    # ── Smart minimize: signal frontend to minimize for screen-interaction tools ──
+    SCREEN_TOOLS = {
+        "click", "type_text", "press_key", "click_element", "focus_window",
+        "observe_desktop", "wait_for_window", "wait_for_text", "open_app",
+        "scroll", "drag", "right_click", "double_click", "screenshot",
+    }
+    NON_SCREEN_TOOLS = {
+        "shell", "read_file", "write_file", "append_file", "delete_file",
+        "list_dir", "web_search", "open_url", "python_eval",
+    }
+
+    if ws:
+        if step.tool in SCREEN_TOOLS:
+            await ws.send_message("window_control", {
+                "action": "minimize_hint",
+                "reason": f"Tool '{step.tool}' requires screen access",
+                "tool": step.tool,
+            })
+        elif step.tool in NON_SCREEN_TOOLS:
+            await ws.send_message("window_control", {
+                "action": "restore_hint",
+                "tool": step.tool,
+            })
+
     if ws:
         await ws.send_message("tool_started", {
             "index": cumulative_idx, "tool": step.tool,
@@ -238,6 +262,10 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
     updated_steps = list(state.cumulative_steps)
     if cumulative_idx < len(updated_steps):
         updated_steps[cumulative_idx] = {**updated_steps[cumulative_idx], "status": "running"}
+
+    # Check if thread is currently paused before running the tool
+    if ws and hasattr(ws, "check_pause"):
+        await ws.check_pause(state.thread_id)
 
     try:
         res = await tool.safe_execute(step.args, permission_manager=ws)

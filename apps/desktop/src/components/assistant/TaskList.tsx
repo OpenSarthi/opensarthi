@@ -84,6 +84,7 @@ export function TaskList({
 
   const taskPaused = useAssistantStore((s) => s.taskPaused);
   const shellOutputLines = useAssistantStore((s) => s.shellOutputLines);
+  const activeThreadId = useAssistantStore((s) => s.activeThreadId);
 
   const shellEndRef = useRef<HTMLDivElement>(null);
 
@@ -268,7 +269,7 @@ export function TaskList({
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.8 }}
                         transition={{ duration: 0.15 }}
-                        onClick={() => wsClient.send("resume_execution", {})}
+                        onClick={() => wsClient.send("resume_execution", { thread_id: activeThreadId })}
                         title="Resume Task"
                         style={{
                           display: "flex", alignItems: "center", gap: "4px",
@@ -288,7 +289,7 @@ export function TaskList({
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.8 }}
                         transition={{ duration: 0.15 }}
-                        onClick={() => wsClient.send("pause_execution", {})}
+                        onClick={() => wsClient.send("pause_execution", { thread_id: activeThreadId })}
                         title="Pause Task"
                         style={{
                           display: "flex", alignItems: "center", gap: "4px",
@@ -304,7 +305,7 @@ export function TaskList({
                     )}
                   </AnimatePresence>
                   <button
-                    onClick={() => wsClient.send("cancel_execution", {})}
+                    onClick={() => wsClient.send("cancel_execution", { thread_id: activeThreadId })}
                     title="Stop Task"
                     style={{
                       display: "flex", alignItems: "center", gap: "4px",

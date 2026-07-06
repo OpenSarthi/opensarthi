@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2 } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square } from "lucide-react";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
@@ -43,9 +43,11 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const {
     voiceState, isConnected, currentTranscript,
     messages, currentPlan, activeLocalModel, activeCloudModel, activeProvider,
-    tokenUsage, globalSessionTokens, taskPaused, isOverlayMode, snapAlign,
+    tokenUsage, globalSessionTokens, taskPaused, isOverlayMode, setOverlayMode, snapAlign,
+    continuousListening,
     setVoiceState, addMessage, setTranscript,
-    tabs, activeThreadId, addTab, removeTab, setActiveThreadId
+    tabs, activeThreadId, addTab, removeTab, setActiveThreadId,
+    userOverrodeMinimize, setUserOverrodeMinimize
   } = useAssistantStore();
 
   const modelKey = activeProvider === "ollama" || activeProvider === "local" ? activeLocalModel : activeCloudModel;
@@ -161,7 +163,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         });
         setRightWidth(prev => {
           const next = Math.round(prev * ratio);
-          return Math.max(230, Math.min(next, 300));
+          return Math.max(230, Math.min(next, 320));
         });
       } else {
         setLeftWidth(Math.max(260, Math.min(Math.floor(w * 0.23), 320)));
@@ -247,9 +249,12 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         if (finalMsg) {
           handleVoiceSend(finalMsg);
         } else {
-          setVoiceState("idle");
+          // If continuous listening is enabled, do NOT go back to idle; stay ready for voice input
+          if (!continuousListening) {
+            setVoiceState("idle");
+          }
         }
-      }, (currentTranscript && currentTranscript.trim()) ? 3000 : 10000); // 10s wait for STT lag after wake word, 3.0s for natural narration pauses!
+      }, (currentTranscript && currentTranscript.trim()) ? 3000 : 5000); // 5s wait for STT lag after wake word, 3.0s for natural narration pauses!
     } else {
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);
@@ -337,6 +342,18 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
   const activeTab = tabs.find((t) => t.id === activeThreadId);
   const isTaskRunning = !!activeTab?.currentPlan;
+
+  // Handle stop task action (replaces send button when task is running)
+  const handleStopTask = useCallback(() => {
+    wsClient.send("cancel_execution", { thread_id: activeThreadId });
+  }, [activeThreadId]);
+
+  // Reset user override when a new task starts
+  useEffect(() => {
+    if (isTaskRunning) {
+      setUserOverrodeMinimize(false);
+    }
+  }, [isTaskRunning]);
 
   const STATUS_LINES = [
     "SYSTEM READY",
@@ -463,7 +480,11 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           >
             {/* Expand button */}
             <button
-              onClick={() => useAssistantStore.getState().setOverlayMode(false)}
+              onClick={() => {
+                setOverlayMode(false);
+                setUserOverrodeMinimize(true);
+                console.log("[Overlay] User manual expand, override active:", userOverrodeMinimize);
+              }}
               title="Expand to Full View"
               style={{
                 width: "26px", height: "26px",
@@ -812,7 +833,10 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
           {/* Minimise to Sidebar Button */}
           <motion.button
-            onClick={() => useAssistantStore.getState().setOverlayMode(true)}
+            onClick={() => {
+              setOverlayMode(true);
+              setUserOverrodeMinimize(true);
+            }}
             title="Minimise to Sidebar Overlay"
             whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
             whileTap={{ scale: 0.95 }}
@@ -1279,48 +1303,78 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 <Waveform voiceState={voiceState} />
                 <input
                   id="sarthi-text-input"
-                  value={textInput}
-                  onChange={(e) => setTextInput(e.target.value)}
+                  value={isTaskRunning ? "" : textInput}
+                  onChange={(e) => !isTaskRunning && setTextInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={!isConnected ? "CONNECTING..." : isTaskRunning ? "TASK RUNNING..." : "ENTER COMMAND..."}
-                  disabled={!isConnected || isTaskRunning}
+                  placeholder={!isConnected ? "CONNECTING..." : isTaskRunning ? "▶ TASK RUNNING — CLICK ■ TO STOP" : "ENTER COMMAND..."}
+                  disabled={!isConnected}
                   style={{
-                    flex: 1, background: "transparent", border: "none", borderBottom: "1px solid var(--border-accent)",
-                    color: "var(--text-primary)", fontSize: "14px", fontFamily: "var(--font-mono)",
+                    flex: 1, background: "transparent", border: "none", borderBottom: `1px solid ${isTaskRunning ? "rgba(255,60,60,0.4)" : "var(--border-accent)"}`,
+                    color: isTaskRunning ? "rgba(255,100,100,0.6)" : "var(--text-primary)", fontSize: "14px", fontFamily: "var(--font-mono)",
                     padding: "8px 4px", outline: "none",
-                    opacity: isTaskRunning ? 0.4 : 1,
+                    cursor: isTaskRunning ? "default" : "text",
                   }}
                 />
-                <motion.button
-                  onClick={handleTextSend}
-                  disabled={!textInput.trim() || !isConnected || isTaskRunning}
-                  whileHover={textInput.trim() && isConnected && !isTaskRunning ? { scale: 1.08, boxShadow: "0 0 10px var(--accent)" } : {}}
-                  whileTap={textInput.trim() && isConnected && !isTaskRunning ? { scale: 0.94 } : {}}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: "38px",
-                    height: "38px",
-                    borderRadius: "50%",
-                    background: textInput.trim() && isConnected && !isTaskRunning ? "var(--accent)" : "rgba(255,255,255,0.05)",
-                    color: textInput.trim() && isConnected && !isTaskRunning ? "#000" : "var(--text-muted)",
-                    border: `1.5px solid ${textInput.trim() && isConnected && !isTaskRunning ? "var(--accent)" : "var(--border)"}`,
-                    transition: "background 0.2s, color 0.2s, border-color 0.2s",
-                    cursor: (!textInput.trim() || !isConnected || isTaskRunning) ? "not-allowed" : "pointer",
-                    position: "relative",
-                    overflow: "hidden",
-                    flexShrink: 0,
-                  }}
-                >
-                  <motion.div
-                    animate={textInput.trim() && isConnected && !isTaskRunning ? { x: [0, 2, 0], y: [0, -2, 0] } : {}}
-                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+                {isTaskRunning ? (
+                  // STOP button — shown when task is running
+                  <motion.button
+                    id="sarthi-stop-btn"
+                    onClick={handleStopTask}
+                    animate={{ boxShadow: ["0 0 0px rgba(255,60,60,0)", "0 0 12px rgba(255,60,60,0.7)", "0 0 0px rgba(255,60,60,0)"] }}
+                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.92 }}
+                    title="Stop Task"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "38px",
+                      height: "38px",
+                      borderRadius: "50%",
+                      background: "rgba(255,40,40,0.15)",
+                      color: "#ff4444",
+                      border: "1.5px solid rgba(255,60,60,0.5)",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
                   >
-                    <Send size={15} style={{ transform: "rotate(-15deg)" }} />
-                  </motion.div>
-                </motion.button>
+                    <Square size={14} fill="#ff4444" />
+                  </motion.button>
+                ) : (
+                  // SEND button — shown normally
+                  <motion.button
+                    id="sarthi-send-btn"
+                    onClick={handleTextSend}
+                    disabled={!textInput.trim() || !isConnected}
+                    whileHover={textInput.trim() && isConnected ? { scale: 1.08, boxShadow: "0 0 10px var(--accent)" } : {}}
+                    whileTap={textInput.trim() && isConnected ? { scale: 0.94 } : {}}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "38px",
+                      height: "38px",
+                      borderRadius: "50%",
+                      background: textInput.trim() && isConnected ? "var(--accent)" : "rgba(255,255,255,0.05)",
+                      color: textInput.trim() && isConnected ? "#000" : "var(--text-muted)",
+                      border: `1.5px solid ${textInput.trim() && isConnected ? "var(--accent)" : "var(--border)"}`,
+                      transition: "background 0.2s, color 0.2s, border-color 0.2s",
+                      cursor: (!textInput.trim() || !isConnected) ? "not-allowed" : "pointer",
+                      position: "relative",
+                      overflow: "hidden",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <motion.div
+                      animate={textInput.trim() && isConnected ? { x: [0, 2, 0], y: [0, -2, 0] } : {}}
+                      transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >
+                      <Send size={15} style={{ transform: "rotate(-15deg)" }} />
+                    </motion.div>
+                  </motion.button>
+                )}
               </div>
             </div>
           </div>
