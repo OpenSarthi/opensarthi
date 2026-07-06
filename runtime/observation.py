@@ -27,6 +27,7 @@ class DesktopSnapshot:
     screen_text_summary: Optional[str] = None   # OCR on visible area
     accessibility_tree: Optional[dict] = None    # AT-SPI tree (when available)
     screenshot_path: Optional[str] = None        # Saved to temp dir for LLM vision
+    screenshot_base64: Optional[str] = None      # Base64 representation of desktop screenshot
     error: Optional[str] = None
 
     def to_prompt_context(self) -> str:
@@ -60,6 +61,23 @@ class DesktopObserver:
         # Execute unified observer pipeline
         obs_res = await self._pipeline.observe()
         snap.active_window_title = obs_res.active_window
+
+        # Encode screenshot to base64 if available
+        if obs_res.screenshot_bytes:
+            import base64
+            snap.screenshot_base64 = base64.b64encode(obs_res.screenshot_bytes).decode("utf-8")
+            
+            # Save to temporary path
+            import tempfile
+            import os
+            try:
+                temp_dir = tempfile.gettempdir()
+                screenshot_file = os.path.join(temp_dir, f"opensarthi_snap_{int(time.time())}.png")
+                with open(screenshot_file, "wb") as f:
+                    f.write(obs_res.screenshot_bytes)
+                snap.screenshot_path = screenshot_file
+            except Exception:
+                pass
 
         # 2. AT-SPI focused element (primary — fast, Linux only)
         if self._a11y.available:
