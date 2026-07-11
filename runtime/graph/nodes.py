@@ -237,16 +237,11 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
 
     if ws:
         if step.tool in SCREEN_TOOLS:
-            await ws.send_message("window_control", {
-                "action": "minimize_hint",
-                "reason": f"Tool '{step.tool}' requires screen access",
-                "tool": step.tool,
-            })
+            # Per-step hint removed — overlay controlled at plan level in plan_node
+            pass
         elif step.tool in NON_SCREEN_TOOLS:
-            await ws.send_message("window_control", {
-                "action": "restore_hint",
-                "tool": step.tool,
-            })
+            # No mid-task restore — window stays in overlay until task completes
+            pass
 
     if ws:
         await ws.send_message("tool_started", {
@@ -459,6 +454,14 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
             source="agent",
             importance=0.9,
         ))
+
+    ws = config["configurable"].get("ws_handler")
+    # Restore window overlay after task completes
+    if ws:
+        try:
+            await ws.send_message("window_control", {"action": "restore_hint"})
+        except Exception:
+            pass
 
     return {"final_response": state.final_response or "Task completed successfully."}
 

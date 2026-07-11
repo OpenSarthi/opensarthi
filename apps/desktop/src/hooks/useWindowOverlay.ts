@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useAssistantStore } from "../stores/assistantStore";
 
 export function useWindowOverlay() {
-  const { isOverlayMode, setOverlayMode, currentPlan, setSnapAlign } = useAssistantStore();
-  const [prevTaskRunning, setPrevTaskRunning] = useState(false);
+  const { isOverlayMode, setOverlayMode, setSnapAlign } = useAssistantStore();
 
   const originalSize = useRef<{ width: number; height: number } | null>(null);
   const originalPos = useRef<{ x: number; y: number } | null>(null);
@@ -15,36 +14,12 @@ export function useWindowOverlay() {
   // It resets when a genuinely new task starts from idle.
   const userExpandedDuringTask = useRef(false);
 
-  // ── Auto-collapse / restore effect ────────────────────────────────────────
-  useEffect(() => {
-    const isTaskRunning = !!currentPlan;
-
-    // Detect a genuinely new task starting from idle
-    if (isTaskRunning && !prevTaskRunning) {
-      // Fresh task → clear the user-override so we auto-collapse again
-      userExpandedDuringTask.current = false;
-    }
-
-    if (isTaskRunning && !userExpandedDuringTask.current) {
-      // Auto-collapse — unless user already manually expanded this task
-      if (!isOverlayMode) {
-        setOverlayMode(true);
-      }
-    } else if (!isTaskRunning && prevTaskRunning) {
-      // Task just finished → always restore to full window
-      userExpandedDuringTask.current = false;
-      if (isOverlayMode) {
-        setOverlayMode(false);
-      }
-    }
-
-    setPrevTaskRunning(isTaskRunning);
-  }, [currentPlan, isOverlayMode, prevTaskRunning, setOverlayMode]);
+  // ── Auto-collapse effect removed — overlay is now controlled purely via agent minimize/restore hints or user clicks ──
 
   // ── Window sizing / positioning when overlay mode changes ─────────────────
   useEffect(() => {
     let active = true;
-    let unlistenMoved: (() => void) | undefined;
+    let unsubPromise: Promise<() => void> | null = null;
 
     const handleTransition = async () => {
       try {
@@ -97,15 +72,15 @@ export function useWindowOverlay() {
 
           // Position on RIGHT edge of screen by default
           const monitorSizeLogical = monitor
-            ? monitor.size.toLogical(scale)
-            : { width: 1920, height: 1080 };
+             ? monitor.size.toLogical(scale)
+             : { width: 1920, height: 1080 };
           const defaultX = monitorSizeLogical.width - overlayWidth - 8;
           const defaultY = Math.max(40, (monitorSizeLogical.height - overlayHeight) / 2);
           await appWindow.setPosition(new LogicalPosition(defaultX, defaultY));
           setSnapAlign("right");
 
           // Edge-snapping listener while in overlay mode
-          const unsub = await appWindow.onMoved(async (event) => {
+          unsubPromise = appWindow.onMoved(async (event) => {
             if (!active) return;
             const { x, y } = event.payload; // PhysicalPosition
 
@@ -171,7 +146,6 @@ export function useWindowOverlay() {
               }
             }, 300);
           });
-          unlistenMoved = unsub;
         } else {
           // ─── Restore to Full Mode ─────────────────────────────────
           // If the task is still running, this expansion was user-initiated
@@ -228,10 +202,13 @@ export function useWindowOverlay() {
 
     return () => {
       active = false;
-      if (unlistenMoved) unlistenMoved();
+      if (unsubPromise) {
+        unsubPromise.then(unsub => unsub());
+      }
       if (snapTimerRef.current) clearTimeout(snapTimerRef.current);
     };
   }, [isOverlayMode]);
 
   return { isOverlayMode, setOverlayMode };
 }
+

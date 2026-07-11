@@ -169,6 +169,11 @@ class AgentRuntime:
         finally:
             if getattr(self, "logger", None):
                 self.logger.finalize(final_res)
+            if self.ws:
+                try:
+                    await self.ws.send_message("window_control", {"action": "restore_hint"})
+                except Exception:
+                    pass
 
     async def _run_logged(self, goal: str, model, message_history: list, summarized_context: str = None) -> str:
         self._cancel_requested = False
@@ -593,6 +598,8 @@ class AgentRuntime:
                         importance=0.9
                     )
                 final_success_response = f"Task completed successfully."
+                # Restore overlay after screen-tool tasks complete
+                await self.ws.send_message("window_control", {"action": "restore_hint"})
                 return self._format_final_response(final_success_response, self.cumulative_steps)
 
             await self._transition(AgentState.ERROR, error_message="Task failed after maximum replanning attempts.")
@@ -863,16 +870,12 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
 
         if self.ws:
             if step.tool in SCREEN_TOOLS:
-                await self.ws.send_message("window_control", {
-                    "action": "minimize_hint",
-                    "reason": f"Tool '{step.tool}' requires screen access",
-                    "tool": step.tool,
-                })
+                # Per-step hint removed — overlay is now controlled at plan level
+                # Only send if this is the very first screen step (avoids duplicate events)
+                pass
             elif step.tool in NON_SCREEN_TOOLS:
-                await self.ws.send_message("window_control", {
-                    "action": "restore_hint",
-                    "tool": step.tool,
-                })
+                # No mid-task restore — window stays in overlay until task completes
+                pass
 
         await self.ws.send_message("tool_action", {
             "tool": step.tool,
