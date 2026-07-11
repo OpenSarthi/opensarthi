@@ -62,6 +62,7 @@ async def wait_for_window(
                 return bool(stdout.decode().strip())
             else:
                 # Let's check using wmctrl if available for robust title normalization matching
+                found = False
                 if shutil.which("wmctrl"):
                     proc = await asyncio.create_subprocess_exec(
                         "wmctrl", "-l",
@@ -81,13 +82,45 @@ async def wait_for_window(
                         parts = line.split(None, 3)
                         if len(parts) >= 4:
                             w_title = parts[3]
-                            if target_norm in normalize(w_title):
-                                return True
-                            if title_contains.lower() in w_title.lower():
-                                return True
-                    return False
-                else:
-                    # Fallback to xdotool search
+                            if target_norm in normalize(w_title) or title_contains.lower() in w_title.lower():
+                                found = True
+                                break
+
+                # AT-SPI accessibility tree query fallback (works on Wayland native clients)
+                if not found:
+                    try:
+                        import gi
+                        gi.require_version("Atspi", "2.0")
+                        from gi.repository import Atspi
+                        desktop = Atspi.get_desktop(0)
+                        if desktop:
+                            target = title_contains.lower()
+                            for i in range(desktop.get_child_count()):
+                                app = desktop.get_child_at_index(i)
+                                if not app:
+                                    continue
+                                app_name = app.get_name() or ""
+                                if target in app_name.lower():
+                                    found = True
+                                    break
+                                for j in range(app.get_child_count()):
+                                    win = app.get_child_at_index(j)
+                                    if not win:
+                                        continue
+                                    win_name = win.get_name() or ""
+                                    if target in win_name.lower():
+                                        found = True
+                                        break
+                                if found:
+                                    break
+                    except Exception:
+                        pass
+
+                if found:
+                    return True
+
+                # Fallback to xdotool search
+                if shutil.which("xdotool"):
                     proc = await asyncio.create_subprocess_exec(
                         "xdotool", "search", "--name", title_contains,
                         stdout=asyncio.subprocess.PIPE,
@@ -95,6 +128,7 @@ async def wait_for_window(
                     )
                     stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2)
                     return bool(stdout.decode().strip())
+                return False
         except Exception:
             return False
 

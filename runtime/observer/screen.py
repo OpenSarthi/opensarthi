@@ -63,6 +63,26 @@ async def _x11_active_window() -> Optional[str]:
         return None
 
 async def _wayland_active_window() -> Optional[str]:
-    # Placeholder for compositor-specific window active title tracking.
-    # On GNOME Wayland, standard portal or extension queries may be needed.
+    try:
+        import gi
+        gi.require_version("Atspi", "2.0")
+        from gi.repository import Atspi
+        desktop = Atspi.get_desktop(0)
+        if desktop:
+            for i in range(desktop.get_child_count()):
+                app = desktop.get_child_at_index(i)
+                if not app:
+                    continue
+                for j in range(app.get_child_count()):
+                    win = app.get_child_at_index(j)
+                    if not win:
+                        continue
+                    try:
+                        states = win.get_state_set()
+                        if states.contains(Atspi.StateType.ACTIVE):
+                            return win.get_name() or None
+                    except Exception:
+                        pass
+    except Exception:
+        pass
     return None
