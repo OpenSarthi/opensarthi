@@ -115,24 +115,51 @@ class AgentRuntime:
             self._agent_task = None
 
     def _format_final_response(self, response: str, cumulative_steps: list) -> str:
-        if not cumulative_steps:
-            return response
-        lines = [response, ""]
+        # Return the clean text response. ActionLog on the frontend displays step details.
+        return response
+
+    def _build_success_response(self, goal: str, completed_actions: list, cumulative_steps: list) -> str:
+        """Build a meaningful task completion response using actual tool results.
+
+        Instead of a static 'Task completed successfully.' this constructs a
+        natural summary from what the AI actually did and any key observations
+        returned by tools — without an extra LLM round-trip.
+        """
+        if not cumulative_steps and not completed_actions:
+            return f"Done! I've completed the task: **{goal}**."
+
+        # Collect key observations from successful steps (tool output)
+        key_results = []
         for s in cumulative_steps:
-            desc = s.get("description") or s.get("tool")
-            status = s.get("status")
-            if status == "divider":
-                lines.append(f"--- {desc} ---")
-            elif status == "success":
-                lines.append(f"✓ {desc}")
-            elif status == "error":
-                err = s.get("error", "Error")
-                lines.append(f"❌ {desc} (Reason: {err})")
-            elif status == "terminated":
-                lines.append(f"❌ {desc} (Reason: Terminated)")
-        return "\n".join(lines)
+            if s.get("status") == "success":
+                obs = s.get("result") or s.get("observation")
+                desc = s.get("description") or s.get("tool", "")
+                if obs and isinstance(obs, str) and obs.strip():
+                    # Only include short/meaningful observations
+                    obs_clean = obs.strip()[:300]
+                    if len(obs_clean) > 10:  # skip trivial one-liners
+                        key_results.append(f"- **{desc}**: {obs_clean}")
+
+        action_count = len(completed_actions)
+        plural = "step" if action_count == 1 else "steps"
+
+        if key_results:
+            result_section = "\n".join(key_results[:5])  # cap at 5 key results
+            return (
+                f"✅ Task completed! I've finished **{goal}** in {action_count} {plural}.\n\n"
+                f"**Results:**\n{result_section}"
+            )
+        elif completed_actions:
+            steps_list = "\n".join(f"- {a}" for a in completed_actions[:8])
+            return (
+                f"✅ Done! I've completed **{goal}**.\n\n"
+                f"**What I did ({action_count} {plural}):**\n{steps_list}"
+            )
+        else:
+            return f"✅ Task completed: **{goal}**."
 
     async def _cancellable_sleep(self, seconds: float):
+
         """Sleep that aborts early if cancel is requested."""
         try:
             await asyncio.sleep(seconds)
@@ -321,6 +348,19 @@ class AgentRuntime:
                     "steps": self.cumulative_steps,
                     "recovery_hint": plan.recovery_hint
                 })
+
+                # ── Smart overlay: only minimize when plan needs screen access ──
+                SCREEN_TOOLS = {
+                    "click", "type_text", "press_key", "click_element", "focus_window",
+                    "observe_desktop", "wait_for_window", "wait_for_text", "open_app",
+                    "scroll", "drag", "right_click", "double_click", "screenshot",
+                }
+                plan_needs_screen = any(s.tool in SCREEN_TOOLS for s in plan.steps)
+                if plan_needs_screen:
+                    await self.ws.send_message("window_control", {
+                        "action": "minimize_hint",
+                        "reason": "Plan contains screen-interaction steps",
+                    })
 
                 self.state.total_steps = len(plan.steps)
                 await self._transition(AgentState.PLANNING)
@@ -597,10 +637,11 @@ class AgentRuntime:
                         source="agent",
                         importance=0.9
                     )
-                final_success_response = f"Task completed successfully."
+                # Build a meaningful completion response from actual results
+                final_success_response = self._build_success_response(goal, completed_actions, self.cumulative_steps)
                 # Restore overlay after screen-tool tasks complete
                 await self.ws.send_message("window_control", {"action": "restore_hint"})
-                return self._format_final_response(final_success_response, self.cumulative_steps)
+                return final_success_response
 
             await self._transition(AgentState.ERROR, error_message="Task failed after maximum replanning attempts.")
 

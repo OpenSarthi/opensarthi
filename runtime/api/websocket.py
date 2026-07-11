@@ -440,13 +440,14 @@ class Session:
                 import os as _os
                 use_langgraph = _os.environ.get("USE_LANGGRAPH", "true").lower() in ("1", "true", "yes")
 
+                plan_steps = []
                 if use_langgraph:
                     # ── LangGraph path ──────────────────────────────────────────
                     logger.info("Using LangGraph orchestration", thread_id=tid)
                     from graph.graph import run_graph
                     manager.sync_notification_state()
                     try:
-                        final_output = await run_graph(
+                        res_dict = await run_graph(
                             goal=text,
                             model=active_model,
                             deps=self.deps,
@@ -456,6 +457,8 @@ class Session:
                             message_history=message_history,
                             summarized_context=summarized_context,
                         )
+                        final_output = res_dict.get("final_response", "Task completed.")
+                        plan_steps = res_dict.get("cumulative_steps", [])
                         usage = None  # tokens accumulated via ws.accumulate_and_update_tokens inside nodes
                     except asyncio.CancelledError:
                         final_output = "Execution cancelled by user."
@@ -483,6 +486,7 @@ class Session:
                             message_history=message_history,
                             summarized_context=summarized_context,
                         )
+                        plan_steps = getattr(runtime, "cumulative_steps", [])
                         usage = runtime.last_usage
                     except asyncio.CancelledError:
                         final_output = "Execution cancelled by user."
@@ -500,8 +504,22 @@ class Session:
             req_t = usage.request_tokens if usage else 0
             res_t = usage.response_tokens if usage else 0
             tot_t = usage.total_tokens if usage else 0
+            
+            import json as _json
+            plan_payload = None
+            plan_db_str = None
+            if plan_steps:
+                plan_payload = {
+                    "id": str(uuid.uuid4()),
+                    "goal": text,
+                    "steps": plan_steps,
+                    "recovery_hint": None
+                }
+                plan_db_str = _json.dumps(plan_payload)
+            
             db.save_message(tid, ast_msg_id, "assistant", final_output, ast_timestamp,
-                            request_tokens=req_t, response_tokens=res_t, total_tokens=tot_t)
+                            request_tokens=req_t, response_tokens=res_t, total_tokens=tot_t,
+                            plan=plan_db_str)
 
             # Send the assistant's response back to the UI
             await self.send_message("assistant_response", {
@@ -510,6 +528,7 @@ class Session:
                 "content": final_output,
                 "timestamp": ast_timestamp,
                 "is_voice": source == "voice",
+                "plan": plan_payload,
                 "usage": {
                     "request_tokens": req_t,
                     "response_tokens": res_t,

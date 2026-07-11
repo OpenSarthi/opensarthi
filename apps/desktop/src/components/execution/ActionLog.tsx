@@ -424,7 +424,8 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
       continue;
     }
 
-    const isTask = nextAssistant.content.includes("✓ ") ||
+    const isTask = !!nextAssistant.plan ||
+                   nextAssistant.content.includes("✓ ") ||
                    nextAssistant.content.includes("Task completed successfully") ||
                    nextAssistant.content.includes("❌ Failed at step") ||
                    nextAssistant.content.includes("Execution cancelled by user.") ||
@@ -432,12 +433,24 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
                    nextAssistant.content.trim().startsWith("{");
     if (!isTask) continue;
 
-    const toolActions = parseToolActionsFromContent(nextAssistant.content, nextAssistant.timestamp);
+    let toolActions: ParsedToolAction[] = [];
+    if (nextAssistant.plan) {
+      toolActions = nextAssistant.plan.steps.map(s => ({
+        tool: s.tool,
+        description: s.description || s.tool,
+        status: s.status || "pending",
+        result: typeof s.result === "string" ? s.result : s.result ? JSON.stringify(s.result) : undefined,
+        timestamp: s.timestamp,
+        args: s.args,
+      }));
+    } else {
+      toolActions = parseToolActionsFromContent(nextAssistant.content, nextAssistant.timestamp);
+    }
 
     let taskStatus = "success";
     if (nextAssistant.content.includes("Execution cancelled by user.")) {
       taskStatus = "terminated";
-    } else if (nextAssistant.content.includes("❌")) {
+    } else if (nextAssistant.content.includes("❌") || (nextAssistant.plan && nextAssistant.plan.steps.some(s => s.status === "error"))) {
       taskStatus = "error";
     }
 
@@ -446,6 +459,7 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
       status: taskStatus,
       toolActions,
     });
+
   }
 
   // Get actions to display

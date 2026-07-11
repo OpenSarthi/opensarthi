@@ -191,51 +191,8 @@ def get_compiled_graph(use_sqlite: bool = False):
 
 
 def format_graph_response(final_res: str, cumulative_steps: list) -> str:
-    if not cumulative_steps:
-        return final_res
-    lines = [final_res, ""]
-    for s in cumulative_steps:
-        desc = s.get("description") or s.get("tool")
-        tool_name = s.get("tool")
-        args = s.get("args") or {}
-
-        if desc == tool_name or desc == "shell" or not desc:
-            if tool_name == "shell" and args.get("command"):
-                cmd = args.get("command")
-                short_cmd = cmd[:45] + "..." if len(cmd) > 48 else cmd
-                desc = f"shell: {short_cmd}"
-            elif tool_name == "click" and "x" in args and "y" in args:
-                desc = f"click at ({args['x']}, {args['y']})"
-            elif tool_name == "type_text" and args.get("text"):
-                txt = args["text"]
-                short_txt = txt[:25] + "..." if len(txt) > 28 else txt
-                desc = f"type \"{short_txt}\""
-            elif tool_name == "press_key" and args.get("key"):
-                desc = f"press key {args['key']}"
-            elif tool_name == "click_element" and args.get("name"):
-                desc = f"click element \"{args['name']}\""
-            elif tool_name == "open_app" and args.get("name"):
-                desc = f"open app \"{args['name']}\""
-            elif tool_name == "focus_window" and args.get("title"):
-                desc = f"focus window \"{args['title']}\""
-
-        status = s.get("status")
-        result = s.get("result")
-        error = s.get("error")
-
-        if status == "divider":
-            lines.append(f"--- {desc} ---")
-        elif status == "success":
-            if result:
-                lines.append(f"<details>\n<summary>✓ {desc}</summary>\n\n```\n{result}\n```\n</details>")
-            else:
-                lines.append(f"✓ {desc}")
-        elif status == "error":
-            err_msg = error or "Error"
-            lines.append(f"<details>\n<summary>❌ {desc}</summary>\n\n```\nReason: {err_msg}\n```\n</details>")
-        elif status == "terminated":
-            lines.append(f"❌ {desc} (Reason: Terminated)")
-    return "\n".join(lines)
+    """Return the clean text response. ActionLog on frontend displays step details."""
+    return final_res
 
 
 async def run_graph(
@@ -315,7 +272,10 @@ async def run_graph(
         final_res = format_graph_response(final_res, result.get("cumulative_steps") or [])
         if logger_instance:
             logger_instance.finalize(final_res)
-        return final_res
+        return {
+            "final_response": final_res,
+            "cumulative_steps": result.get("cumulative_steps") or []
+        }
     except Exception as e:
         err_str = str(e)
         # Handle stale checkpoint data from old state schema (e.g. after add_messages removal).
@@ -332,18 +292,34 @@ async def run_graph(
                 final_res = format_graph_response(final_res, result.get("cumulative_steps") or [])
                 if logger_instance:
                     logger_instance.finalize(final_res)
-                return final_res
+                return {
+                    "final_response": final_res,
+                    "cumulative_steps": result.get("cumulative_steps") or []
+                }
             except Exception as retry_e:
                 logger.error("LangGraph run_graph failed after reset", error=str(retry_e))
                 err_response = f"❌ Execution failed: {retry_e}"
                 if logger_instance:
                     logger_instance.finalize(err_response)
-                return err_response
+                return {
+                    "final_response": err_response,
+                    "cumulative_steps": []
+                }
         logger.error("LangGraph run_graph failed", error=err_str)
         err_response = f"❌ Execution failed: {e}"
         if logger_instance:
             logger_instance.finalize(err_response)
-        return err_response
+        return {
+            "final_response": err_response,
+            "cumulative_steps": []
+        }
+    finally:
+        if ws_handler:
+            try:
+                await ws_handler.send_message("window_control", {"action": "restore_hint"})
+            except Exception:
+                pass
+
 
 
 async def stream_graph_events(

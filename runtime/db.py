@@ -57,6 +57,10 @@ def init_db():
             cursor.execute(f"ALTER TABLE messages ADD COLUMN {col} INTEGER DEFAULT {default}")
         except Exception:
             pass  # Column already exists
+    try:
+        cursor.execute("ALTER TABLE messages ADD COLUMN plan TEXT")
+    except Exception:
+        pass  # Column already exists
     conn.commit()
     conn.close()
 
@@ -69,24 +73,44 @@ def create_thread() -> str:
     conn.close()
     return thread_id
 
-def save_message(thread_id: str, msg_id: str, role: str, content: str, timestamp: int, request_tokens: int = 0, response_tokens: int = 0, total_tokens: int = 0):
+def save_message(thread_id: str, msg_id: str, role: str, content: str, timestamp: int, request_tokens: int = 0, response_tokens: int = 0, total_tokens: int = 0, plan: str = None):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('INSERT OR IGNORE INTO threads (id) VALUES (?)', (thread_id,))
     cursor.execute(
-        'INSERT INTO messages (id, thread_id, role, content, timestamp, token_request, token_response, token_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        (msg_id, thread_id, role, content, timestamp, request_tokens, response_tokens, total_tokens)
+        'INSERT INTO messages (id, thread_id, role, content, timestamp, token_request, token_response, token_total, plan) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (msg_id, thread_id, role, content, timestamp, request_tokens, response_tokens, total_tokens, plan)
     )
     conn.commit()
     conn.close()
 
 def get_history(thread_id: str):
+    import json
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('SELECT id, role, content, timestamp, token_request, token_response, token_total FROM messages WHERE thread_id = ? ORDER BY timestamp ASC', (thread_id,))
+    cursor.execute('SELECT id, role, content, timestamp, token_request, token_response, token_total, plan FROM messages WHERE thread_id = ? ORDER BY timestamp ASC', (thread_id,))
     rows = cursor.fetchall()
     conn.close()
-    return [{"id": r[0], "role": r[1], "content": r[2], "timestamp": r[3], "token_request": r[4] or 0, "token_response": r[5] or 0, "token_total": r[6] or 0} for r in rows]
+    
+    messages = []
+    for r in rows:
+        msg = {
+            "id": r[0],
+            "role": r[1],
+            "content": r[2],
+            "timestamp": r[3],
+            "token_request": r[4] or 0,
+            "token_response": r[5] or 0,
+            "token_total": r[6] or 0,
+        }
+        if r[7]:
+            try:
+                msg["plan"] = json.loads(r[7])
+            except Exception:
+                pass
+        messages.append(msg)
+    return messages
+
 
 def accumulate_thread_tokens(thread_id: str, request_tokens: int, response_tokens: int, total_tokens: int):
     """Add token counts from one response to the thread's running totals."""

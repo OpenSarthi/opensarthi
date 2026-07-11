@@ -175,6 +175,19 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     "steps": updates["cumulative_steps"],
                     "recovery_hint": plan.recovery_hint,
                 })
+
+                # ── Smart overlay: only minimize when plan contains screen-interaction tools ──
+                SCREEN_TOOLS = {
+                    "click", "type_text", "press_key", "click_element", "focus_window",
+                    "observe_desktop", "wait_for_window", "wait_for_text", "open_app",
+                    "scroll", "drag", "right_click", "double_click", "screenshot",
+                }
+                plan_needs_screen = any(s["tool"] in SCREEN_TOOLS for s in steps_data)
+                if plan_needs_screen:
+                    await ws.send_message("window_control", {
+                        "action": "minimize_hint",
+                        "reason": "Plan contains screen-interaction steps",
+                    })
         else:
             updates["final_response"] = text_response or "I couldn't generate a response."
             updates["plan_steps"] = []
@@ -455,7 +468,40 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
             importance=0.9,
         ))
 
+    # Build a meaningful completion response from actual tool results (no extra LLM call)
     ws = config["configurable"].get("ws_handler")
+    final = state.final_response
+    if not final or final == "Task completed successfully.":
+        goal = state.goal or ""
+        completed = state.completed_actions or []
+        steps = state.cumulative_steps or []
+        action_count = len(completed)
+        plural = "step" if action_count == 1 else "steps"
+
+        # Gather key tool observations
+        key_results = []
+        for s in steps:
+            if s.get("status") == "success":
+                obs = s.get("result") or s.get("observation")
+                desc = s.get("description") or s.get("tool", "")
+                if obs and isinstance(obs, str) and obs.strip() and len(obs.strip()) > 10:
+                    key_results.append(f"- **{desc}**: {obs.strip()[:300]}")
+
+        if key_results:
+            result_section = "\n".join(key_results[:5])
+            final = (
+                f"\u2705 Task completed! I've finished **{goal}** in {action_count} {plural}.\n\n"
+                f"**Results:**\n{result_section}"
+            )
+        elif completed:
+            steps_list = "\n".join(f"- {a}" for a in completed[:8])
+            final = (
+                f"\u2705 Done! I've completed **{goal}**.\n\n"
+                f"**What I did ({action_count} {plural}):**\n{steps_list}"
+            )
+        else:
+            final = f"\u2705 Task completed: **{goal}**."
+
     # Restore window overlay after task completes
     if ws:
         try:
@@ -463,7 +509,7 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         except Exception:
             pass
 
-    return {"final_response": state.final_response or "Task completed successfully."}
+    return {"final_response": final}
 
 
 # ── chat_node ───────────────────────────────────────────────────────────────────
