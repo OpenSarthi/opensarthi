@@ -79,6 +79,20 @@ export function useWindowOverlay() {
           await appWindow.setPosition(new LogicalPosition(defaultX, defaultY));
           setSnapAlign("right");
 
+          // Re-apply always-on-top and focus after sizing/positioning are finalized
+          await appWindow.setAlwaysOnTop(true);
+          await appWindow.setFocus();
+
+          // Deferred safety fallback to handle Wayland compositors that reset states on layout events
+          setTimeout(async () => {
+            try {
+              await appWindow.setAlwaysOnTop(true);
+              await appWindow.setFocus();
+            } catch (err) {
+              console.warn("Deferred setAlwaysOnTop/setFocus failed", err);
+            }
+          }, 150);
+
           // Edge-snapping listener while in overlay mode
           unsubPromise = appWindow.onMoved(async (event) => {
             if (!active) return;
