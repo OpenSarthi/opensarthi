@@ -107,7 +107,7 @@ class TestAgentRuntimeCumulativeSteps(unittest.TestCase):
         observer_mock = Mock()
         runtime = AgentRuntime(ws_handler=ws_mock, agent=agent_mock, observer=observer_mock)
         
-        # Test formatting logic
+        # Test formatting logic — now should return response as-is
         steps = [
             {"tool": "click", "description": "Clicking button", "status": "success"},
             {"tool": "type_text", "description": "Typing text", "status": "error", "error": "Failed to type"},
@@ -115,10 +115,7 @@ class TestAgentRuntimeCumulativeSteps(unittest.TestCase):
         ]
         
         res = runtime._format_final_response("Task processed", steps)
-        self.assertIn("✓ Clicking button", res)
-        self.assertIn("❌ Typing text (Reason: Failed to type)", res)
-        self.assertIn("❌ Running script (Reason: Terminated)", res)
-        self.assertIn("Task processed", res)
+        self.assertEqual(res, "Task processed")
 
 
 class TestTaskDecomposer(unittest.TestCase):

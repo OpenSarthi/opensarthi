@@ -352,6 +352,8 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
         # Handle wait_after
         if step.wait_after:
             await asyncio.sleep(step.wait_after)
+    else:
+        new_failed.append(f"{step.description or step.tool} (Reason: {res.error or 'Unknown error'})")
 
     logger_instance = config["configurable"].get("dev_logger")
     if logger_instance:
