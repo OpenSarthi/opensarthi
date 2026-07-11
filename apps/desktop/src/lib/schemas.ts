@@ -90,7 +90,7 @@ export const MessageSchema = z.object({
   role: MessageRoleSchema,
   content: z.string(),
   timestamp: z.number(),
-  plan: PlanSchema.optional(),
+  plan: PlanSchema.nullable().optional(),
   token_request: z.number().optional(),
   token_response: z.number().optional(),
   token_total: z.number().optional(),
