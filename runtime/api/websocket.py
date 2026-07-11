@@ -362,6 +362,7 @@ class Session:
             prefix_warning = ""
             usage = None
             final_output = ""
+            plan_steps = []
 
             if classification in ("CHAT", "CLARIFY"):
                 logger.info("Routing to direct CHAT/CLARIFY handler", thread_id=tid)
@@ -438,10 +439,9 @@ class Session:
                 memory_manager = MemoryManager(tid)
 
                 import os as _os
-                use_langgraph = _os.environ.get("USE_LANGGRAPH", "true").lower() in ("1", "true", "yes")
+                use_graph = _os.environ.get("USE_LANGGRAPH", "true").lower() in ("1", "true", "yes")
 
-                plan_steps = []
-                if use_langgraph:
+                if use_graph:
                     # ── LangGraph path ──────────────────────────────────────────
                     logger.info("Using LangGraph orchestration", thread_id=tid)
                     from graph.graph import run_graph
