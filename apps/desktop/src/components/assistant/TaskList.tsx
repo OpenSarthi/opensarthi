@@ -125,18 +125,29 @@ export function TaskList({
       continue;
     }
 
-    const isTask = responseHasToolCalls(nextAssistant.content);
+    const isTask = !!nextAssistant.plan || responseHasToolCalls(nextAssistant.content);
     if (!isTask) continue;
 
     const { title, icon } = parseTask(msg.content);
     let status: AgenticTask["status"] = "success";
     if (nextAssistant.content.includes("Execution cancelled by user.")) {
       status = "terminated";
-    } else if (nextAssistant.content.includes("❌")) {
+    } else if (nextAssistant.content.includes("❌") || (nextAssistant.plan && nextAssistant.plan.steps.some(s => s.status === "error"))) {
       status = "error";
     }
 
-    const toolActions = parseToolActionsFromContent(nextAssistant.content, nextAssistant.timestamp);
+    let toolActions = [];
+    if (nextAssistant.plan) {
+      toolActions = nextAssistant.plan.steps.map(s => ({
+        tool: s.tool,
+        description: s.description || s.tool,
+        status: s.status || "pending",
+        result: s.result,
+        timestamp: s.timestamp,
+      }));
+    } else {
+      toolActions = parseToolActionsFromContent(nextAssistant.content, nextAssistant.timestamp);
+    }
 
     agenticTasks.push({
       id: msg.id, userMsgId: msg.id, title, icon,
