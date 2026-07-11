@@ -787,6 +787,29 @@ class Session:
                     logger.warning("Failed to propagate wake word updates to pipeline", error=str(ve))
 
             logger.info("Settings updated", provider=settings.ai_provider, model=settings.cloud_model)
+
+            # Broadcast confirmed settings back to frontend so UI stays in sync
+            await self.send_message("settings_sync", {
+                "local_model": settings.local_model,
+                "cloud_model": settings.cloud_model,
+                "ai_provider": settings.ai_provider,
+                "gemini_api_key": settings.gemini_api_key or "",
+                "openai_api_key": settings.openai_api_key or "",
+                "anthropic_api_key": settings.anthropic_api_key or "",
+                "groq_api_key": settings.groq_api_key or "",
+                "openrouter_api_key": settings.openrouter_api_key or "",
+                "voice_accent": settings.voice_accent,
+                "voice_speed": settings.voice_speed,
+                "continuous_listening": settings.continuous_listening,
+                "active_theme": settings.active_theme,
+                "wake_words": settings.wake_words,
+                "wake_word_enabled": settings.wake_word_enabled,
+                "wake_word_threshold": settings.wake_word_threshold,
+                "user_name": settings.user_name,
+                "user_skills": settings.user_skills,
+                "custom_prompt": settings.custom_prompt,
+            })
+
             if getattr(self, "_session_active", False):
                 import os
                 if os.environ.get("OPENSARTHI_PLATFORM") != "android":
