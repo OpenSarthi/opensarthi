@@ -324,14 +324,14 @@ export function useWebSocket(port: number | null) {
         }
       }),
 
-      // Streaming text response chunks
+      // Streaming text response chunks — route to dedicated streamingResponse state, NOT voice transcript
       wsClient.on("stream_chunk", (msg) => {
         const { chunk, thread_id } = msg.payload as { chunk: string; thread_id?: string };
         const store = useAssistantStore.getState();
         const tid = thread_id || store.activeThreadId;
-        // Append chunk to the last assistant message if streaming, or update transcript
-        store.setTranscript((store.currentTranscript || "") + chunk);
-        // Store in streaming buffer for the tab
+        // Append chunk to streaming response buffer only
+        store.appendStreamChunk(chunk);
+        // Also maintain per-tab buffer for stream_end finalization
         if (!(store as any)._streamBuffer) (store as any)._streamBuffer = {};
         (store as any)._streamBuffer[tid] = ((store as any)._streamBuffer[tid] || "") + chunk;
       }),
@@ -340,10 +340,11 @@ export function useWebSocket(port: number | null) {
         const { thread_id } = msg.payload as { thread_id?: string };
         const store = useAssistantStore.getState();
         const tid = thread_id || store.activeThreadId;
-        // Clear the streaming buffer
+        // Clear the streaming buffer and the live streaming response bubble
         if ((store as any)._streamBuffer) {
           delete (store as any)._streamBuffer[tid];
         }
+        store.clearStreamingResponse();
       }),
     ];
 

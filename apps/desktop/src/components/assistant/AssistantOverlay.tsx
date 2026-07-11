@@ -47,7 +47,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     continuousListening,
     setVoiceState, addMessage, setTranscript,
     tabs, activeThreadId, addTab, removeTab, setActiveThreadId,
-    userOverrodeMinimize, setUserOverrodeMinimize
+    userOverrodeMinimize, setUserOverrodeMinimize,
+    streamingResponse,
   } = useAssistantStore();
 
   const modelKey = activeProvider === "ollama" || activeProvider === "local" ? activeLocalModel : activeCloudModel;
@@ -296,12 +297,31 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           // Strip raw JSON array blocks (in case LLM output JSON without backticks)
           clean = clean.replace(/\[\s*\{[\s\S]*\}\s*\]/g, "");
 
+          // Strip task completion step lists (lines starting with "- **...")
+          // These are from _build_success_response and should not be spoken verbatim
+          clean = clean.replace(/^[-*]\s+\*\*.*?\*\*:.*$/gm, "");
+
+          // Strip "What I did (N steps):" section headers
+          clean = clean.replace(/\*\*What I did \(\d+ steps?\):\*\*/g, "");
+          clean = clean.replace(/\*\*Results?:\*\*/g, "");
+
+          // Strip divider lines
+          clean = clean.replace(/^---.*---$/gm, "");
+
           // Strip inline code, markdown formatting
           clean = clean
             .replace(/`([^`]+)`/g, "$1")
             .replace(/[*#_\-]/g, "")
-            .replace(/^\s*[✓✗❌⚠️]+\s*/gm, "")  // Strip status emojis/bullets
+            .replace(/^\s*[✓✗❌⚠️✅]+\s*/gm, "")  // Strip status emojis/bullets
+            .replace(/\n{3,}/g, "\n\n")  // Collapse multiple blank lines
             .trim();
+
+          // Only speak the first paragraph/sentence if the content is very long
+          // (task result lists shouldn't be read out loud in full)
+          if (clean.length > 400) {
+            const firstPara = clean.split(/\n\n/)[0];
+            clean = firstPara.trim();
+          }
 
           if (clean) {
             wsClient.send("speak_text", { text: clean, manual: false });
@@ -313,6 +333,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
       console.error("Speech Synthesis error caught safely:", err);
     }
   }, [messages]);
+
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleTextSend(); }
@@ -1290,6 +1311,44 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   }
                 }}
               />
+
+              {/* Live streaming bubble — shown while AI is generating a response */}
+              {streamingResponse && (
+                <div style={{
+                  display: "flex",
+                  justifyContent: "flex-start",
+                  marginBottom: "8px",
+                  padding: "0 4px",
+                }}>
+                  <div style={{
+                    maxWidth: "85%",
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(var(--accent-rgb, 0,200,120), 0.25)",
+                    borderRadius: "12px 12px 12px 3px",
+                    padding: "10px 14px",
+                    fontSize: "13px",
+                    color: "var(--text-primary)",
+                    lineHeight: "1.55",
+                    position: "relative",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                  }}>
+                    <div style={{
+                      position: "absolute",
+                      top: "8px",
+                      right: "10px",
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      background: "var(--accent)",
+                      boxShadow: "0 0 6px var(--accent)",
+                      animation: "pulse 1s ease-in-out infinite",
+                    }} />
+                    {streamingResponse}
+                  </div>
+                </div>
+              )}
+
               <div ref={bottomRef} />
             </div>
 

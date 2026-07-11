@@ -175,6 +175,10 @@ interface AssistantState {
   // Intent classification from orchestrator
   lastClassification: string | null;
   setLastClassification: (c: string) => void;
+  // Chat streaming response (separate from voice transcript)
+  streamingResponse: string | null;
+  appendStreamChunk: (chunk: string) => void;
+  clearStreamingResponse: () => void;
 }
 
 export const useAssistantStore = create<AssistantState>((set) => ({
@@ -222,6 +226,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   onboardingCompleted: typeof window !== "undefined" && localStorage.getItem("opensarthi_onboarding_done") === "1",
   shellOutputLines: [],
   lastClassification: null,
+  streamingResponse: null,
 
   setVoiceState: (voiceState) => set({ voiceState }),
   setConnected: (isConnected) => set({ isConnected }),
@@ -685,4 +690,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   })),
   clearShellOutput: () => set({ shellOutputLines: [] }),
   setLastClassification: (lastClassification) => set({ lastClassification }),
+  appendStreamChunk: (chunk) => set((s) => ({
+    streamingResponse: (s.streamingResponse || "") + chunk,
+  })),
+  clearStreamingResponse: () => set({ streamingResponse: null }),
 }));
