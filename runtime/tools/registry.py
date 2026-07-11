@@ -7,6 +7,7 @@ from tools.media import MediaControlTool
 from tools.memory import RememberTool, RecallTool, ForgetMemoryTool
 from tools.notes import SaveNoteTool, GetNotesTool
 from tools.self_fix import SelfFixTool
+from tools.settings_tool import UpdateSettingsTool
 from tools.productivity import (
     WebSearchTool,
     WeatherTool,
@@ -53,6 +54,8 @@ _register(
     GetNotesTool(),
     # Self-improvement
     SelfFixTool(),
+    # Conversational settings control
+    UpdateSettingsTool(),
     # Productivity (Phase 3)
     WebSearchTool(),
     WeatherTool(),

@@ -158,6 +158,7 @@ TOOL ROUTING (Use EXACT registered tool names):
 • Save a note → save_note(title: str, content: str)
 • Search/list notes → get_notes(query?: str)
 • Fix OpenSarthi code → self_fix(description: str, target_file: str)
+• Change any assistant setting (theme, model, provider, API key, voice speed, wake words, accent, user name, etc.) → update_settings(theme?, provider?, cloud_model?, local_model?, gemini_api_key?, openai_api_key?, anthropic_api_key?, groq_api_key?, openrouter_api_key?, voice_accent?, voice_speed?, continuous_listening?, wake_word_enabled?, wake_words?, wake_word_threshold?, user_name?, user_skills?, custom_prompt?)
 
 JSON PLAN FORMAT:
 ```json
@@ -227,6 +228,7 @@ TOOL ROUTING (Use EXACT registered tool names):
 • Save a note → save_note(title: str, content: str)
 • Search/list notes → get_notes(query?: str)
 • Fix OpenSarthi code → self_fix(description: str, target_file: str)
+• Change any assistant setting (theme, model, provider, API key, voice speed, wake words, accent, user name, etc.) → update_settings(theme?, provider?, cloud_model?, local_model?, gemini_api_key?, openai_api_key?, anthropic_api_key?, groq_api_key?, openrouter_api_key?, voice_accent?, voice_speed?, continuous_listening?, wake_word_enabled?, wake_words?, wake_word_threshold?, user_name?, user_skills?, custom_prompt?)
 
 JSON PLAN FORMAT:
 ```json
