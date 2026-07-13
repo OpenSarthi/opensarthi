@@ -83,8 +83,8 @@ class Session:
         if not tid:
             return
         try:
-            request_tokens = getattr(usage, "request_tokens", 0) or 0
-            response_tokens = getattr(usage, "response_tokens", 0) or 0
+            request_tokens = getattr(usage, "request_tokens", getattr(usage, "input_tokens", 0)) or 0
+            response_tokens = getattr(usage, "response_tokens", getattr(usage, "output_tokens", 0)) or 0
             total_tokens = getattr(usage, "total_tokens", 0) or (request_tokens + response_tokens)
         except Exception:
             request_tokens = 0
@@ -501,9 +501,9 @@ class Session:
 
             ast_msg_id = str(uuid.uuid4())
             ast_timestamp = int(time.time() * 1000)
-            req_t = usage.request_tokens if usage else 0
-            res_t = usage.response_tokens if usage else 0
-            tot_t = usage.total_tokens if usage else 0
+            req_t = getattr(usage, "request_tokens", getattr(usage, "input_tokens", 0)) if usage else 0
+            res_t = getattr(usage, "response_tokens", getattr(usage, "output_tokens", 0)) if usage else 0
+            tot_t = getattr(usage, "total_tokens", 0) if usage else 0
             
             import json as _json
             plan_payload = None

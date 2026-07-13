@@ -284,8 +284,8 @@ class AgentRuntime:
                         self.logger.log_llm_response(replanning_attempts, result.output)
                     if result and getattr(result, "usage", None):
                         usage = result.usage
-                        self.run_request_tokens += (getattr(usage, "request_tokens", 0) or 0)
-                        self.run_response_tokens += (getattr(usage, "response_tokens", 0) or 0)
+                        self.run_request_tokens += (getattr(usage, "request_tokens", getattr(usage, "input_tokens", 0)) or 0)
+                        self.run_response_tokens += (getattr(usage, "response_tokens", getattr(usage, "output_tokens", 0)) or 0)
                         self.run_total_tokens += (getattr(usage, "total_tokens", 0) or 0)
                         await self.ws.accumulate_and_update_tokens(result.usage, thread_id=self.thread_id)
                 except asyncio.CancelledError:
@@ -657,8 +657,8 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
                 response = result.output
                 if result and getattr(result, "usage", None):
                     usage = result.usage
-                    self.run_request_tokens += (getattr(usage, "request_tokens", 0) or 0)
-                    self.run_response_tokens += (getattr(usage, "response_tokens", 0) or 0)
+                    self.run_request_tokens += (getattr(usage, "request_tokens", getattr(usage, "input_tokens", 0)) or 0)
+                    self.run_response_tokens += (getattr(usage, "response_tokens", getattr(usage, "output_tokens", 0)) or 0)
                     self.run_total_tokens += (getattr(usage, "total_tokens", 0) or 0)
                     await self.ws.accumulate_and_update_tokens(result.usage, thread_id=self.thread_id)
             except asyncio.CancelledError:

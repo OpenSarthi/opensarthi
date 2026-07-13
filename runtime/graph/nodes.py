@@ -575,8 +575,8 @@ def _extract_tokens(usage: Any) -> dict:
     if not usage:
         return {"req": 0, "res": 0, "tot": 0}
     return {
-        "req": getattr(usage, "request_tokens", 0) or 0,
-        "res": getattr(usage, "response_tokens", 0) or 0,
+        "req": getattr(usage, "request_tokens", getattr(usage, "input_tokens", 0)) or 0,
+        "res": getattr(usage, "response_tokens", getattr(usage, "output_tokens", 0)) or 0,
         "tot": getattr(usage, "total_tokens", 0) or 0,
     }
 
