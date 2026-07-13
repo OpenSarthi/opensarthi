@@ -205,79 +205,305 @@ body.theme-mono-dark {
   --success:        #34c759;
 }
 
-/* Theme 9: Multicolor Dark (Cyberpunk Neon) */
+/* ══════════════════════════════════════════════════════════════════
+   Theme 9: Multicolor Dark — Continuous Neon Rainbow
+   Every element animates independently for a truly alive, layered feel
+   ══════════════════════════════════════════════════════════════════ */
 body.theme-multicolor-dark {
-  --bg-primary:     hsla(240, 60%, 3%, 0.92);
-  --bg-secondary:   hsla(250, 60%, 6%, 0.93);
-  --bg-tertiary:    hsla(260, 60%, 10%, 0.96);
-  --bg-glass:       hsla(245, 60%, 4%, 0.78);
-  --bg-glass-hover: hsla(250, 60%, 8%, 0.88);
-  --text-primary:   #f0f0ff;
-  --text-secondary: #b0a0ff;
-  --text-muted:     #6050aa;
-  --accent:         #00f5ff;
-  --accent-dim:     #00c0cc;
-  --accent-glow:    hsla(185, 100%, 55%, 0.45);
-  --accent-glow-lg: hsla(185, 100%, 55%, 0.15);
-  --border:         hsla(185, 100%, 50%, 0.3);
-  --border-accent:  #00f5ff;
-  --shadow-accent:  0 0 24px hsla(185, 100%, 55%, 0.45);
-  --danger:         #ff2d78;
-  --success:        #00ff9f;
-  --warning:        #ffcc00;
+  --bg-primary:      hsla(240, 55%, 4%, 0.96);
+  --bg-secondary:    hsla(250, 55%, 7%, 0.96);
+  --bg-tertiary:     hsla(260, 55%, 11%, 0.97);
+  --bg-glass:        hsla(245, 55%, 5%, 0.80);
+  --bg-glass-hover:  hsla(250, 55%, 9%, 0.90);
+  --text-primary:    #f0f0ff;
+  --text-secondary:  #c0b0ff;
+  --text-muted:      #6050aa;
+  --accent:          #00f5ff;
+  --accent-dim:      #00c0cc;
+  --accent-rgb:      0, 245, 255;
+  --accent-glow:     hsla(185, 100%, 55%, 0.5);
+  --accent-glow-lg:  hsla(185, 100%, 55%, 0.18);
+  --border:          hsla(185, 100%, 50%, 0.25);
+  --border-accent:   #00f5ff;
+  --shadow-accent:   0 0 24px hsla(185, 100%, 55%, 0.5);
+  --danger:          #ff2d78;
+  --success:         #00ff9f;
+  --warning:         #ffcc00;
 }
 
+/* Text colors are intentionally fixed for readability.
+   Only decorative/structural elements animate with rainbow colors. */
+
+/* Background panels get opposite-phase slow hue shift for depth contrast */
 body.theme-multicolor-dark .hud-panel {
-  box-shadow:
-    0 0 0 1px hsla(185, 100%, 50%, 0.15),
-    0 0 30px hsla(280, 100%, 55%, 0.08) inset;
-  animation: multiDarkBorder 6s infinite linear;
+  animation: neonPanelCycle 12s linear infinite;
+  border-color: transparent;
+  outline: 1px solid transparent;
+}
+@keyframes neonPanelCycle {
+  0%   { box-shadow: 0 0 0 1px hsla(185,100%,60%,0.35), 0 0 20px hsla(185,100%,55%,0.12) inset; }
+  16%  { box-shadow: 0 0 0 1px hsla(265,100%,65%,0.35), 0 0 20px hsla(265,100%,55%,0.12) inset; }
+  33%  { box-shadow: 0 0 0 1px hsla(320,100%,60%,0.35), 0 0 20px hsla(320,100%,55%,0.12) inset; }
+  50%  { box-shadow: 0 0 0 1px hsla(40, 100%,55%,0.35), 0 0 20px hsla(40, 100%,50%,0.12) inset; }
+  66%  { box-shadow: 0 0 0 1px hsla(100,100%,50%,0.35), 0 0 20px hsla(100,100%,45%,0.12) inset; }
+  83%  { box-shadow: 0 0 0 1px hsla(150,100%,50%,0.35), 0 0 20px hsla(150,100%,45%,0.12) inset; }
+  100% { box-shadow: 0 0 0 1px hsla(185,100%,60%,0.35), 0 0 20px hsla(185,100%,55%,0.12) inset; }
 }
 
-@keyframes multiDarkBorder {
-  0%   { --border-accent: #00f5ff; box-shadow: 0 0 12px hsla(185,100%,55%,0.3) inset; }
-  33%  { --border-accent: #bf1aff; box-shadow: 0 0 12px hsla(280,100%,55%,0.3) inset; }
-  66%  { --border-accent: #ff2d78; box-shadow: 0 0 12px hsla(340,100%,55%,0.3) inset; }
-  100% { --border-accent: #00f5ff; box-shadow: 0 0 12px hsla(185,100%,55%,0.3) inset; }
+/* Panel corner brackets cycle through rainbow colors */
+body.theme-multicolor-dark .hud-panel::before,
+body.theme-multicolor-dark .hud-panel::after {
+  animation: neonCornerCycle 6s linear infinite;
+}
+@keyframes neonCornerCycle {
+  0%   { filter: hue-rotate(0deg)   brightness(1.3); }
+  100% { filter: hue-rotate(360deg) brightness(1.3); }
 }
 
-/* Theme 10: Multicolor Light (Vivid Rainbow) */
-body.theme-multicolor-light {
-  --bg-primary:     #fafafa;
-  --bg-secondary:   #f2f2f8;
-  --bg-tertiary:    #e8e8f4;
-  --bg-glass:       rgba(255, 255, 255, 0.85);
-  --bg-glass-hover: rgba(240, 240, 255, 0.92);
-  --text-primary:   #1a1a2e;
-  --text-secondary: #4a3f8a;
-  --text-muted:     #888899;
-  --accent:         #7c3aed;
-  --accent-dim:     #5b21b6;
-  --accent-glow:    rgba(124, 58, 237, 0.25);
-  --accent-glow-lg: rgba(124, 58, 237, 0.08);
-  --border:         rgba(124, 58, 237, 0.2);
-  --border-accent:  #7c3aed;
-  --shadow-accent:  0 0 24px rgba(124, 58, 237, 0.2);
-  --shadow-sm:      0 1px 3px rgba(26, 26, 46, 0.1);
-  --shadow-md:      0 4px 16px rgba(26, 26, 46, 0.15);
-  --shadow-lg:      0 8px 32px rgba(26, 26, 46, 0.2);
-  --danger:         #dc2626;
-  --success:        #059669;
-  --warning:        #d97706;
-}
-
-body.theme-multicolor-light .hud-panel-title {
-  background: linear-gradient(90deg, #7c3aed, #ec4899, #f97316, #7c3aed);
-  background-size: 200% auto;
+/* Panel titles get a flowing rainbow gradient text */
+body.theme-multicolor-dark .hud-panel-title {
+  background: linear-gradient(90deg,
+    #00f5ff, #bf1aff, #ff2d78, #ff8c00, #00ff9f, #00f5ff);
+  background-size: 300% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: rainbowText 4s linear infinite;
+  animation: neonTitleFlow 5s linear infinite;
+  text-shadow: none;
+  border-bottom: 1px solid hsla(185, 100%, 50%, 0.3);
+}
+@keyframes neonTitleFlow {
+  0%   { background-position: 0%   center; }
+  100% { background-position: 300% center; }
 }
 
-@keyframes rainbowText {
-  0%   { background-position: 0% center; }
-  100% { background-position: 200% center; }
+/* Borders on top-level panels animate color independently */
+body.theme-multicolor-dark .hud-panel {
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  position: relative;
+}
+
+/* Scan line in multicolor dark gets a rainbow gradient sweep */
+body.theme-multicolor-dark .os-scan-line {
+  background: linear-gradient(90deg,
+    transparent 0%, #00f5ff 20%, #bf1aff 40%, #ff2d78 60%, #00ff9f 80%, transparent 100%);
+  animation: osScan 5s linear infinite, neonScanHue 5s linear infinite;
+}
+@keyframes neonScanHue {
+  0%   { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+
+/* Buttons get rainbow border+glow on hover; text color stays readable */
+body.theme-multicolor-dark button:hover:not(:disabled) {
+  color: var(--text-primary);
+  animation: neonButtonHue 3s linear infinite;
+}
+@keyframes neonButtonHue {
+  0%   { box-shadow: 0 0 10px hsla(185,100%,55%,0.6); border-color: hsl(185,100%,60%); }
+  25%  { box-shadow: 0 0 10px hsla(280,100%,65%,0.6); border-color: hsl(280,100%,70%); }
+  50%  { box-shadow: 0 0 10px hsla(340,100%,60%,0.6); border-color: hsl(340,100%,65%); }
+  75%  { box-shadow: 0 0 10px hsla(100,100%,50%,0.6); border-color: hsl(100,100%,55%); }
+  100% { box-shadow: 0 0 10px hsla(185,100%,55%,0.6); border-color: hsl(185,100%,60%); }
+}
+
+/* Ensure chrome tabs always have readable fixed text in multicolor dark */
+body.theme-multicolor-dark .chrome-tab,
+body.theme-multicolor-dark .chrome-tab * {
+  color: #8878cc !important;
+  -webkit-text-fill-color: #8878cc !important;
+  background-clip: border-box !important;
+}
+body.theme-multicolor-dark .chrome-tab.active,
+body.theme-multicolor-dark .chrome-tab.active * {
+  color: #00f5ff !important;
+  -webkit-text-fill-color: #00f5ff !important;
+}
+body.theme-multicolor-dark .chrome-tab span {
+  color: inherit;
+}
+
+/* Left panel gets a slow offset hue cycle for positional differentiation */
+body.theme-multicolor-dark [data-panel="left"] {
+  animation: neonLeftPanel 10s linear infinite;
+}
+@keyframes neonLeftPanel {
+  0%   { background: hsla(240, 55%, 4%, 0.96); }
+  33%  { background: hsla(270, 55%, 4%, 0.96); }
+  66%  { background: hsla(210, 55%, 4%, 0.96); }
+  100% { background: hsla(240, 55%, 4%, 0.96); }
+}
+
+/* Right panel gets another phase */
+body.theme-multicolor-dark [data-panel="right"] {
+  animation: neonRightPanel 10s linear infinite;
+}
+@keyframes neonRightPanel {
+  0%   { background: hsla(260, 55%, 5%, 0.96); }
+  33%  { background: hsla(220, 55%, 5%, 0.96); }
+  66%  { background: hsla(290, 55%, 5%, 0.96); }
+  100% { background: hsla(260, 55%, 5%, 0.96); }
+}
+
+/* Scrollbar thumb cycles color */
+body.theme-multicolor-dark ::-webkit-scrollbar-thumb {
+  animation: neonScrollbar 6s linear infinite;
+}
+@keyframes neonScrollbar {
+  0%   { background: #00f5ff; }
+  16%  { background: #bf1aff; }
+  33%  { background: #ff2d78; }
+  50%  { background: #ff8c00; }
+  66%  { background: #00ff9f; }
+  83%  { background: #00d4ff; }
+  100% { background: #00f5ff; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Theme 10: Multicolor Light — Continuous Vivid Rainbow
+   Bright, pastel-vibrant with smoothly flowing rainbow accents
+   ══════════════════════════════════════════════════════════════════ */
+body.theme-multicolor-light {
+  --bg-primary:      #fafafe;
+  --bg-secondary:    #f3f0fc;
+  --bg-tertiary:     #eae6f8;
+  --bg-glass:        rgba(255, 255, 255, 0.88);
+  --bg-glass-hover:  rgba(242, 236, 255, 0.95);
+  --text-primary:    #18182e;
+  --text-secondary:  #4a3f8a;
+  --text-muted:      #9090aa;
+  --accent:          #7c3aed;
+  --accent-dim:      #5b21b6;
+  --accent-rgb:      124, 58, 237;
+  --accent-glow:     rgba(124, 58, 237, 0.3);
+  --accent-glow-lg:  rgba(124, 58, 237, 0.1);
+  --border:          rgba(124, 58, 237, 0.22);
+  --border-accent:   #7c3aed;
+  --shadow-accent:   0 0 24px rgba(124, 58, 237, 0.25);
+  --shadow-sm:       0 1px 3px rgba(26, 26, 46, 0.1);
+  --shadow-md:       0 4px 16px rgba(26, 26, 46, 0.12);
+  --shadow-lg:       0 8px 32px rgba(26, 26, 46, 0.18);
+  --danger:          #dc2626;
+  --success:         #059669;
+  --warning:         #d97706;
+}
+
+/* Panel titles flow through vivid rainbow gradient */
+body.theme-multicolor-light .hud-panel-title {
+  background: linear-gradient(90deg,
+    #7c3aed, #ec4899, #f97316, #eab308, #22c55e, #06b6d4, #7c3aed);
+  background-size: 400% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: lightTitleFlow 6s linear infinite;
+  text-shadow: none;
+}
+@keyframes lightTitleFlow {
+  0%   { background-position: 0%   center; }
+  100% { background-position: 400% center; }
+}
+
+/* Panels get a subtle hue-shifted border animation */
+body.theme-multicolor-light .hud-panel {
+  animation: lightPanelBorder 8s linear infinite;
+}
+@keyframes lightPanelBorder {
+  0%   { box-shadow: 0 0 0 1px hsla(270,70%,65%,0.4), 0 2px 16px hsla(270,70%,55%,0.06); }
+  16%  { box-shadow: 0 0 0 1px hsla(330,70%,60%,0.4), 0 2px 16px hsla(330,70%,50%,0.06); }
+  33%  { box-shadow: 0 0 0 1px hsla(25, 90%,60%,0.4), 0 2px 16px hsla(25, 90%,50%,0.06); }
+  50%  { box-shadow: 0 0 0 1px hsla(50, 90%,55%,0.4), 0 2px 16px hsla(50, 90%,45%,0.06); }
+  66%  { box-shadow: 0 0 0 1px hsla(140,60%,50%,0.4), 0 2px 16px hsla(140,60%,40%,0.06); }
+  83%  { box-shadow: 0 0 0 1px hsla(195,70%,50%,0.4), 0 2px 16px hsla(195,70%,40%,0.06); }
+  100% { box-shadow: 0 0 0 1px hsla(270,70%,65%,0.4), 0 2px 16px hsla(270,70%,55%,0.06); }
+}
+
+/* Corner brackets in light theme also animate */
+body.theme-multicolor-light .hud-panel::before,
+body.theme-multicolor-light .hud-panel::after {
+  animation: lightCornerCycle 6s linear infinite;
+}
+@keyframes lightCornerCycle {
+  0%   { filter: hue-rotate(0deg)   saturate(1.5); }
+  100% { filter: hue-rotate(360deg) saturate(1.5); }
+}
+
+/* Left panel in light theme — warm tones */
+body.theme-multicolor-light [data-panel="left"] {
+  animation: lightLeftPanel 10s linear infinite;
+}
+@keyframes lightLeftPanel {
+  0%   { background: rgba(245, 243, 255, 0.92); }
+  33%  { background: rgba(255, 243, 248, 0.92); }
+  66%  { background: rgba(243, 255, 248, 0.92); }
+  100% { background: rgba(245, 243, 255, 0.92); }
+}
+
+/* Right panel in light theme — cool tones */
+body.theme-multicolor-light [data-panel="right"] {
+  animation: lightRightPanel 10s linear infinite;
+}
+@keyframes lightRightPanel {
+  0%   { background: rgba(243, 248, 255, 0.92); }
+  33%  { background: rgba(248, 255, 245, 0.92); }
+  66%  { background: rgba(255, 248, 243, 0.92); }
+  100% { background: rgba(243, 248, 255, 0.92); }
+}
+
+/* Buttons in light multicolor get rainbow border+glow on hover; text fixed */
+body.theme-multicolor-light button:hover:not(:disabled) {
+  color: var(--text-primary);
+  animation: lightButtonHue 3s linear infinite;
+}
+@keyframes lightButtonHue {
+  0%   { box-shadow: 0 0 8px hsla(270,70%,60%,0.4); border-color: hsl(270,70%,55%); }
+  25%  { box-shadow: 0 0 8px hsla(330,70%,55%,0.4); border-color: hsl(330,70%,50%); }
+  50%  { box-shadow: 0 0 8px hsla(30, 80%,55%,0.4); border-color: hsl(30, 80%,50%); }
+  75%  { box-shadow: 0 0 8px hsla(140,60%,45%,0.4); border-color: hsl(140,60%,40%); }
+  100% { box-shadow: 0 0 8px hsla(270,70%,60%,0.4); border-color: hsl(270,70%,55%); }
+}
+
+/* Ensure chrome tabs always have readable fixed text in multicolor light */
+body.theme-multicolor-light .chrome-tab,
+body.theme-multicolor-light .chrome-tab * {
+  color: #6a5acd !important;
+  -webkit-text-fill-color: #6a5acd !important;
+  background-clip: border-box !important;
+}
+body.theme-multicolor-light .chrome-tab.active,
+body.theme-multicolor-light .chrome-tab.active * {
+  color: #7c3aed !important;
+  -webkit-text-fill-color: #7c3aed !important;
+}
+body.theme-multicolor-light .chrome-tab span {
+  color: inherit;
+}
+
+/* Scan line in light theme cycles through vivid pastels */
+body.theme-multicolor-light .os-scan-line {
+  background: linear-gradient(90deg,
+    transparent 0%, #7c3aed 20%, #ec4899 40%, #f97316 60%, #22c55e 80%, transparent 100%);
+  opacity: 0.25;
+  animation: osScan 6s linear infinite, lightScanHue 6s linear infinite;
+}
+@keyframes lightScanHue {
+  0%   { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+
+/* Scrollbar in light theme */
+body.theme-multicolor-light ::-webkit-scrollbar-thumb {
+  animation: lightScrollbar 8s linear infinite;
+}
+@keyframes lightScrollbar {
+  0%   { background: #7c3aed; }
+  16%  { background: #ec4899; }
+  33%  { background: #f97316; }
+  50%  { background: #eab308; }
+  66%  { background: #22c55e; }
+  83%  { background: #06b6d4; }
+  100% { background: #7c3aed; }
 }
 
 /* --- Reset & Base --- */

@@ -894,7 +894,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           style={{ display: "flex", gap: "0px", overflow: "visible", flex: 1, position: "relative", minHeight: 0 }}
         >
           {/* LEFT PANEL */}
-          <div style={{ width: `${leftWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div data-panel="left" style={{ width: `${leftWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
             <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>// AGENT TASKS</span>
@@ -1090,7 +1090,6 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                         alignItems: "center",
                         padding: "0 16px",
                         cursor: "pointer",
-                        color: isActive ? "var(--accent)" : "var(--text-secondary)",
                         fontWeight: isActive ? "bold" : "normal",
                         fontSize: "11px",
                         letterSpacing: "0.02em",
@@ -1466,7 +1465,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           </div>
 
           {/* RIGHT PANEL */}
-          <div style={{ width: `${rightWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div data-panel="right" style={{ width: `${rightWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
             <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div className="hud-panel-title">// LIVE PLAN & ACTIVITY</div>
               <div style={{ padding: "12px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "12px" }}>
