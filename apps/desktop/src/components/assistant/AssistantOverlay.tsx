@@ -8,6 +8,7 @@ import { TranscriptView } from "./TranscriptView";
 import { MessageList } from "./ResponseBubble";
 import { ActionLog } from "../execution/ActionLog";
 import { TaskList } from "./TaskList";
+import { OverlayIdleView } from "./OverlayIdleView";
 import { useAssistantStore } from "../../stores/assistantStore";
 import { wsClient } from "../../lib/ws";
 import pkg from "../../../package.json";
@@ -104,6 +105,9 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
   const containerRef = useRef<HTMLDivElement>(null);
   const lastContainerWidth = useRef<number | null>(null);
+  // Save panel widths before overlay collapse so they can be restored on expand
+  const savedPanelWidths = useRef<{ left: number; right: number } | null>(null);
+  const isRestoringFromOverlay = useRef(false);
   const isDraggingLeft = useRef(false);
   const isDraggingRight = useRef(false);
 
@@ -155,6 +159,13 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   useEffect(() => {
     const handleWindowResize = () => {
       if (!containerRef.current) return;
+      // If we just restored from overlay mode, skip the width recalculation
+      // because we already restored the saved widths
+      if (isRestoringFromOverlay.current) {
+        isRestoringFromOverlay.current = false;
+        lastContainerWidth.current = containerRef.current.clientWidth;
+        return;
+      }
       const w = containerRef.current.clientWidth;
       if (lastContainerWidth.current && lastContainerWidth.current !== w) {
         const ratio = w / lastContainerWidth.current;
@@ -180,6 +191,22 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
       clearTimeout(timer);
     };
   }, []);
+
+  // Save panel widths before entering overlay, restore them when exiting
+  useEffect(() => {
+    if (isOverlayMode) {
+      // Capture current widths before the overlay shrinks the window
+      savedPanelWidths.current = { left: leftWidth, right: rightWidth };
+    } else {
+      // Exiting overlay — restore saved widths if available
+      if (savedPanelWidths.current) {
+        setLeftWidth(savedPanelWidths.current.left);
+        setRightWidth(savedPanelWidths.current.right);
+        isRestoringFromOverlay.current = true;
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOverlayMode]);
 
   // Clean up global listeners on unmount
   useEffect(() => {
@@ -602,16 +629,19 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               <ActionLog plan={currentPlan} selectedTaskId={null} messages={messages} />
             </div>
           ) : (
-            <div style={{
-              flex: 1, display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center",
-              color: "rgba(255,255,255,0.2)", fontSize: "12px",
-              textAlign: "center", padding: "24px", gap: "10px",
-              fontFamily: "var(--font-mono)",
-            }}>
-              <Activity size={24} style={{ opacity: 0.2 }} />
-              <span>Waiting for task...</span>
-            </div>
+            // ── Idle mini-chat view ──────────────────────────────────────
+            <OverlayIdleView
+              voiceState={voiceState}
+              currentTranscript={currentTranscript}
+              messages={messages}
+              streamingResponse={streamingResponse}
+              isConnected={isConnected}
+              textInput={textInput}
+              setTextInput={setTextInput}
+              handleTextSend={handleTextSend}
+              handleVoiceClick={handleVoiceClick}
+              handleKeyDown={handleKeyDown}
+            />
           )}
         </div>
 
