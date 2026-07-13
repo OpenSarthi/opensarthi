@@ -4,6 +4,9 @@ websockets>=13
 pydantic>=2.9
 pydantic-settings>=2.6
 pydantic-ai>=0.2
+groq
+anthropic
+google-generativeai
 ollama>=0.4
 httpx>=0.28
 SpeechRecognition>=3.10
