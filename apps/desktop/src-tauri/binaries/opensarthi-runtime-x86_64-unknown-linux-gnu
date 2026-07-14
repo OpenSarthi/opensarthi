@@ -40,7 +40,7 @@ _check_venv() {
         return 1
     fi
     env -u LD_LIBRARY_PATH -u LD_PRELOAD "$venv_python" \
-        -c "import uvicorn, fastapi, speech_recognition, groq, anthropic, google.generativeai" 2>/dev/null
+        -c "import uvicorn, fastapi, speech_recognition, groq, anthropic, google.generativeai, sentence_transformers" 2>/dev/null
 }
 
 # ── 4. Select or bootstrap the active venv ────────────────────────────────────

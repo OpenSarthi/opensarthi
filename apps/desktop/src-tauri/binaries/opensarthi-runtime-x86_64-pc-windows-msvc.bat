@@ -30,7 +30,7 @@ set "ACTIVE_VENV="
 
 REM Check dev venv first
 if exist "%RUNTIME_DIR%\.venv\Scripts\python.exe" (
-    "%RUNTIME_DIR%\.venv\Scripts\python.exe" -c "import uvicorn, fastapi, speech_recognition, groq, anthropic, google.generativeai" >NUL 2>&1
+    "%RUNTIME_DIR%\.venv\Scripts\python.exe" -c "import uvicorn, fastapi, speech_recognition, groq, anthropic, google.generativeai, sentence_transformers" >NUL 2>&1
     if !errorlevel! equ 0 (
         set "ACTIVE_VENV=%RUNTIME_DIR%\.venv"
         goto :venv_ready
@@ -39,7 +39,7 @@ if exist "%RUNTIME_DIR%\.venv\Scripts\python.exe" (
 
 REM Check user venv
 if exist "%USER_VENV%\Scripts\python.exe" (
-    "%USER_VENV%\Scripts\python.exe" -c "import uvicorn, fastapi, speech_recognition, groq, anthropic, google.generativeai" >NUL 2>&1
+    "%USER_VENV%\Scripts\python.exe" -c "import uvicorn, fastapi, speech_recognition, groq, anthropic, google.generativeai, sentence_transformers" >NUL 2>&1
     if !errorlevel! equ 0 (
         set "ACTIVE_VENV=%USER_VENV%"
         goto :venv_ready
