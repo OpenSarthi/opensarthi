@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { X, Save, Volume2, Palette, Cpu, ChevronRight, CheckCircle2 } from "lucide-react";
+import { X, Save, Volume2, Bell, Palette, Cpu, ChevronRight, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { playCue } from "../../hooks/useAudioCues";
 
 // Provider → models mapping
 const PROVIDER_MODELS: Record<string, { value: string; label: string }[]> = {
@@ -69,6 +70,8 @@ interface SettingsViewProps {
   currentWakeWords: string[];
   currentWakeWordEnabled: boolean;
   currentWakeWordThreshold: number;
+  currentSoundEnabled: boolean;
+  currentSoundVolume: number;
   onSave: (settings: {
     localModel: string;
     cloudModel: string;
@@ -85,6 +88,8 @@ interface SettingsViewProps {
     wakeWords: string[];
     wakeWordEnabled: boolean;
     wakeWordThreshold: number;
+    soundEnabled: boolean;
+    soundVolume: number;
   }) => void;
 }
 
@@ -204,6 +209,8 @@ export function SettingsView({
   currentWakeWords,
   currentWakeWordEnabled,
   currentWakeWordThreshold,
+  currentSoundEnabled,
+  currentSoundVolume,
   onSave,
 }: SettingsViewProps) {
   const [provider, setProvider] = useState(currentProvider || "google");
@@ -224,6 +231,8 @@ export function SettingsView({
   const [wakeWordsInput, setWakeWordsInput] = useState((currentWakeWords || []).join(", "));
   const [wakeWordEnabled, setWakeWordEnabled] = useState(currentWakeWordEnabled !== undefined ? currentWakeWordEnabled : true);
   const [wakeWordThreshold, setWakeWordThreshold] = useState(currentWakeWordThreshold !== undefined ? currentWakeWordThreshold : 0.5);
+  const [soundEnabled, setSoundEnabledLocal] = useState(currentSoundEnabled !== undefined ? currentSoundEnabled : true);
+  const [soundVolume, setSoundVolume] = useState(currentSoundVolume !== undefined ? currentSoundVolume : 60);
   const [saved, setSaved] = useState(false);
 
   const providerInfo = PROVIDER_LABELS[provider] || PROVIDER_LABELS.google;
@@ -295,6 +304,8 @@ export function SettingsView({
       wakeWords: parsedWakeWords,
       wakeWordEnabled,
       wakeWordThreshold,
+      soundEnabled,
+      soundVolume,
     });
     setSaved(true);
     setTimeout(() => {
@@ -609,6 +620,54 @@ export function SettingsView({
                   </>
                 )}
               </div>
+            </div>
+
+            {/* ── SOUND & AUDIO SECTION ── */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", paddingTop: "4px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+              <SectionHeader icon={<Bell size={12} color="var(--accent)" />} title="[ SOUND & AUDIO CUES ]" />
+
+              <Toggle
+                id="sound-enabled"
+                checked={soundEnabled}
+                onChange={(val) => {
+                  setSoundEnabledLocal(val);
+                  if (val) {
+                    // Preview the listen_start cue when turning sounds on
+                    setTimeout(() => playCue("listen_start"), 80);
+                  }
+                }}
+                label="ENABLE SOUND CUES"
+                sublabel="Beeps & tones on wake, listen, reply, errors, etc."
+              />
+
+              {soundEnabled && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.15 }}
+                  style={{ display: "flex", flexDirection: "column", gap: "5px" }}
+                >
+                  <label style={labelStyle}>CUE VOLUME ({soundVolume}%)</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <input
+                      type="range"
+                      min="0" max="100" step="5"
+                      value={soundVolume}
+                      onChange={(e) => setSoundVolume(parseInt(e.target.value, 10))}
+                      onMouseUp={() => playCue("listen_start")}
+                      onTouchEnd={() => playCue("listen_start")}
+                      style={{ flex: 1, accentColor: "var(--accent)", cursor: "pointer" }}
+                    />
+                    <span style={{ fontSize: "13px", fontFamily: "var(--font-mono)", color: "var(--accent)", minWidth: "42px", textAlign: "right" }}>
+                      {soundVolume}%
+                    </span>
+                  </div>
+                  <span style={{ fontSize: "10px", color: "var(--text-muted)", letterSpacing: "0.04em" }}>
+                    Drag to adjust — releases a preview beep
+                  </span>
+                </motion.div>
+              )}
             </div>
           </div>
 

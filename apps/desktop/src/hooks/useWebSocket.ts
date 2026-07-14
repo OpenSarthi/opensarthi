@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { wsClient } from "../lib/ws";
 import { useAssistantStore } from "../stores/assistantStore";
 import { usePermissionStore } from "../stores/permissionStore";
+import { playCue } from "./useAudioCues";
 import {
   PlanSchema,
   PermissionRequestSchema,
@@ -66,18 +67,8 @@ export function useWebSocket(port: number | null) {
           const hasWakeWord = wakeWordRegex.test(lowerText);
           
           if (hasWakeWord) {
-            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-            const oscillator = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(600, audioCtx.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
-            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            oscillator.start();
-            oscillator.stop(audioCtx.currentTime + 0.2);
+            // Wake word beep — ascending up-glide
+            playCue("wake");
             
             // Strip everything up to and including the full wake phrase (prefix + wake word)
             const wakeWordRegexFull = new RegExp(`^(?:.*?)(?:hey|hello|hi)?\\s*(?:${wakeWordPattern})`, 'i');
@@ -104,6 +95,7 @@ export function useWebSocket(port: number | null) {
         store.setUserOverrodeMinimize(false);
         setPlan(plan, thread_id);
         setVoiceState("processing");
+        playCue("processing");
       }),
 
       wsClient.on("tool_action", (msg) => {
@@ -173,6 +165,7 @@ export function useWebSocket(port: number | null) {
           setVoiceState("speaking");
         } else {
           setVoiceState("idle");
+          playCue("response_ready");
         }
         
         setPlan(null, thread_id);
@@ -181,6 +174,7 @@ export function useWebSocket(port: number | null) {
 
       wsClient.on("speech_started", () => {
         setVoiceState("speaking");
+        playCue("speech_start");
       }),
 
       wsClient.on("speech_completed", (msg) => {
@@ -195,27 +189,22 @@ export function useWebSocket(port: number | null) {
           setTranscript(null);
         } else {
           setVoiceState("idle");
+          playCue("speech_end");
         }
       }),
 
       wsClient.on("voice_state", (msg) => {
         const { state } = msg.payload as { state: any };
         if (state) {
+          const prev = useAssistantStore.getState().voiceState;
           setVoiceState(state);
           if (state === "listening") {
-            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-            const oscillator = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(600, audioCtx.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
-            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            oscillator.start();
-            oscillator.stop(audioCtx.currentTime + 0.2);
+            // Mic just opened — play listen_start cue
+            playCue("listen_start");
             setTranscript(null);
+          } else if (state === "idle" && prev === "listening") {
+            // Mic closed — play listen_stop cue
+            playCue("listen_stop");
           }
         }
       }),
@@ -275,6 +264,7 @@ export function useWebSocket(port: number | null) {
       wsClient.on("error", (msg) => {
         console.error("[Runtime error]", msg.payload);
         setVoiceState("error");
+        playCue("error");
       }),
 
       wsClient.on("task_paused", (msg) => {

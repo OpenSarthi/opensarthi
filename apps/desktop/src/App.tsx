@@ -55,6 +55,9 @@ export default function App() {
     isConnected,
     setPersonalization,
     setOnboardingCompleted,
+    soundEnabled,
+    soundVolume,
+    setSoundSettings,
   } = useAssistantStore();
 
   // Dynamic Theme application to document.body
@@ -90,6 +93,8 @@ export default function App() {
     wakeWords: string[];
     wakeWordEnabled: boolean;
     wakeWordThreshold: number;
+    soundEnabled: boolean;
+    soundVolume: number;
   }) => {
     setActiveModels(settings.localModel, settings.cloudModel);
     setActiveProvider(settings.provider);
@@ -103,6 +108,7 @@ export default function App() {
     setVoiceSettings(settings.voiceAccent, settings.voiceSpeed, settings.continuousListening);
     setWakeWordSettings(settings.wakeWordEnabled, settings.wakeWordThreshold, settings.wakeWords);
     setActiveTheme(settings.theme);
+    setSoundSettings(settings.soundEnabled, settings.soundVolume);
 
     wsClient.send("update_settings", {
       local_model: settings.localModel,
@@ -232,6 +238,8 @@ export default function App() {
             currentWakeWords={wakeWords}
             currentWakeWordEnabled={wakeWordEnabled}
             currentWakeWordThreshold={wakeWordThreshold}
+            currentSoundEnabled={soundEnabled}
+            currentSoundVolume={soundVolume}
             onSave={handleSaveSettings}
           />
         )}
