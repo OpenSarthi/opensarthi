@@ -375,7 +375,7 @@ class OpenAppTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        app = args.get("app", "").strip()
+        app = (args.get("app") or "").strip()
         if not app:
             return ToolResult.fail("No app name provided", retryable=False)
 
@@ -463,7 +463,7 @@ class FocusWindowTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        title = args.get("title", "").strip()
+        title = (args.get("title") or "").strip()
         if not title:
             return ToolResult.fail("No window title provided", retryable=False)
 

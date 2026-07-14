@@ -30,8 +30,8 @@ class WebSearchTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        query = args.get("query", "").strip()
-        count = int(args.get("count", 5))
+        query = (args.get("query") or "").strip()
+        count = int(args.get("count", 5) or 5)
 
         if not query:
             return ToolResult.fail("Missing query parameter", retryable=False)
@@ -103,8 +103,8 @@ class WeatherTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        location = args.get("location", "").strip()
-        days = min(int(args.get("days", 1)), 3)
+        location = (args.get("location") or "").strip()
+        days = min(int(args.get("days", 1) or 1), 3)
 
         try:
             loop = asyncio.get_running_loop()
@@ -169,9 +169,9 @@ class SetTimerTool(BaseTool):
 
     async def execute(self, args: dict) -> ToolResult:
         global _timer_counter
-        minutes = float(args.get("minutes", 0))
-        seconds = float(args.get("seconds", 0))
-        label = args.get("label", "Timer").strip() or "Timer"
+        minutes = float(args.get("minutes") or 0)
+        seconds = float(args.get("seconds") or 0)
+        label = (args.get("label") or "Timer").strip() or "Timer"
         total_seconds = minutes * 60 + seconds
 
         if total_seconds <= 0:
@@ -283,9 +283,9 @@ class ListFilesTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        path_arg = args.get("path", "home")
+        path_arg = args.get("path") or "home"
         folders_only = bool(args.get("folders_only", False))
-        limit = int(args.get("limit", 50))
+        limit = int(args.get("limit", 50) or 50)
 
         real_path = _resolve_path(path_arg)
         if not os.path.exists(real_path):
@@ -332,7 +332,7 @@ class OpenPathTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        path_arg = args.get("path", "").strip()
+        path_arg = (args.get("path") or "").strip()
         if not path_arg:
             return ToolResult.fail("Missing path parameter", retryable=False)
 
@@ -368,8 +368,8 @@ class ReadFileTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        path_arg = args.get("path", "").strip()
-        max_chars = int(args.get("max_chars", 8000))
+        path_arg = (args.get("path") or "").strip()
+        max_chars = int(args.get("max_chars", 8000) or 8000)
 
         if not path_arg:
             return ToolResult.fail("Missing path parameter", retryable=False)
@@ -417,7 +417,7 @@ class VolumeControlTool(BaseTool):
 
     async def execute(self, args: dict) -> ToolResult:
         level = args.get("level")
-        action = args.get("action", "").lower().strip()
+        action = (args.get("action") or "").lower().strip()
 
         try:
             if level is not None:
