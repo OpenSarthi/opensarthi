@@ -777,6 +777,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--border)
 }
 
 /* ── Listening ear indicator ─────────────────────────────────── */
+/* ── AI Eyes — always visible, state-aware ───────────────────── */
 .os-listen-ear {
   display: inline-flex;
   gap: 8px;
@@ -791,13 +792,77 @@ button:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--border)
   background:
     radial-gradient(farthest-side, var(--text-primary) 95%, transparent) 50%/7px 7px no-repeat
     var(--accent);
-  animation: osListenEar 1.5s infinite alternate;
-  box-shadow: 0 0 8px var(--accent-glow);
+  animation: osEyeIdle 4s ease-in-out infinite alternate;
+  box-shadow: 0 0 5px var(--accent-glow);
+  opacity: 0.45;
+  transition: opacity 0.4s, box-shadow 0.4s, background 0.5s;
 }
 .os-listen-ear::after { --s: -1; }
+
+/* idle — dim, slow subtle blink */
+@keyframes osEyeIdle {
+  0%,30%  { transform: scaleX(var(--s,1)) scaleY(1);   clip-path: inset(0); }
+  48%,52% { transform: scaleX(var(--s,1)) scaleY(0.08); clip-path: inset(0); }
+  70%,100%{ transform: scaleX(var(--s,1)) scaleY(1);   clip-path: inset(0); }
+}
+
+/* listening — bright, focused looking-around animation */
+.os-listen-ear.is-listening::before,
+.os-listen-ear.is-listening::after {
+  opacity: 1;
+  box-shadow: 0 0 12px var(--accent-glow), 0 0 24px var(--accent-glow);
+  animation: osListenEar 1.5s ease-in-out infinite alternate;
+}
 @keyframes osListenEar {
   0%,20%  { transform: scaleX(var(--s,1)) rotate(0deg);   clip-path: inset(0); }
   60%,100%{ transform: scaleX(var(--s,1)) rotate(30deg);  clip-path: inset(40% 0 0); }
+}
+
+/* processing — yellow tint, rapid scanning */
+.os-listen-ear.is-processing::before,
+.os-listen-ear.is-processing::after {
+  opacity: 0.9;
+  background:
+    radial-gradient(farthest-side, #fff 95%, transparent) 50%/7px 7px no-repeat
+    #f59e0b;
+  box-shadow: 0 0 10px rgba(245,158,11,0.7), 0 0 20px rgba(245,158,11,0.3);
+  animation: osEyeProcess 0.9s ease-in-out infinite alternate;
+}
+@keyframes osEyeProcess {
+  0%   { transform: scaleX(var(--s,1)) translateX(0px); }
+  50%  { transform: scaleX(var(--s,1)) translateX(3px) scaleY(0.7); }
+  100% { transform: scaleX(var(--s,1)) translateX(-3px); }
+}
+
+/* speaking — green tint, pulsing */
+.os-listen-ear.is-speaking::before,
+.os-listen-ear.is-speaking::after {
+  opacity: 0.95;
+  background:
+    radial-gradient(farthest-side, #fff 95%, transparent) 50%/7px 7px no-repeat
+    #10b981;
+  box-shadow: 0 0 12px rgba(16,185,129,0.8), 0 0 24px rgba(16,185,129,0.3);
+  animation: osEyeSpeak 0.7s ease-in-out infinite alternate;
+}
+@keyframes osEyeSpeak {
+  0%   { transform: scaleX(var(--s,1)) scale(1); }
+  50%  { transform: scaleX(var(--s,1)) scale(1.15); }
+  100% { transform: scaleX(var(--s,1)) scale(0.92); }
+}
+
+/* error — red tint */
+.os-listen-ear.is-error::before,
+.os-listen-ear.is-error::after {
+  opacity: 0.9;
+  background:
+    radial-gradient(farthest-side, #fff 95%, transparent) 50%/7px 7px no-repeat
+    #ef4444;
+  box-shadow: 0 0 10px rgba(239,68,68,0.7);
+  animation: osEyeError 0.4s ease-in-out infinite alternate;
+}
+@keyframes osEyeError {
+  0%   { transform: scaleX(var(--s,1)) rotate(-8deg); }
+  100% { transform: scaleX(var(--s,1)) rotate(8deg); }
 }
 
 /* ── Processing dots ─────────────────────────────────────────── */
@@ -901,3 +966,28 @@ button:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--border)
   background: rgba(255, 255, 255, 0.09);
 }
 
+/* ── Google-style input bar blob animations ──────────────────── */
+@keyframes googleGlowBlue {
+  0%   { transform: translate(-30%, -20%) scale(1.2); opacity: 0.8; }
+  33%  { transform: translate(-12%, -8%)  scale(1.5); opacity: 1.0; }
+  66%  { transform: translate(-35%, -28%) scale(1.0); opacity: 0.6; }
+  100% { transform: translate(-30%, -20%) scale(1.2); opacity: 0.8; }
+}
+@keyframes googleGlowRed {
+  0%   { transform: translate(-10%, -15%) scale(1.4); opacity: 0.8; }
+  33%  { transform: translate(12%, -5%)   scale(1.1); opacity: 0.6; }
+  66%  { transform: translate(-18%, -22%) scale(1.6); opacity: 1.0; }
+  100% { transform: translate(-10%, -15%) scale(1.4); opacity: 0.8; }
+}
+@keyframes googleGlowYellow {
+  0%   { transform: translate(12%, -22%) scale(1.1); opacity: 0.6; }
+  33%  { transform: translate(-6%, -10%) scale(1.4); opacity: 1.0; }
+  66%  { transform: translate(28%, -18%) scale(1.2); opacity: 0.7; }
+  100% { transform: translate(12%, -22%) scale(1.1); opacity: 0.6; }
+}
+@keyframes googleGlowGreen {
+  0%   { transform: translate(32%, -10%) scale(1.5); opacity: 0.8; }
+  33%  { transform: translate(38%, -22%) scale(1.1); opacity: 0.6; }
+  66%  { transform: translate(18%, -6%)  scale(1.4); opacity: 1.0; }
+  100% { transform: translate(32%, -10%) scale(1.5); opacity: 0.8; }
+}

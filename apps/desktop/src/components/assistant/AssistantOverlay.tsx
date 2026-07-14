@@ -734,13 +734,20 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           <span style={{ fontSize: "14px", fontWeight: "bold", letterSpacing: "0.1em", display: "flex", gap: "8px" }}>
             // OPENSARTHI - AN AI POWERED DESKTOP ASSISTANT AND AGENT
           </span>
-          {/* State badge */}
-          {voiceState === "listening" && (
-            <span className="os-listen-ear" title="Listening" />
-          )}
-          {(voiceState === "processing" || isTaskRunning) && voiceState !== "listening" && (
+          {/* AI Eyes — always visible, state-aware */}
+          <span
+            className={[
+              "os-listen-ear",
+              voiceState === "listening"  ? "is-listening"  : "",
+              voiceState === "processing" ? "is-processing" : "",
+              voiceState === "speaking"   ? "is-speaking"   : "",
+              voiceState === "error"      ? "is-error"      : "",
+            ].filter(Boolean).join(" ")}
+            title={`Voice: ${voiceState}`}
+          />
+          {isTaskRunning && voiceState !== "listening" && (
             <span className="os-badge-pulse" style={{ fontSize: "10px", color: "var(--accent)", letterSpacing: "0.1em" }}>
-              {isTaskRunning ? "AGENT ACTIVE" : "PROCESSING"}
+              AGENT ACTIVE
             </span>
           )}
         </div>
@@ -1384,9 +1391,57 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             {/* INPUT BAR */}
             <div style={{
               padding: "16px", borderTop: "1px solid var(--border)",
-              display: "flex", flexDirection: "column", gap: "0px", background: "rgba(0,0,0,0.4)", zIndex: 1
+              display: "flex", flexDirection: "column", gap: "0px",
+              background: "rgba(0,0,0,0.4)", zIndex: 1,
+              position: "relative", overflow: "hidden",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+              {/* Google-style animated color glow background */}
+              {(() => {
+                const isActive = voiceState === "listening" || voiceState === "speaking" || voiceState === "processing";
+                const dur = voiceState === "processing" ? "1.4s" : voiceState === "speaking" ? "2.4s" : isActive ? "3.2s" : "6s";
+                return (
+                  <div style={{
+                    position: "absolute", inset: 0,
+                    display: "flex", alignItems: "center",
+                    opacity: isActive ? 0.32 : 0.10,
+                    pointerEvents: "none",
+                    filter: "blur(22px)",
+                    transition: "opacity 0.6s ease",
+                    zIndex: 0,
+                    overflow: "hidden",
+                  }}>
+                    {/* Blue blob */}
+                    <div style={{
+                      position: "absolute", width: "35%", height: "200%", left: "3%",
+                      borderRadius: "50%",
+                      background: "radial-gradient(circle, #4285F4 0%, transparent 75%)",
+                      animation: `googleGlowBlue ${dur} infinite ease-in-out`,
+                    }} />
+                    {/* Red blob */}
+                    <div style={{
+                      position: "absolute", width: "35%", height: "200%", left: "28%",
+                      borderRadius: "50%",
+                      background: "radial-gradient(circle, #EA4335 0%, transparent 75%)",
+                      animation: `googleGlowRed ${dur} infinite ease-in-out`,
+                    }} />
+                    {/* Yellow blob */}
+                    <div style={{
+                      position: "absolute", width: "35%", height: "200%", left: "53%",
+                      borderRadius: "50%",
+                      background: "radial-gradient(circle, #FBBC05 0%, transparent 75%)",
+                      animation: `googleGlowYellow ${dur} infinite ease-in-out`,
+                    }} />
+                    {/* Green blob */}
+                    <div style={{
+                      position: "absolute", width: "35%", height: "200%", left: "78%",
+                      borderRadius: "50%",
+                      background: "radial-gradient(circle, #34A853 0%, transparent 75%)",
+                      animation: `googleGlowGreen ${dur} infinite ease-in-out`,
+                    }} />
+                  </div>
+                );
+              })()}
+              <div style={{ display: "flex", alignItems: "center", gap: "16px", position: "relative", zIndex: 1 }}>
                 <VoiceButton voiceState={voiceState} onClick={handleVoiceClick} disabled={!isConnected} />
                 <Waveform voiceState={voiceState} />
                 <input
