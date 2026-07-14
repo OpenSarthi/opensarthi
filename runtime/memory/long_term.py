@@ -11,6 +11,8 @@ class MemoryEntry:
         self.thread_id = thread_id
         self.importance = importance
 
+_cached_encoder = None
+
 class LongTermMemory:
     """
     Long-term semantic memory with two-tier search:
@@ -29,10 +31,13 @@ class LongTermMemory:
 
     def _try_load_encoder(self):
         """Try to load the local sentence-transformers model. Non-fatal if unavailable."""
+        global _cached_encoder
         try:
             from sentence_transformers import SentenceTransformer
             import numpy as np
-            self._encoder = SentenceTransformer("all-MiniLM-L6-v2")
+            if _cached_encoder is None:
+                _cached_encoder = SentenceTransformer("all-MiniLM-L6-v2")
+            self._encoder = _cached_encoder
             self._use_semantic = True
             import structlog
             structlog.get_logger().info("Semantic memory activated (all-MiniLM-L6-v2)")
