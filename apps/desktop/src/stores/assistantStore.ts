@@ -179,6 +179,10 @@ interface AssistantState {
   streamingResponse: string | null;
   appendStreamChunk: (chunk: string) => void;
   clearStreamingResponse: () => void;
+  // Sound cue settings
+  soundEnabled: boolean;
+  soundVolume: number; // 0–100
+  setSoundSettings: (enabled: boolean, volume: number) => void;
 }
 
 export const useAssistantStore = create<AssistantState>((set) => ({
@@ -227,6 +231,12 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   shellOutputLines: [],
   lastClassification: null,
   streamingResponse: null,
+  soundEnabled: typeof window !== "undefined"
+    ? localStorage.getItem("opensarthi_sound_enabled") !== "false"
+    : true,
+  soundVolume: typeof window !== "undefined"
+    ? parseInt(localStorage.getItem("opensarthi_sound_volume") || "60", 10)
+    : 60,
 
   setVoiceState: (voiceState) => set({ voiceState }),
   setConnected: (isConnected) => set({ isConnected }),
@@ -694,4 +704,11 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     streamingResponse: (s.streamingResponse || "") + chunk,
   })),
   clearStreamingResponse: () => set({ streamingResponse: null }),
+  setSoundSettings: (enabled, volume) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("opensarthi_sound_enabled", String(enabled));
+      localStorage.setItem("opensarthi_sound_volume", String(volume));
+    }
+    set({ soundEnabled: enabled, soundVolume: volume });
+  },
 }));
