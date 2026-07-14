@@ -26,8 +26,8 @@ class SelfFixTool(BaseTool):
     }
 
     async def execute(self, args: dict, permission_manager=None) -> ToolResult:
-        description = args.get("description", "").strip()
-        target_file = args.get("target_file", "").strip()
+        description = (args.get("description") or "").strip()
+        target_file = (args.get("target_file") or "").strip()
 
         if not description:
             return ToolResult.fail("Missing description parameter", retryable=False)

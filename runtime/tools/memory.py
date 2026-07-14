@@ -16,8 +16,8 @@ class RememberTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        fact = args.get("fact", "").strip()
-        importance = float(args.get("importance", 0.8))
+        fact = (args.get("fact") or "").strip()
+        importance = float(args.get("importance", 0.8) or 0.8)
 
         if not fact:
             return ToolResult.fail("Missing fact parameter", retryable=False)
@@ -44,7 +44,7 @@ class RecallTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        query = args.get("query", "").strip()
+        query = (args.get("query") or "").strip()
         if not query:
             return ToolResult.fail("Missing query parameter", retryable=False)
 
@@ -78,7 +78,7 @@ class ForgetMemoryTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        query = args.get("query", "").strip()
+        query = (args.get("query") or "").strip()
         if not query:
             return ToolResult.fail("Missing query parameter", retryable=False)
 

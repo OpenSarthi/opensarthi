@@ -19,8 +19,8 @@ class SaveNoteTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        title = args.get("title", "").strip()
-        content = args.get("content", "").strip()
+        title = (args.get("title") or "").strip()
+        content = (args.get("content") or "").strip()
 
         if not title:
             return ToolResult.fail("Missing title parameter", retryable=False)
@@ -59,7 +59,7 @@ class GetNotesTool(BaseTool):
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        query = args.get("query", "").strip().lower()
+        query = (args.get("query") or "").strip().lower()
 
         if not os.path.exists(NOTES_DIR):
             return ToolResult.ok("No notes folder exists yet. Call save_note to create your first note.")
