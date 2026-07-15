@@ -52,10 +52,25 @@ class WebSearchTool(BaseTool):
         url = f"https://html.duckduckgo.com/html/?q={encoded}"
         req = urllib.request.Request(
             url,
-            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) OpenSarthi/1.0"},
+            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"},
         )
         with urllib.request.urlopen(req, timeout=8) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
+
+        # Helper to clean and decode DuckDuckGo redirect URLs
+        def clean_url(url_val: str) -> str:
+            if url_val.startswith("//"):
+                url_val = "https:" + url_val
+            try:
+                parsed = urllib.parse.urlparse(url_val)
+                if parsed.netloc == "duckduckgo.com" and parsed.path == "/l/":
+                    query_params = urllib.parse.parse_qs(parsed.query)
+                    uddg_vals = query_params.get("uddg", [])
+                    if uddg_vals:
+                        return uddg_vals[0]
+            except Exception:
+                pass
+            return url_val
 
         # Parse result blocks: title + snippet
         results = []
@@ -68,20 +83,32 @@ class WebSearchTool(BaseTool):
             url_val = html.unescape(m.group(1)).strip()
             title = html.unescape(re.sub(r"<[^>]+>", "", m.group(2))).strip()
             snippet = html.unescape(re.sub(r"<[^>]+>", "", m.group(3))).strip()
+            
+            # Clean and decode URL
+            target_url = clean_url(url_val)
+            
+            # Filter out sponsored ad links
+            if "y.js" in target_url or "ad_domain" in target_url or "ad_provider" in target_url:
+                continue
+
             if title and snippet:
-                results.append(f"**{title}**\n{snippet}\n{url_val}")
+                results.append(f"**{title}**\n{snippet}\n{target_url}")
             if len(results) >= count:
                 break
 
         if not results:
-            # Fallback: DuckDuckGo Instant Answer API
-            url2 = f"https://api.duckduckgo.com/?q={encoded}&format=json&no_html=1&skip_disambig=1"
-            req2 = urllib.request.Request(url2, headers={"User-Agent": "OpenSarthi/1.0"})
-            with urllib.request.urlopen(req2, timeout=8) as resp2:
-                data = json.loads(resp2.read().decode("utf-8"))
-            abstract = data.get("AbstractText", "")
-            if abstract:
-                return f"**{data.get('Heading', query)}**\n{abstract}\n{data.get('AbstractURL', '')}"
+            try:
+                url2 = f"https://api.duckduckgo.com/?q={encoded}&format=json&no_html=1&skip_disambig=1"
+                req2 = urllib.request.Request(url2, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"})
+                with urllib.request.urlopen(req2, timeout=8) as resp2:
+                    data = json.loads(resp2.read().decode("utf-8"))
+                abstract = data.get("AbstractText", "")
+                if abstract:
+                    return f"**{data.get('Heading', query)}**\n{abstract}\n{data.get('AbstractURL', '')}"
+            except Exception as e:
+                # Log warning but do not crash the tool execution
+                import structlog
+                structlog.get_logger().warning("DuckDuckGo Instant Answer API fallback failed", error=str(e))
             return f"No results found for '{query}'"
 
         return "\n\n---\n\n".join(results[:count])
