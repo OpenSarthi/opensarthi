@@ -775,94 +775,134 @@ button:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--border)
   animation: osStatusFade 0.5s ease both;
   display: inline-block;
 }
-
-/* ── Listening ear indicator ─────────────────────────────────── */
 /* ── AI Eyes — always visible, state-aware ───────────────────── */
 .os-listen-ear {
   display: inline-flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
 }
 .os-listen-ear::before,
 .os-listen-ear::after {
   content: "";
-  height: 18px;
-  width: 18px;
+  height: 20px;
+  aspect-ratio: 1;
   border-radius: 50%;
   background:
-    radial-gradient(farthest-side, var(--text-primary) 95%, transparent) 50%/7px 7px no-repeat
+    linear-gradient(var(--bg-secondary) 0 0) top/100% 40% no-repeat,
+    radial-gradient(farthest-side, var(--text-primary) 95%, #0000) 50%/8px 8px no-repeat
     var(--accent);
-  animation: osEyeIdle 4s ease-in-out infinite alternate;
-  box-shadow: 0 0 5px var(--accent-glow);
-  opacity: 0.45;
-  transition: opacity 0.4s, box-shadow 0.4s, background 0.5s;
+  animation: osEyeIdleBlink 4s infinite, osEyeIdleLook 4s infinite;
+  box-shadow: 0 0 6px var(--accent-glow);
+  opacity: 0.5;
+  transition: opacity 0.4s, box-shadow 0.4s;
 }
 .os-listen-ear::after { --s: -1; }
 
-/* idle — dim, slow subtle blink */
-@keyframes osEyeIdle {
-  0%,30%  { transform: scaleX(var(--s,1)) scaleY(1);   clip-path: inset(0); }
-  48%,52% { transform: scaleX(var(--s,1)) scaleY(0.08); clip-path: inset(0); }
-  70%,100%{ transform: scaleX(var(--s,1)) scaleY(1);   clip-path: inset(0); }
+/* ─── Idle: full open → half-lidded → double blink ─────────── */
+@keyframes osEyeIdleBlink {
+  0%,48%      { background-size: 100% 0%,   8px 8px; } /* full open eye */
+  54%,68%     { background-size: 100% 40%,  8px 8px; } /* half-lidded */
+  72%,74%     { background-size: 100% 120%, 8px 8px; } /* blink 1 shut */
+  78%,82%     { background-size: 100% 40%,  8px 8px; } /* open */
+  85%,87%     { background-size: 100% 120%, 8px 8px; } /* blink 2 shut */
+  91%,100%    { background-size: 100% 0%,   8px 8px; } /* back to full open */
+}
+@keyframes osEyeIdleLook {
+  0%,50%      { background-position: top, 50% 50%; }
+  60%,65%     { background-position: top, 70% 50%; }
+  70%,75%     { background-position: top, 30% 50%; }
+  90%,100%    { background-position: top, 50% 50%; }
 }
 
-/* listening — bright, focused looking-around animation */
+/* ─── Listening: attentive, eyes darting around ─────────────── */
 .os-listen-ear.is-listening::before,
 .os-listen-ear.is-listening::after {
   opacity: 1;
+  background:
+    radial-gradient(farthest-side, var(--text-primary) 95%, #0000) 35% 35%/6px 6px no-repeat
+    var(--accent);
   box-shadow: 0 0 12px var(--accent-glow), 0 0 24px var(--accent-glow);
-  animation: osListenEar 1.5s ease-in-out infinite alternate;
+  animation: osEyeListen 3s infinite;
 }
-@keyframes osListenEar {
-  0%,20%  { transform: scaleX(var(--s,1)) rotate(0deg);   clip-path: inset(0); }
-  60%,100%{ transform: scaleX(var(--s,1)) rotate(30deg);  clip-path: inset(40% 0 0); }
+@keyframes osEyeListen {
+  0%,11%   { background-position: 35% 35%; }
+  14%,36%  { background-position: 65% 35%; }
+  38%,61%  { background-position: 65% 65%; }
+  64%,86%  { background-position: 35% 65%; }
+  88%,100% { background-position: 35% 35%; }
 }
 
-/* processing — yellow tint, rapid scanning */
+/* ─── Processing / Working: aggressive squint ──────────────── */
 .os-listen-ear.is-processing::before,
 .os-listen-ear.is-processing::after {
-  opacity: 0.9;
+  opacity: 1;
   background:
-    radial-gradient(farthest-side, #fff 95%, transparent) 50%/7px 7px no-repeat
+    radial-gradient(farthest-side, #fff 95%, #0000) 50%/8px 8px no-repeat
     #f59e0b;
-  box-shadow: 0 0 10px rgba(245,158,11,0.7), 0 0 20px rgba(245,158,11,0.3);
-  animation: osEyeProcess 0.9s ease-in-out infinite alternate;
+  box-shadow: 0 0 12px rgba(245,158,11,0.7), 0 0 22px rgba(245,158,11,0.3);
+  animation: osEyeProcess 1.5s infinite alternate;
 }
+.os-listen-ear.is-processing::after { --s: -1; }
 @keyframes osEyeProcess {
-  0%   { transform: scaleX(var(--s,1)) translateX(0px); }
-  50%  { transform: scaleX(var(--s,1)) translateX(3px) scaleY(0.7); }
-  100% { transform: scaleX(var(--s,1)) translateX(-3px); }
+  0%,20%   { transform: scaleX(var(--s,1)) rotate(0deg);   clip-path: inset(0); }
+  60%,100% { transform: scaleX(var(--s,1)) rotate(30deg);  clip-path: inset(40% 0 0); }
 }
 
-/* speaking — green tint, pulsing */
+/* ─── Speaking: relaxed, eyelids coming down ───────────────── */
 .os-listen-ear.is-speaking::before,
 .os-listen-ear.is-speaking::after {
-  opacity: 0.95;
+  opacity: 1;
   background:
-    radial-gradient(farthest-side, #fff 95%, transparent) 50%/7px 7px no-repeat
+    linear-gradient(rgba(16,185,129,0.5) 0 0) top/100% 0% no-repeat,
+    radial-gradient(farthest-side, #fff 95%, #0000) 50%/8px 8px no-repeat
     #10b981;
-  box-shadow: 0 0 12px rgba(16,185,129,0.8), 0 0 24px rgba(16,185,129,0.3);
-  animation: osEyeSpeak 0.7s ease-in-out infinite alternate;
+  box-shadow: 0 0 12px rgba(16,185,129,0.8), 0 0 22px rgba(16,185,129,0.3);
+  animation: osEyeSpeak 4s infinite ease-in;
 }
 @keyframes osEyeSpeak {
-  0%   { transform: scaleX(var(--s,1)) scale(1); }
-  50%  { transform: scaleX(var(--s,1)) scale(1.15); }
-  100% { transform: scaleX(var(--s,1)) scale(0.92); }
+  0%       { background-size: 100% 0%,  8px 8px; background-position: top, 50% 50%; }
+  80%      { background-size: 100% 70%, 8px 8px; background-position: top, 50% 70%; }
+  84%,100% { background-size: 100% 0%,  8px 8px; background-position: top, 50% 50%; }
 }
 
-/* error — red tint */
+/* ─── Error: rolling/spinning eyes ─────────────────────────── */
 .os-listen-ear.is-error::before,
 .os-listen-ear.is-error::after {
-  opacity: 0.9;
+  opacity: 1;
   background:
-    radial-gradient(farthest-side, #fff 95%, transparent) 50%/7px 7px no-repeat
+    radial-gradient(farthest-side, #fff 95%, #0000) 35% 35%/6px 6px no-repeat
     #ef4444;
-  box-shadow: 0 0 10px rgba(239,68,68,0.7);
-  animation: osEyeError 0.4s ease-in-out infinite alternate;
+  box-shadow: 0 0 12px rgba(239,68,68,0.8);
+  transform: scaleX(var(--s,1)) rotate(0deg);
+  animation: osEyeError 1s infinite linear;
+}
+.os-listen-ear.is-error::after {
+  --s: -1;
+  animation-delay: -0.1s;
 }
 @keyframes osEyeError {
-  0%   { transform: scaleX(var(--s,1)) rotate(-8deg); }
-  100% { transform: scaleX(var(--s,1)) rotate(8deg); }
+  100% { transform: scaleX(var(--s,1)) rotate(360deg); }
+}
+
+/* ─── Awaiting Response: bouncing dots ─────────────────────── */
+.os-awaiting-dots {
+  display: inline-flex;
+  width: 48px;
+  aspect-ratio: 3;
+  --_g: no-repeat radial-gradient(circle closest-side, var(--accent) 90%, #0000);
+  background:
+    var(--_g) 0%   50%,
+    var(--_g) 50%  50%,
+    var(--_g) 100% 50%;
+  background-size: calc(100%/3) 50%;
+  animation: osAwaitDots 1s infinite linear;
+  opacity: 0.85;
+}
+@keyframes osAwaitDots {
+  20% { background-position: 0%   0%,  50%  50%, 100%  50%; }
+  40% { background-position: 0% 100%, 50%   0%,  100%  50%; }
+  60% { background-position: 0%  50%, 50% 100%, 100%   0%;  }
+  80% { background-position: 0%  50%, 50%  50%, 100% 100%; }
 }
 
 /* ── Processing dots ─────────────────────────────────────────── */

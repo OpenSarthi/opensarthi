@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot } from "lucide-react";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
@@ -218,9 +218,6 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     };
   }, [resizeLeft, stopResizeLeft, resizeRight, stopResizeRight]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, currentTranscript]);
 
   const lastSentSourceRef = useRef<"text" | "voice">("text");
 
@@ -390,6 +387,10 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
   const activeTab = tabs.find((t) => t.id === activeThreadId);
   const isTaskRunning = !!activeTab?.currentPlan;
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, currentTranscript, voiceState, isTaskRunning, streamingResponse]);
 
   // Handle stop task action (replaces send button when task is running)
   const handleStopTask = useCallback(() => {
@@ -1347,6 +1348,75 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   }
                 }}
               />
+
+              {/* Bouncing dots typing indicator — shown while AI is thinking/processing before first response */}
+              {((voiceState === "processing" || isTaskRunning) && voiceState !== "listening" && voiceState !== "speaking" && !streamingResponse) && (
+                <div style={{
+                  display: "flex",
+                  gap: "10px",
+                  alignItems: "flex-start",
+                  marginBottom: "8px",
+                  padding: "0 4px",
+                }}>
+                  {/* Bot Avatar */}
+                  <div
+                    style={{
+                      width: "28px",
+                      height: "28px",
+                      borderRadius: "var(--radius-full)",
+                      background: "var(--accent-glow)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                      border: "1px solid var(--border-accent)",
+                      boxShadow: "0 0 8px var(--accent-glow)",
+                      color: "var(--accent)",
+                    }}
+                  >
+                    <Bot size={14} />
+                  </div>
+                  {/* Bubble wrapper with Speech Arrow */}
+                  <div style={{ position: "relative", display: "flex", flexDirection: "column" }}>
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "12px",
+                        left: "-4px",
+                        width: "8px",
+                        height: "8px",
+                        background: "rgba(0, 0, 0, 0.12)",
+                        borderLeft: "1px solid var(--border-accent)",
+                        borderBottom: "1px solid var(--border-accent)",
+                        transform: "rotate(45deg)",
+                        zIndex: 2,
+                        pointerEvents: "none",
+                        backdropFilter: "blur(3px)",
+                        WebkitBackdropFilter: "blur(3px)",
+                      }}
+                    />
+                    {/* Bubble */}
+                    <div
+                      style={{
+                        padding: "12px 18px",
+                        borderRadius: "var(--radius-sm) var(--radius-lg) var(--radius-lg) var(--radius-lg)",
+                        background: "rgba(0, 0, 0, 0.12)",
+                        border: "1px solid var(--border-accent)",
+                        backdropFilter: "blur(3px)",
+                        WebkitBackdropFilter: "blur(3px)",
+                        boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        zIndex: 1,
+                        minWidth: "60px",
+                      }}
+                    >
+                      <span className="os-awaiting-dots" title="Agent is working..." />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Live streaming bubble — shown while AI is generating a response */}
               {streamingResponse && (
