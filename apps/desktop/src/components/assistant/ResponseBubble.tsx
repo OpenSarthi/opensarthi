@@ -373,11 +373,32 @@ const markdownComponents = {
     }}>{children}</td>
   ),
 
-  a: ({ href, children }: any) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", textDecoration: "underline" }}>
-      {children}
-    </a>
-  ),
+  a: ({ href, children }: any) => {
+    const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+      e.preventDefault();
+      if (!href) return;
+      // Dynamically import and use plugin-shell's open to launch in default browser
+      import("@tauri-apps/plugin-shell")
+        .then(({ open }) => open(href))
+        .catch((err) => {
+          console.error("Tauri shell open failed:", err);
+          window.open(href, "_blank", "noopener,noreferrer");
+        });
+    };
+    return (
+      <a
+        href={href}
+        onClick={handleClick}
+        style={{
+          color: "var(--accent)",
+          textDecoration: "underline",
+          cursor: "pointer",
+        }}
+      >
+        {children}
+      </a>
+    );
+  },
 
   blockquote: ({ children }: any) => (
     <blockquote style={{ 
