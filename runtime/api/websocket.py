@@ -749,6 +749,7 @@ class Session:
             settings.voice_speed = float(payload.get("voice_speed", settings.voice_speed))
             settings.continuous_listening = bool(payload.get("continuous_listening", settings.continuous_listening))
             settings.active_theme = payload.get("active_theme", settings.active_theme)
+            settings.long_term_memory_enabled = bool(payload.get("long_term_memory_enabled", settings.long_term_memory_enabled))
             
             # Wake word settings
             raw_wake = payload.get("wake_words")
@@ -794,6 +795,7 @@ class Session:
                 settings.user_name,
                 settings.user_skills,
                 settings.custom_prompt,
+                settings.long_term_memory_enabled,
             )
 
             # Propagate to running voice pipeline
@@ -827,6 +829,7 @@ class Session:
                 "user_name": settings.user_name,
                 "user_skills": settings.user_skills,
                 "custom_prompt": settings.custom_prompt,
+                "long_term_memory_enabled": settings.long_term_memory_enabled,
             })
 
             if getattr(self, "_session_active", False):
@@ -898,6 +901,7 @@ class ConnectionManager:
             "user_name": getattr(settings, "user_name", ""),
             "user_skills": getattr(settings, "user_skills", ["general", "desktop_automation", "developer", "home_user"]),
             "custom_prompt": getattr(settings, "custom_prompt", ""),
+            "long_term_memory_enabled": getattr(settings, "long_term_memory_enabled", True),
         })
         
         # Voice listening will be started via 'client_state' message from frontend
