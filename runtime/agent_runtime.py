@@ -126,28 +126,43 @@ class AgentRuntime:
         returned by tools — without an extra LLM round-trip.
         """
         if not cumulative_steps and not completed_actions:
-            return f"Done! I've completed the task: **{goal}**."
-
-        # Collect key observations from successful steps (tool output)
+            return f"Done! I've completed the task: **{goal}**."        # Collect key observations from successful steps (tool output)
         key_results = []
         for s in cumulative_steps:
             if s.get("status") == "success":
                 obs = s.get("result") or s.get("observation")
                 desc = s.get("description") or s.get("tool", "")
+                tool_name = s.get("tool", "")
                 if obs and isinstance(obs, str) and obs.strip():
-                    # Only include short/meaningful observations
-                    obs_clean = obs.strip()[:300]
+                    obs_clean = obs.strip()
                     if len(obs_clean) > 10:  # skip trivial one-liners
-                        key_results.append(f"- **{desc}**: {obs_clean}")
+                        if tool_name == "search_web" or "search_web" in desc.lower():
+                            # Format DuckDuckGo search results beautifully
+                            blocks = obs_clean.split("\n\n---\n\n")
+                            formatted_blocks = []
+                            for block in blocks:
+                                lines = block.split("\n")
+                                if len(lines) >= 3:
+                                    title = lines[0].replace("**", "").strip()
+                                    snippet = lines[1].strip()
+                                    url_val = lines[2].strip()
+                                    formatted_blocks.append(f"##### 🔗 [{title}]({url_val})\n>{snippet}")
+                                else:
+                                    formatted_blocks.append(block)
+                            result_str = "\n\n".join(formatted_blocks)
+                            key_results.append(f"### 🔍 Web Search Results:\n{result_str}")
+                        else:
+                            # Limit standard tool results to 1000 characters
+                            key_results.append(f"- **{desc}**: {obs_clean[:1000]}")
 
         action_count = len(completed_actions)
         plural = "step" if action_count == 1 else "steps"
 
         if key_results:
-            result_section = "\n".join(key_results[:5])  # cap at 5 key results
+            result_section = "\n\n".join(key_results[:5])  # cap at 5 key results
             return (
                 f"✅ Task completed! I've finished **{goal}** in {action_count} {plural}.\n\n"
-                f"**Results:**\n{result_section}"
+                f"{result_section}"
             )
         elif completed_actions:
             steps_list = "\n".join(f"- {a}" for a in completed_actions[:8])

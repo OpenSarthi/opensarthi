@@ -135,6 +135,7 @@ def build_graph(use_sqlite: bool = False) -> StateGraph:
         route_after_heal,
         {
             "execute": "execute",
+            "replan": "replan",
             "__end__": END,
         },
     )
