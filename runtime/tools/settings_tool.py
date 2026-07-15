@@ -307,6 +307,7 @@ class UpdateSettingsTool(BaseTool):
                     "user_name": settings.user_name,
                     "user_skills": settings.user_skills,
                     "custom_prompt": settings.custom_prompt,
+                    "long_term_memory_enabled": settings.long_term_memory_enabled,
                 })
             except Exception:
                 pass  # non-fatal

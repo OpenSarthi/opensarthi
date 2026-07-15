@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     user_name: str = ""
     user_skills: list[str] = ["general", "desktop_automation", "developer", "home_user"]
     custom_prompt: str = ""
+    long_term_memory_enabled: bool = True
 
     model_config = SettingsConfigDict(env_file=env_file_path)
 
@@ -70,6 +71,7 @@ def save_settings_to_env(
     user_name: str = "",
     user_skills: list[str] = None,
     custom_prompt: str = "",
+    long_term_memory_enabled: bool = True,
 ):
     import json
     # Always write to the writable user's home configuration directory (safe for read-only AppImage filesystems!)
@@ -94,6 +96,7 @@ def save_settings_to_env(
         f.write(f"WAKE_WORDS={json.dumps(wake_words)}\n")
         f.write(f"WAKE_WORD_ENABLED={'True' if wake_word_enabled else 'False'}\n")
         f.write(f"WAKE_WORD_THRESHOLD={wake_word_threshold}\n")
+        f.write(f"LONG_TERM_MEMORY_ENABLED={'True' if long_term_memory_enabled else 'False'}\n")
         if user_name:
             f.write(f"USER_NAME={user_name}\n")
         if user_skills:

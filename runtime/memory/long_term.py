@@ -32,6 +32,13 @@ class LongTermMemory:
     def _try_load_encoder(self):
         """Try to load the local sentence-transformers model. Non-fatal if unavailable."""
         global _cached_encoder
+        from config import settings
+        if not getattr(settings, "long_term_memory_enabled", True):
+            import structlog
+            structlog.get_logger().info("Semantic memory disabled by user settings")
+            self._use_semantic = False
+            return
+
         try:
             from sentence_transformers import SentenceTransformer
             import numpy as np
