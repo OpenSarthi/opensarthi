@@ -33,6 +33,7 @@ class OpenSarthiState(BaseModel):
     # ── Replanning control ──────────────────────────────────────────────
     retry_count: int = 0
     max_retries: int = 5
+    heal_attempts: dict[int, int] = Field(default_factory=dict) # Tracks heal attempts per step index to prevent infinite loops
 
     # ── Desktop observation ─────────────────────────────────────────────
     desktop_snapshot: Optional[dict] = None   # Serialised DesktopSnapshot

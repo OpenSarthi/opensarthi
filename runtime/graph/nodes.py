@@ -211,8 +211,9 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
         return {"final_response": "Task completed successfully.", "plan_steps": []}
 
     # Find the cumulative index for updates
-    finished_prev_steps = [s for s in (state.cumulative_steps or []) if s.get("status") in ("success", "error", "terminated", "divider")]
-    cumulative_idx = len(finished_prev_steps) + idx
+    C = len(state.cumulative_steps or [])
+    P = len(state.plan_steps or [])
+    cumulative_idx = (C - P) + idx if C >= P else idx
 
     step_data = state.plan_steps[idx]
     from planner.schemas import PlanStep, ToolResult
@@ -386,6 +387,19 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     if idx < 0 or idx >= len(state.plan_steps):
         return {}
 
+    # Track and limit self-heal attempts per step index to avoid infinite loops
+    attempts = state.heal_attempts.get(idx, 0) + 1
+    if attempts > 2:
+        logger.warning("Step index has exceeded maximum self-heal attempts. Aborting heal and forcing replan.", step_index=idx)
+        if ws:
+            await ws.send_message("tool_action", {
+                "tool": "self_heal",
+                "description": f"Self-healing limit exceeded for: {state.plan_steps[idx].get('tool')}",
+                "status": "error", "result": "Exceeded maximum self-healing attempts (2). Retrying with a new plan...",
+            })
+        # Return state update with incremented attempts, but no patched steps, which triggers a replan edge
+        return {"heal_attempts": {**state.heal_attempts, idx: attempts}}
+
     step_data = state.plan_steps[idx]
     last_result = state.last_tool_result or {}
     err_msg = (last_result.get("error") or "")[:200]
@@ -432,6 +446,7 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
             return {
                 "plan_steps": updated_steps,
                 "current_step_index": idx,  # Retry same step
+                "heal_attempts": {**state.heal_attempts, idx: attempts},
             }
         else:
             if ws:
@@ -441,10 +456,10 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     "status": "error",
                     "result": "No healing path found.",
                 })
-            return {}  # No change — will trigger replan
+            return {"heal_attempts": {**state.heal_attempts, idx: attempts}}  # No change — will trigger replan
     except Exception as e:
         logger.debug("heal_node exception", error=str(e))
-        return {}
+        return {"heal_attempts": {**state.heal_attempts, idx: attempts}}
 
 
 # ── review_node ─────────────────────────────────────────────────────────────────
@@ -486,14 +501,33 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
             if s.get("status") == "success":
                 obs = s.get("result") or s.get("observation")
                 desc = s.get("description") or s.get("tool", "")
+                tool_name = s.get("tool", "")
                 if obs and isinstance(obs, str) and obs.strip() and len(obs.strip()) > 10:
-                    key_results.append(f"- **{desc}**: {obs.strip()[:300]}")
+                    obs_clean = obs.strip()
+                    if tool_name == "search_web" or "search_web" in desc.lower():
+                        # Format DuckDuckGo search results beautifully
+                        blocks = obs_clean.split("\n\n---\n\n")
+                        formatted_blocks = []
+                        for block in blocks:
+                            lines = block.split("\n")
+                            if len(lines) >= 3:
+                                title = lines[0].replace("**", "").strip()
+                                snippet = lines[1].strip()
+                                url_val = lines[2].strip()
+                                formatted_blocks.append(f"##### 🔗 [{title}]({url_val})\n>{snippet}")
+                            else:
+                                formatted_blocks.append(block)
+                        result_str = "\n\n".join(formatted_blocks)
+                        key_results.append(f"### 🔍 Web Search Results:\n{result_str}")
+                    else:
+                        # Limit standard tool results to 1000 characters to keep UI readable
+                        key_results.append(f"- **{desc}**: {obs_clean[:1000]}")
 
         if key_results:
-            result_section = "\n".join(key_results[:5])
+            result_section = "\n\n".join(key_results[:5])
             final = (
                 f"\u2705 Task completed! I've finished **{goal}** in {action_count} {plural}.\n\n"
-                f"**Results:**\n{result_section}"
+                f"{result_section}"
             )
         elif completed:
             steps_list = "\n".join(f"- {a}" for a in completed[:8])

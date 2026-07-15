@@ -57,13 +57,19 @@ def route_after_execute(state: OpenSarthiState) -> str:
 
 
 def route_after_heal(state: OpenSarthiState) -> str:
-    """After healing attempt: retry execute or trigger replan."""
+    """After healing attempt: retry execute if successfully patched, otherwise replan."""
     if state.is_cancelled:
         return "__end__"
-    # If heal_node patched the step, current_step_index points back to it
-    # Otherwise we replan (if retries remain)
+    
+    idx = state.current_step_index
+    if idx < len(state.plan_steps):
+        current_step = state.plan_steps[idx]
+        if current_step.get("description", "").startswith("[HEALED]"):
+            return "execute"
+            
+    # If not patched or no healing path found -> replan
     if state.retry_count < state.max_retries:
-        return "execute"
+        return "replan"
     return "__end__"
 
 
