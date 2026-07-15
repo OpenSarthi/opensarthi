@@ -122,6 +122,7 @@ interface AssistantState {
   wakeWords: string[];
   wakeWordEnabled: boolean;
   wakeWordThreshold: number;
+  longTermMemoryEnabled: boolean;
 
   // Token tracking (Legacy mapping to active tab)
   tokenUsage: TokenUsage;
@@ -136,6 +137,7 @@ interface AssistantState {
   // Actions
   setVoiceState: (state: VoiceState) => void;
   setConnected: (connected: boolean) => void;
+  setLongTermMemoryEnabled: (enabled: boolean) => void;
   setTranscript: (text: string | null) => void;
   
   // Tab control actions
@@ -237,9 +239,11 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   soundVolume: typeof window !== "undefined"
     ? parseInt(localStorage.getItem("opensarthi_sound_volume") || "60", 10)
     : 60,
+  longTermMemoryEnabled: true,
 
   setVoiceState: (voiceState) => set({ voiceState }),
   setConnected: (isConnected) => set({ isConnected }),
+  setLongTermMemoryEnabled: (longTermMemoryEnabled) => set({ longTermMemoryEnabled }),
   setTranscript: (currentTranscript) => set({ currentTranscript }),
 
   setActiveThreadId: (id) => set((s) => {

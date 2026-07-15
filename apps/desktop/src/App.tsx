@@ -44,12 +44,14 @@ export default function App() {
     wakeWords,
     wakeWordEnabled,
     wakeWordThreshold,
+    longTermMemoryEnabled,
     setVoiceSettings,
     setWakeWordSettings,
     setActiveTheme,
     setActiveModels,
     setActiveProvider,
     setAllApiKeys,
+    setLongTermMemoryEnabled,
     resetSessionTokens,
     onboardingCompleted,
     isConnected,
@@ -95,6 +97,7 @@ export default function App() {
     wakeWordThreshold: number;
     soundEnabled: boolean;
     soundVolume: number;
+    longTermMemoryEnabled: boolean;
   }) => {
     setActiveModels(settings.localModel, settings.cloudModel);
     setActiveProvider(settings.provider);
@@ -109,6 +112,7 @@ export default function App() {
     setWakeWordSettings(settings.wakeWordEnabled, settings.wakeWordThreshold, settings.wakeWords);
     setActiveTheme(settings.theme);
     setSoundSettings(settings.soundEnabled, settings.soundVolume);
+    setLongTermMemoryEnabled(settings.longTermMemoryEnabled);
 
     wsClient.send("update_settings", {
       local_model: settings.localModel,
@@ -126,6 +130,7 @@ export default function App() {
       wake_words: settings.wakeWords,
       wake_word_enabled: settings.wakeWordEnabled,
       wake_word_threshold: settings.wakeWordThreshold,
+      long_term_memory_enabled: settings.longTermMemoryEnabled,
     });
   };
 
@@ -240,6 +245,7 @@ export default function App() {
             currentWakeWordThreshold={wakeWordThreshold}
             currentSoundEnabled={soundEnabled}
             currentSoundVolume={soundVolume}
+            currentLongTermMemoryEnabled={longTermMemoryEnabled}
             onSave={handleSaveSettings}
           />
         )}

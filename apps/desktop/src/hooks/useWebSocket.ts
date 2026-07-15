@@ -222,6 +222,9 @@ export function useWebSocket(port: number | null) {
           store.setWakeWordSettings(p.wake_word_enabled, p.wake_word_threshold, p.wake_words);
         }
         if (p.active_theme) store.setActiveTheme(p.active_theme);
+        if (p.long_term_memory_enabled !== undefined) {
+          store.setLongTermMemoryEnabled(p.long_term_memory_enabled);
+        }
 
         store.setAllApiKeys({
           gemini: p.gemini_api_key || "",
@@ -265,6 +268,23 @@ export function useWebSocket(port: number | null) {
         console.error("[Runtime error]", msg.payload);
         setVoiceState("error");
         playCue("error");
+        // Add error message to chat so user can see what went wrong
+        const errorText = typeof msg.payload === "string"
+          ? msg.payload
+          : (msg.payload as any)?.error || (msg.payload as any)?.message || "An unexpected error occurred";
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `⚠️ **Error:** ${errorText}\n\n_Recovering automatically…_`,
+          timestamp: Date.now(),
+        });
+        // Auto-recover after 5 seconds — reset to idle so the app stays usable
+        setTimeout(() => {
+          const currentState = useAssistantStore.getState().voiceState;
+          if (currentState === "error") {
+            setVoiceState("idle");
+          }
+        }, 5000);
       }),
 
       wsClient.on("task_paused", (msg) => {

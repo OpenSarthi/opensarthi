@@ -72,6 +72,7 @@ interface SettingsViewProps {
   currentWakeWordThreshold: number;
   currentSoundEnabled: boolean;
   currentSoundVolume: number;
+  currentLongTermMemoryEnabled: boolean;
   onSave: (settings: {
     localModel: string;
     cloudModel: string;
@@ -90,6 +91,7 @@ interface SettingsViewProps {
     wakeWordThreshold: number;
     soundEnabled: boolean;
     soundVolume: number;
+    longTermMemoryEnabled: boolean;
   }) => void;
 }
 
@@ -211,6 +213,7 @@ export function SettingsView({
   currentWakeWordThreshold,
   currentSoundEnabled,
   currentSoundVolume,
+  currentLongTermMemoryEnabled,
   onSave,
 }: SettingsViewProps) {
   const [provider, setProvider] = useState(currentProvider || "google");
@@ -233,15 +236,17 @@ export function SettingsView({
   const [wakeWordThreshold, setWakeWordThreshold] = useState(currentWakeWordThreshold !== undefined ? currentWakeWordThreshold : 0.5);
   const [soundEnabled, setSoundEnabledLocal] = useState(currentSoundEnabled !== undefined ? currentSoundEnabled : true);
   const [soundVolume, setSoundVolume] = useState(currentSoundVolume !== undefined ? currentSoundVolume : 60);
+  const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(currentLongTermMemoryEnabled !== undefined ? currentLongTermMemoryEnabled : true);
   const [saved, setSaved] = useState(false);
 
   const providerInfo = PROVIDER_LABELS[provider] || PROVIDER_LABELS.google;
   const isLocal = provider === "ollama";
 
-  // When provider changes, reset to first model of new provider
+  // When provider changes, only reset the model to default if the current model is not part of the new provider's list.
   useEffect(() => {
-    const models = PROVIDER_MODELS[provider];
-    if (models && models.length > 0) {
+    const models = PROVIDER_MODELS[provider] || [];
+    const modelExists = models.some((m) => m.value === cloudModel);
+    if (!modelExists && models.length > 0) {
       setCloudModel(models[0].value);
     }
   }, [provider]);
@@ -281,11 +286,6 @@ export function SettingsView({
   const hasSavedKey = !!getCurrentKeyForProvider();
 
   const handleSaveAI = () => {
-    const parsedWakeWords = wakeWordsInput
-      .split(",")
-      .map((w) => w.trim())
-      .filter(Boolean);
-
     // Only send the key that's being actively edited — don't overwrite other saved keys with empty strings
     const currentKey = getCurrentKeyInput();
     onSave({
@@ -297,6 +297,43 @@ export function SettingsView({
       anthropicKey:  provider === "anthropic"   ? (currentKey || currentAnthropicKey)  : currentAnthropicKey,
       groqKey:       provider === "groq"        ? (currentKey || currentGroqKey)        : currentGroqKey,
       openrouterKey: provider === "openrouter"  ? (currentKey || currentOpenrouterKey) : currentOpenrouterKey,
+      longTermMemoryEnabled,
+      // Keep other settings unchanged (use original values from props)
+      voiceAccent: currentVoiceAccent,
+      voiceSpeed: currentVoiceSpeed,
+      continuousListening: currentContinuousListening,
+      theme: currentTheme,
+      wakeWords: currentWakeWords,
+      wakeWordEnabled: currentWakeWordEnabled,
+      wakeWordThreshold: currentWakeWordThreshold,
+      soundEnabled: currentSoundEnabled,
+      soundVolume: currentSoundVolume,
+    });
+    setSaved(true);
+    setTimeout(() => {
+      setSaved(false);
+      onClose();
+    }, 800);
+  };
+
+  const handleSaveAll = () => {
+    const parsedWakeWords = wakeWordsInput
+      .split(",")
+      .map((w) => w.trim())
+      .filter(Boolean);
+
+    const currentKey = getCurrentKeyInput();
+    onSave({
+      localModel,
+      cloudModel,
+      provider,
+      geminiKey:     provider === "google"      ? (currentKey || currentGeminiKey)      : currentGeminiKey,
+      openaiKey:     provider === "openai"      ? (currentKey || currentOpenaiKey)      : currentOpenaiKey,
+      anthropicKey:  provider === "anthropic"   ? (currentKey || currentAnthropicKey)  : currentAnthropicKey,
+      groqKey:       provider === "groq"        ? (currentKey || currentGroqKey)        : currentGroqKey,
+      openrouterKey: provider === "openrouter"  ? (currentKey || currentOpenrouterKey) : openrouterKey,
+      longTermMemoryEnabled,
+      // Save all modified state values
       voiceAccent,
       voiceSpeed,
       continuousListening,
@@ -480,6 +517,17 @@ export function SettingsView({
                   </motion.div>
                 </AnimatePresence>
               )}
+
+              {/* Long Term Memory Toggle */}
+              <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px dashed rgba(255,255,255,0.07)" }}>
+                <Toggle
+                  id="long-term-memory"
+                  checked={longTermMemoryEnabled}
+                  onChange={setLongTermMemoryEnabled}
+                  label="LONG-TERM SEMANTIC MEMORY"
+                  sublabel="Uses embeddings to remember preferences (turn off for faster execution)"
+                />
+              </div>
 
               {/* Save AI Settings */}
               <button
@@ -676,7 +724,7 @@ export function SettingsView({
         {/* Footer — Save theme+voice */}
         <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", background: "rgba(0,0,0,0.3)" }}>
           <button
-            onClick={handleSaveAI}
+            onClick={handleSaveAll}
             style={{
               background: saved ? "var(--success)" : "var(--accent)",
               color: "#000",
