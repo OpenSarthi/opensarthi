@@ -185,11 +185,15 @@ The Python runtime lives in `runtime/`. Chaquopy packages it as Python source in
 ```
 runtime/
 ├── main_android.py      # Entry point (FastAPI + WebSocket)
-├── agent/               # Agent orchestration
+├── config.py            # Platform-aware Settings
+├── db.py                # Mobile SQLite helper
+├── agents/              # Intent classification and observer sub-agents
+├── planner/             # PydanticAI Agent planner
+├── graph/               # LangGraph nodes and state definitions
 ├── voice/
 │   ├── android_bridge.py  # Android STT/TTS bridge
 │   └── pipeline.py        # Platform-aware voice pipeline
-└── tools/               # Available tools (Android-safe subset)
+└── tools/               # Patched Android-safe tool registry subset
 ```
 
 At build time, Gradle picks up `runtime/` via the `sourceSets` config and bundles it as Python source. At runtime, Chaquopy compiles it to `.pyc` on first launch.

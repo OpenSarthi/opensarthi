@@ -1,36 +1,34 @@
 # OpenSarthi — Agentic Flow
 
-This document describes the complete execution lifecycle of OpenSarthi from user input to final response, with Mermaid flowcharts for each major stage.
+This document describes the complete execution lifecycle of OpenSarthi from user input to final response.
 
-> **Updated:** June 2026 — LangGraph integration, word-by-word streaming, and 23 bug fixes applied.
+> **Updated:** July 2026 — LangGraph dual-engine, SileroVAD ONNX, self-healing cap, smart overlay minimize, conversational settings tool, 32-tool registry, audio cues, multi-tab threads, and full markdown response rendering.
 
 ---
 
 ## 1. Packaged App Bootstrap & Startup Flow
 
-This flowchart describes the boot sequence when executing the packaged AppImage/executable on a target system.
-
 ```mermaid
 flowchart TD
     START([User runs AppImage / .exe]) --> TAURI[Tauri Shell Launches]
     TAURI --> SPAWN[Spawn sidecar bootstrap launcher]
-    
-    SPAWN --> PATH_CHECK{Check ~/.config/opensarthi/venv}
-    PATH_CHECK -->|Venv exists| IMPORT_CHECK{Validate package imports\nfastapi, pydantic_ai, langgraph, etc.}
-    PATH_CHECK -->|Venv missing| SETUP_VENV[Use bundled 'uv' to download\nstandalone Python 3.12]
-    
+
+    SPAWN --> PATH_CHECK{Check ~/.config/opensarthi/.venv}
+    PATH_CHECK -->|Venv exists| IMPORT_CHECK{Validate package imports\nfastapi, pydantic_ai, langgraph, sentence_transformers...}
+    PATH_CHECK -->|Venv missing| SETUP_VENV[Use bundled uv to download\nstandalone Python 3.12]
+
     IMPORT_CHECK -->|Imports succeed| BOOT_FASTAPI[Launch FastAPI via Uvicorn]
     IMPORT_CHECK -->|Imports fail| SETUP_VENV
-    
+
     SETUP_VENV --> VENV_CREATE[Create virtual environment]
-    VENV_CREATE --> PIP_INSTALL[Run 'uv pip install -r requirements.txt']
+    VENV_CREATE --> PIP_INSTALL[Run uv pip install -r requirements.txt]
     PIP_INSTALL --> BOOT_FASTAPI
-    
-    BOOT_FASTAPI --> PORT_NEG[Bind to free OS port\nPrint 'PORT:xxxxx' to stdout]
-    PORT_NEG --> RUST_READ[Rust sidecar manager reads port]
+
+    BOOT_FASTAPI --> PORT_NEG[Bind to free OS port\nPrint PORT:xxxxx to stdout]
+    PORT_NEG --> RUST_READ[Rust sidecar.rs reads port]
     RUST_READ --> WEBVIEW[Tauri WebView UI loads]
     WEBVIEW --> WS_CONNECT[Connect WebSocket to ws://127.0.0.1:xxxxx]
-    WS_CONNECT --> SYNC_SETTINGS[Sync configuration\nRestore active thread & token count]
+    WS_CONNECT --> SYNC_SETTINGS[Sync configuration via settings_sync\nRestore active thread and token count]
     SYNC_SETTINGS --> READY([OpenSarthi ready for input])
 ```
 
@@ -40,23 +38,23 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A([User Input\nVoice or Text]) --> B[WebSocket → websocket.py]
+    A([User Input\nVoice or Text]) --> B[WebSocket → api/websocket.py]
     B --> C{Message Type?}
 
     C -->|user_message| D{Is it a task\nor chat?}
     C -->|run_json_plan| JP[run_plan_directly\nno LLM planning]
-    C -->|cancel_execution| CANCEL[request_cancel\nkill agent + tool tasks]
+    C -->|cancel_execution| CANCEL[request_cancel\nkill agent + tool asyncio.Tasks]
     C -->|pause_execution| PAUSE[pause\nblock at asyncio.Event]
     C -->|resume_execution| RESUME[resume\nset asyncio.Event]
-    C -->|update_settings| SETTINGS[save_settings_to_env\nrebuild AgentDeps]
+    C -->|update_settings| SETTINGS[save_settings_to_env\nrebuild AgentDeps\nemit settings_sync]
 
-    D -->|Chat: question/explain/code| CHAT[chat_agent.run\nstream_text word-by-word\nassistant_response → WS]
-    D -->|Task: desktop action needed| TASK{USE_LANGGRAPH?}
+    D -->|Chat: question/explain/code| CHAT[chat_agent.run\nstream_text word-by-word\nassistant_response to WS]
+    D -->|Task: desktop action| TASK{USE_LANGGRAPH?}
 
     TASK -->|true| LG[LangGraph graph.ainvoke\nStateful graph execution]
     TASK -->|false| AR[AgentRuntime.run\nLegacy agentic loop]
 
-    CHAT --> DONE([assistant_response\nto frontend])
+    CHAT --> DONE([assistant_response to frontend])
     LG --> DONE
     AR --> DONE
     JP --> DONE
@@ -64,285 +62,321 @@ flowchart TD
 
 ---
 
-## 3. How the Agent Decides: Chat vs. Task (Intent Classification)
+## 3. Intent Classification (Chat vs. Task vs. Clarify)
 
-The orchestrator utilizes a lightweight `PydanticAgent` API call to dynamically classify the user's input into exactly one of three intents: `CHAT`, `TASK`, or `CLARIFY`.
+The orchestrator calls a lightweight `PydanticAgent` to classify each input into exactly one of three intents.
 
 ```mermaid
 flowchart LR
     INPUT[User message] --> ORCH[OrchestratorAgent.route]
     ORCH --> CLS[LLM Intent Classification\nPydanticAgent]
-    
-    CLS -->|CHAT / CLARIFY| CHAT_AGENT[Conversational PydanticAgent\nDirect markdown response]
-    CLS -->|TASK| RUNTIME[AgentRuntime Planner Loop\nDesktop Context & Tools]
-    
+
+    CLS -->|CHAT / CLARIFY| CHAT_AGENT[Conversational PydanticAgent\nDirect markdown streaming response]
+    CLS -->|TASK| RUNTIME[AgentRuntime or LangGraph\nDesktop Context + Tools]
+
     CHAT_AGENT --> WS_CHAT[assistant_response\nbypasses desktop planning]
     RUNTIME --> TASK_PLAN[Parse JSON plan\nPlan + PlanStep schemas]
-    TASK_PLAN --> EXEC[Execute Tools & Desktop Actions]
+    TASK_PLAN --> EXEC[Execute Tools and Desktop Actions]
 ```
 
-> **Key Routing Benefit:** By classifying intent upfront via the API, conversational interactions (`CHAT`) completely bypass the heavy desktop observation loop, returning beautifully formatted Markdown instantly. Only actionable commands (`TASK`) trigger the full window snapshotting and planning loop.
+> **Key benefit:** `CHAT` inputs bypass the expensive desktop observation and planning loop entirely, returning beautifully formatted Markdown instantly. Only `TASK` inputs trigger window snapshotting, memory recall, and the full tool execution loop.
 
 ---
 
-## 4. AgentRuntime Execution Loop (with Self-Healing)
+## 4. LangGraph Execution Graph (USE_LANGGRAPH=true)
+
+The LangGraph engine is a compiled `StateGraph` with 8 nodes and full conditional routing.
+
+```mermaid
+flowchart TD
+    START([run_graph called]) --> CLASSIFY[classify_node\nLLM intent classification]
+    CLASSIFY --> ROUTE{route_by_classification}
+
+    ROUTE -->|CHAT/CLARIFY| CHAT_N[chat_node\nConversational response]
+    ROUTE -->|TASK| OBSERVE[observe_node\nDesktop snapshot + memory recall]
+    ROUTE -->|cancelled| END_A([END])
+
+    OBSERVE --> PLAN[plan_node\nPydanticAI planner → JSON plan\nEmits plan_created + minimize_hint]
+    PLAN --> ROUTE_PLAN{route_after_plan}
+
+    ROUTE_PLAN -->|steps available| EXECUTE[execute_step_node\nRun current plan step]
+    ROUTE_PLAN -->|no steps| REVIEW[review_node\nPost-task lesson extraction]
+    ROUTE_PLAN -->|cancelled| END_B([END])
+
+    EXECUTE --> ROUTE_EXEC{route_after_execute}
+    ROUTE_EXEC -->|next step| EXECUTE
+    ROUTE_EXEC -->|all done| REVIEW
+    ROUTE_EXEC -->|step failed| HEAL[heal_node\nHeuristic or LLM diagnosis]
+    ROUTE_EXEC -->|unrecoverable| REPLAN[replan_node\nIncrement retry_count]
+    ROUTE_EXEC -->|cancelled| END_C([END])
+
+    HEAL --> ROUTE_HEAL{route_after_heal}
+    ROUTE_HEAL -->|retry step| EXECUTE
+    ROUTE_HEAL -->|cap exceeded| REPLAN
+
+    REPLAN --> ROUTE_REPLAN{route_replan}
+    ROUTE_REPLAN -->|retries left| OBSERVE
+    ROUTE_REPLAN -->|max retries| END_D([END])
+
+    REVIEW --> END_E([END])
+    CHAT_N --> END_F([END])
+```
+
+### OpenSarthiState — Full Typed State Schema
+
+All graph nodes read from and write partial updates into `OpenSarthiState`:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `goal` | `str` | Current user goal |
+| `thread_id` | `str` | Active conversation thread |
+| `classification` | `str` | CHAT \| TASK \| CLARIFY |
+| `messages` | `list` | PydanticAI message history (do NOT use LangChain message coercion) |
+| `plan_steps` | `list` | Current plan step dicts |
+| `current_step_index` | `int` | Which step to execute next |
+| `completed_actions` | `list[str]` | Human-readable step log |
+| `failed_actions` | `list[str]` | Error log for replanning context |
+| `cumulative_steps` | `list` | Full task history (survives replanning) for UI |
+| `heal_attempts` | `dict[int,int]` | Heal attempt count per step index (cap: 2) |
+| `retry_count` | `int` | Full replan count (max: 5) |
+| `desktop_snapshot` | `dict` | Serialized DesktopSnapshot |
+| `recalled_memories` | `list` | Top-8 semantic memory hits |
+| `preferences` | `list` | All stored [PREFERENCE] entries |
+| `last_tool_result` | `dict` | Most recent ToolResult |
+| `is_cancelled` | `bool` | Abort signal set by cancel_execution |
+| `is_paused` | `bool` | Pause signal set by pause_execution |
+| `final_response` | `str` | Final text to broadcast |
+| `total_request_tokens` | `int` | Accumulated input tokens |
+| `total_response_tokens` | `int` | Accumulated output tokens |
+
+### Checkpointing
+
+- **Default:** `MemorySaver` (in-memory, survives execution, lost on restart)
+- **Persistent:** `SqliteSaver` at `~/.config/opensarthi/checkpoints.db` (requires `langgraph-checkpoint-sqlite`)
+
+---
+
+## 5. AgentRuntime Loop (Legacy / USE_LANGGRAPH=false)
 
 ```mermaid
 flowchart TD
     START([AgentRuntime.run\ngoal, model, history]) --> SNAP[Take desktop snapshot\nobservation.py]
-    SNAP --> RECALL[Auto-recall memories\ntop-5 semantic + all preferences]
+    SNAP --> RECALL[Auto-recall memories\ntop-8 semantic + all preferences]
     RECALL --> CTX[build_structured_context\ngoal + snapshot + memories\n+ completed/failed actions]
     CTX --> LLM_PLAN[_agent_run\nasyncio.Task wrapping agent.run]
 
     LLM_PLAN --> CANCELLED_LLM{CancelledError?}
-    CANCELLED_LLM -->|Yes| ABORT([Return\nExecution cancelled])
-    CANCELLED_LLM -->|No| PARSE_PLAN[Parse JSON plan\nfrom LLM response]
+    CANCELLED_LLM -->|Yes| ABORT([Return cancelled])
+    CANCELLED_LLM -->|No| PARSE_PLAN[Parse JSON plan from LLM response]
 
-    PARSE_PLAN --> VALID{Valid plan?}
-    VALID -->|No / plain text| OBSERVER_BG[Fire BehavioralObserver\nasync background task]
-    OBSERVER_BG --> RETURN_TEXT([Return LLM text\nas assistant_response])
-    VALID -->|Yes| EMIT_PLAN[Emit plan_created → WS]
+    PARSE_PLAN --> HAS_PLAN{Has tool steps?}
+    HAS_PLAN -->|No - chat response| STREAM[Stream text response\nassistant_response + stream_chunk]
+    HAS_PLAN -->|Yes| DECOMPOSE[Topological sort → parallel step groups]
 
-    EMIT_PLAN --> DECOMPOSE[Task Decomposer\nGroup steps by dependency topological sort]
-    DECOMPOSE --> LOOP_START
+    DECOMPOSE --> PARALLEL_GROUP[Execute parallel group concurrently\nasyncio.gather]
+    PARALLEL_GROUP --> CHECK_PAUSE[_check_pause\nawait asyncio.Event if paused]
+    CHECK_PAUSE --> EMIT_START[Emit tool_started via WebSocket]
+    EMIT_START --> TOOL_EXEC[_tool_execute\nasyncio.Task wrapping tool.safe_execute]
 
-    subgraph LOOP_START[For each parallel group in groups]
-        direction TB
-        EXEC_GATHER[Execute group concurrently\nasyncio.gather]
-        
-        subgraph STEP_EXEC[For each step in group]
-            CHECK_CANCEL{cancel\nrequested?} -->|Yes| TERMINATE([Emit tool_terminated\nReturn cancelled])
-            CHECK_CANCEL -->|No| CHECK_PAUSE[_check_pause\nawait asyncio.Event]
-            CHECK_PAUSE --> EMIT_START[Emit tool_started → WS]
-            EMIT_START --> TOOL_EXEC[_tool_execute\nasyncio.Task wrapping\ntool.safe_execute]
-            TOOL_EXEC --> TOOL_CANCELLED{CancelledError?}
-            TOOL_CANCELLED -->|Yes| TERMINATE
-            TOOL_CANCELLED -->|No| TOOL_RESULT{Success?}
-            TOOL_RESULT -->|Yes| COMPLETE[Emit tool_completed → WS\nAppend to completed_actions]
-            TOOL_RESULT -->|No| HEAL{HealerAgent\nquick-fix or LLM-fix?}
-            HEAL -->|Fix found| HEALED_EXEC[Execute healed step]
-            HEALED_EXEC --> HEALED_OK{Success?}
-            HEALED_OK -->|Yes| COMPLETE
-            HEALED_OK -->|No| FAIL[Emit tool_error → WS\nAppend to failed_actions]
-            HEAL -->|No fix| FAIL
-        end
-        
-        EXEC_GATHER --> STEP_EXEC
-    end
+    TOOL_EXEC --> RESULT{Success?}
+    RESULT -->|Yes| EMIT_DONE[Emit tool_completed]
+    RESULT -->|CancelledError| EMIT_TERM[Emit tool_terminated → abort]
+    RESULT -->|Exception| HEALER[HealerAgent.diagnose_and_fix]
 
-    STEP_EXEC --> NEXT_GROUP[Next group]
-    NEXT_GROUP --> MORE{More groups?}
-    MORE -->|Yes| LOOP_START
-    MORE -->|No| DONE
+    HEALER --> HEAL_RESULT{Healed?}
+    HEAL_RESULT -->|Fixed| EMIT_DONE
+    HEAL_RESULT -->|Failed| EMIT_ERR[Emit tool_error → continue]
 
-    DONE --> REPLAN{Failed actions exist\nAND retry < 3?}
-    REPLAN -->|Yes, retry| SNAP
-    REPLAN -->|No| LEARN[Fire ReviewerAgent +\nBehavioralObserver\nasync background tasks]
-    LEARN --> FORMAT[Format final response\n✓ completed / ❌ failed]
-    FORMAT --> RETURN([Return formatted summary\nassistant_response → WS])
+    EMIT_DONE --> MORE_STEPS{More groups?}
+    MORE_STEPS -->|Yes| PARALLEL_GROUP
+    MORE_STEPS -->|No| TASK_END([Task Completes])
 ```
 
 ---
 
-## 5. Self-Healing & Self-Improving Flow
+## 6. Self-Healing Sub-System
 
-```mermaid
-flowchart TD
-    STEP_FAIL([Step Fails]) --> HEALER[HealerAgent.diagnose_and_fix]
-    HEALER --> QUICK{Quick heuristic\\napplies?}
-    QUICK -->|type_text without focus| FIX_FOCUS[Inject click_element step\\nbefore type_text]
-    QUICK -->|No| LLM_HEAL[LLM healing call\\nscreen state + error -> corrected step]
-    LLM_HEAL --> HEALED{Fix found?}
-    HEALED -->|Yes| APPLY[Apply healed step\\nEmit self_heal tool_action]
-    HEALED -->|No| REPLAN[Normal replan loop]
-    FIX_FOCUS --> APPLY
-    APPLY --> RETRY[Retry healed step]
-    RETRY --> OK{Success?}
-    OK -->|Yes| CONTINUE([Continue plan])
-    OK -->|No| REPLAN
+### HealerAgent Heuristics (No LLM Required)
 
-    TASK_END([Task Completes]) --> REVIEWER[ReviewerAgent.review_and_learn\\nAsync fire-and-forget]
-    REVIEWER --> LLM_REVIEW[LLM analyses execution log\\nExtracts 1-3 lessons]
-    LLM_REVIEW --> STORE_LESSONS[Store to long_term_memories\\nsource=self_review importance=0.9]
-
-    TASK_END --> OBSERVER[BehavioralObserver.observe_and_store\\nAsync fire-and-forget]
-    OBSERVER --> LLM_DETECT[LLM scans last 3 conversation turns\\nDetects implicit preferences]
-    LLM_DETECT --> STORE_PREFS[Store to long_term_memories\\nsource=behavioral_observer]
-
-    STORE_LESSONS --> NEXT_TASK[Next similar task]
-    STORE_PREFS --> NEXT_TASK
-    NEXT_TASK --> AUTO_RECALL[auto_recalled_memories fetch\\ntop-5 semantic + all preferences]
-    AUTO_RECALL --> CONTEXT_INJECT[Injected as USER PREFERENCES\\n+ RELEVANT PAST EXPERIENCE]
-    CONTEXT_INJECT --> SMARTER([Agent is smarter this time])
-```
-
-### Self-Healing Heuristics (No LLM Needed)
-
-| Failure Pattern | Auto-Fix |
+| Failure Pattern | Auto-Fix Applied |
 |---|---|
 | `type_text` fails, "focus" in error | Inject `click_element` step before typing |
 | `click` fails with coordinate issue | Suggest `click_element` with accessible name |
-| `open_app` fails | Try alternate app binary name |
+| `open_app` fails | Try alternate binary name |
 | `wait_for_window` times out | Increase timeout by 3000ms |
+| `shell` command not found | Add full path fallback |
+
+### LLM-Based Healing
+
+If heuristics cannot match the error pattern, HealerAgent calls the LLM with:
+- The failed step definition
+- The error message
+- Current desktop screenshot
+- A prompt asking for a corrected step
+
+### Healing Retries Cap (Safety Limit)
+
+To prevent infinite healing loops:
+- **Per-step cap:** Maximum **2 heal attempts** per `step_index`, tracked in `OpenSarthiState.heal_attempts: dict[int, int]`
+- **Fallback:** On the 3rd failure, healing is bypassed → `replan_node` rewrites the entire plan
+- **Replan limit:** Maximum **5 full replans** (`max_retries=5`); after that the task is abandoned
+
+### Self-Improving: ReviewerAgent (Post-Task)
+
+After every completed task:
+1. ReviewerAgent receives the full execution log
+2. LLM extracts 1–3 concrete lessons from what worked / what failed
+3. Lessons stored as `long_term_memories` with `source=self_review, importance=0.9`
+4. On the next similar task, these lessons are auto-recalled into the planning context
+
+### Preference Learning: BehavioralObserver (Post-Response)
+
+After every response:
+1. BehavioralObserver scans the last 3 conversation turns
+2. LLM detects implicit user preferences (e.g., "prefers short answers", "uses dark themes")
+3. Stored as `[PREFERENCE]` tagged memories
+4. Always injected into every subsequent LLM context
 
 ---
 
-## 6. Cancellation & Pause Architecture
+## 7. Smart Overlay Window Management
 
-```mermaid
-stateDiagram-v2
-    [*] --> IDLE
-
-    IDLE --> PLANNING: user_message received
-    PLANNING --> EXECUTING: plan parsed
-    EXECUTING --> PAUSED: pause_execution
-    PAUSED --> EXECUTING: resume_execution
-    EXECUTING --> IDLE: all steps done
-    EXECUTING --> IDLE: cancel_execution
-    PLANNING --> IDLE: cancel_execution
-    PAUSED --> IDLE: cancel_execution
-```
-
-### Cancel Signal Path
-
-```mermaid
-flowchart LR
-    FE[Frontend\ncancel button] -->|cancel_execution WS| WS[websocket.py]
-    WS --> RC[runtime.request_cancel]
-    RC --> E1[_agent_task.cancel\nstops LLM mid-inference]
-    RC --> E2[_tool_task.cancel\nstops tool mid-execution]
-    E1 --> CAUGHT[CancelledError caught\nin run loop]
-    E2 --> CAUGHT
-    CAUGHT --> EMIT[Emit tool_terminated\nor plain abort]
-```
-
----
-
-## 6. JSON Plan Direct Execution (Import Mode)
-
-```mermaid
-flowchart TD
-    FE[Frontend JSON Import\nPaste step array] --> VALIDATE[Client-side validation\nEach step has tool field]
-    VALIDATE --> WS_SEND[wsClient.send\nrun_json_plan payload]
-    WS_SEND --> WS_HANDLER[websocket.py\nhandle_json_plan]
-    WS_HANDLER --> CHECK{Valid steps?}
-    CHECK -->|No| ERR[error → WS]
-    CHECK -->|Yes| RUN[runtime.run_plan_directly\nsteps list + goal string]
-    RUN --> EMIT_PLAN[Emit plan_created → WS]
-    EMIT_PLAN --> EXEC_LOOP[Same execution loop\nas normal task]
-    EXEC_LOOP --> DONE([Result → assistant_response])
-```
-
-> No LLM is called. No tokens consumed. Plan executes immediately.
-
----
-
-## 7. Voice Input Pipeline
+OpenSarthi automatically manages its window size during task execution to avoid obstructing the desktop:
 
 ```mermaid
 flowchart TD
-    MIC([Microphone]) --> AUDIO[AudioCapture\ncontinuous stream]
-    AUDIO --> WW[Wake Word Detector\nOpenWakeWord]
-    AUDIO --> VAD[Voice Activity\nDetection]
+    PLAN_CREATED[plan_node generates plan] --> SCREEN_CHECK{Plan contains\nscreen-interaction tools?}
+    SCREEN_CHECK -->|Yes: click/type/open_app/etc| MIN_HINT[Emit window_control → minimize_hint]
+    SCREEN_CHECK -->|No: shell/memory/search only| NO_HINT[Window stays full-size]
 
-    WW -->|detected| ACTIVATE[Activate full STT]
-    VAD -->|speech end\nor 8s silence| FINALIZE[Finalize transcription]
+    MIN_HINT --> FRONTEND[Frontend useWindowOverlay hook]
+    FRONTEND --> COLLAPSE[Collapse to 280x560 overlay strip\nRight edge of screen]
+    COLLAPSE --> TASK_RUNS[Task executes with HUD visible above desktop]
 
-    ACTIVATE --> STT_GATE{Echo Protection\nis_speaking?}
-    STT_GATE -->|Yes, TTS active| DROP[Drop audio\navoid self-transcription]
-    STT_GATE -->|No| DUAL_STT
+    TASK_RUNS --> COMPLETE[Task completes]
+    COMPLETE --> RESTORE_HINT[Emit window_control → restore]
+    RESTORE_HINT --> EXPAND[Restore to original size + position]
+```
 
-    subgraph DUAL_STT[Dual STT]
-        GOOGLE[Google STT\nCloud, fast]
-        WHISPER[Whisper STT\nLocal, accurate]
-    end
+**User override:** If user clicks "Expand" during task → `userExpandedDuringTask` flag set → auto-collapse suppressed for that task.
 
-    DUAL_STT --> TRANSCRIPT[transcript_update → WS]
-    TRANSCRIPT --> FE_DISPLAY[Frontend\nTranscriptView overlay]
-    FINALIZE --> USER_MSG[user_message → WS\nTrigger agent]
+---
+
+## 8. Voice Pipeline Flow
+
+```mermaid
+flowchart TD
+    MIC[Microphone\nPyAudio 16kHz 512-sample chunks] --> VAD[SileroVAD ONNX\nSpeech Activity Detection]
+    MIC --> WAKE[WakeWordDetector\nOpenWakeWord]
+
+    WAKE -->|Phrase detected| VOICE_TRIGGER[Emit voice_trigger event]
+    VAD -->|Speech detected| BUFFER[Accumulate speech buffer]
+    VAD -->|Silence detected| PROCESS[Send buffer to FasterWhisperSTT]
+
+    VOICE_TRIGGER --> BUFFER
+
+    PROCESS --> TRANSCRIPT[Transcript text]
+    TRANSCRIPT --> WS_MSG[WebSocket user_message]
+    WS_MSG --> AGENT[Agent processes message]
+
+    AGENT --> TTS[gTTS / Kokoro asyncio.subprocess]
+    TTS --> PLAY[Audio playback]
+    PLAY --> SUSPEND_STT[Suspend STT during playback\necho prevention]
+    SUSPEND_STT --> RESUME_STT[Resume STT after playback + 300ms]
+```
+
+**VAD (SileroVAD via ONNX Runtime):**
+- Model resolution order: `faster-whisper` assets → `openwakeword` resources → `~/.config/opensarthi/models/`
+- Falls back to RMS energy threshold if ONNX session fails to load
+- Maintains recurrent LSTM state (`h`, `c`, `context`) across 512-sample chunks — pure CPU
+
+---
+
+## 9. Settings Update Flow
+
+Settings can be updated in three ways:
+
+1. **Frontend SettingsView** → sends `update_settings` WS message
+2. **Voice/text command** → agent calls `update_settings` tool
+3. **Onboarding wizard** → sends `update_settings` on completion
+
+```mermaid
+flowchart TD
+    FRONTEND_SAVE[User clicks Save AI Details or Save All] --> WS_UPDATE[update_settings WS message]
+    VOICE_CMD[User says: change my theme to cyberpunk] --> AGENT_TOOL[Agent calls update_settings tool]
+    WS_UPDATE --> WEBSOCKET_HANDLER[api/websocket.py update_settings handler]
+    AGENT_TOOL --> WEBSOCKET_HANDLER
+
+    WEBSOCKET_HANDLER --> VALIDATE[Validate and filter empty API keys]
+    VALIDATE --> SAVE_ENV[save_settings_to_env writes ~/.config/opensarthi/.env]
+    SAVE_ENV --> REBUILD_DEPS[Rebuild AgentDeps with new model/provider]
+    REBUILD_DEPS --> EMIT_SYNC[Emit settings_sync to frontend]
+    EMIT_SYNC --> FRONTEND_UPDATE[Frontend updates all store fields\nTheme, model dropdown, toggles all refresh]
+```
+
+**Save granularity:**
+- **"Save AI Details"** — saves only provider, model, and API key fields
+- **"Save All Settings"** — saves everything (AI + voice + UI + memory)
+
+---
+
+## 10. Memory System
+
+```mermaid
+flowchart TD
+    USER_MSG[User sends message] --> RECALL[MemoryManager.recall\ntop-8 semantic hits]
+    RECALL --> EMBED[SentenceTransformer embed query\nall-MiniLM-L6-v2 cached at module level]
+    EMBED --> COSINE[Cosine similarity search\nagainst stored embeddings]
+    COSINE --> INJECT[Inject as RELEVANT PAST EXPERIENCE\nin LLM context]
+
+    PREFS[Load all PREFERENCE memories] --> INJECT_P[Inject as USER PREFERENCES\nin LLM context]
+
+    TASK_COMPLETE[Task completes] --> REVIEWER_ASYNC[ReviewerAgent async fire-and-forget]
+    REVIEWER_ASYNC --> LESSON[Extract 1-3 lessons from execution log]
+    LESSON --> STORE[store to long_term_memories\nimportance=0.9]
+
+    RESPONSE_DONE[Response sent] --> OBSERVER_ASYNC[BehavioralObserver async fire-and-forget]
+    OBSERVER_ASYNC --> DETECT[Detect implicit preferences\nfrom last 3 conversation turns]
+    DETECT --> STORE_PREF[store as PREFERENCE tag memory]
+
+    TOGGLE_OFF[long_term_memory_enabled = False] --> BYPASS[SentenceTransformer never loaded\nno semantic search]
+    BYPASS --> FALLBACK[Fallback: SQLite substring search]
 ```
 
 ---
 
-## 8. Personalization → Prompt Pipeline
+## 11. Cancellation & Pause Architecture
 
 ```mermaid
 flowchart LR
-    ONBOARD[OnboardingView\nSkills + Name + Instructions] -->|onComplete| APP[App.tsx\nsetPersonalization]
-    APP -->|wsClient.send\nupdate_settings| BACKEND[websocket.py\nhandle_update_settings]
-    BACKEND -->|save_settings_to_env| ENV[~/.config/opensarthi/.env]
-    BACKEND -->|settings.reload| DEPS_UPDATE[Rebuild AgentDependencies\nskills + user_name + custom_prompt]
+    USER_CANCEL[User clicks STOP button] --> WS_CANCEL[cancel_execution WS message]
+    USER_PAUSE[User triggers pause] --> WS_PAUSE[pause_execution WS message]
 
-    DEPS_UPDATE --> NEXT_RUN[Next agent.run call]
-    NEXT_RUN --> BUILD_PROMPT[build_system_prompt\nskills, user_name, custom_prompt]
-    BUILD_PROMPT --> LLM[LLM receives\noptimized prompt]
-```
+    WS_CANCEL --> RUNTIME_CANCEL[AgentRuntime.request_cancel\nor LangGraph is_cancelled = True]
+    WS_PAUSE --> RUNTIME_PAUSE[AgentRuntime.pause\nclear asyncio.Event]
 
-### Skill → Prompt Feature Matrix
+    RUNTIME_CANCEL --> KILL_LLM[Cancel _agent_task asyncio.Task\ninterrupts LLM inference mid-stream]
+    RUNTIME_CANCEL --> KILL_TOOL[Cancel _tool_task asyncio.Task\ninterrupts running tool]
+    KILL_LLM --> EMIT_TERM[Emit tool_terminated for active step]
+    KILL_TOOL --> EMIT_TERM
 
-| Skill Selected | Effect on Prompt |
-|---------------|-----------------|
-| `desktop_automation` | JSON tool-call format + tool rules enabled |
-| `developer` | Code quality hints, prefer terminal commands |
-| `system_admin` | Direct shell command preference |
-| `media` | Spotify/YouTube/media control guidance |
-| `writing` | Text quality, multiple variants hint |
-| `research` | Thorough analysis, source citation guidance |
-| `web` | open_app → wait_for_window → type_text flow hint |
-| `privacy` | Prefer local processing, data exposure warnings |
-| None of above | Standard conversational response only |
+    RUNTIME_PAUSE --> BLOCK[Loop blocks at _check_pause\nawait asyncio.Event]
+    BLOCK --> WAIT[Task is frozen until resume]
 
----
-
-## 10. Multi-Agent Orchestrator & Specialized Tools
-
-OpenSarthi now utilizes a multi-agent orchestration architecture inspired by the GWEN framework.
-
-### Orchestration Model
-1. **Orchestrator Agent**:
-   - Classifies user messages locally or via LLM into `CHAT`, `TASK`, or `CLARIFY`.
-   - Compresses task execution history to avoid token bloat.
-   - Spawns and manages sub-agents (e.g. `PlannerAgent`, `VerifierAgent`).
-
-2. **Specialized Tools (Cross-Platform)**:
-   - **`media_control`**: Controls media players via `playerctl` and system volume via `pactl`.
-   - **`remember` / `recall`**: Interacts with the long-term semantic memory SQLite database to store and fetch user facts.
-   - **`save_note` / `get_notes`**: Manages user notes as markdown files stored under `~/opensarthi_notes`.
-   - **`self_fix`**: A self-healing developer utility. Runs typecheck verification, prompts the model to generate a correction code file, compile-checks the result, and automatically rolls back using backup files on failure.
-
----
-
-## 9. Settings Sync Flow
-
-```mermaid
-sequenceDiagram
-    participant FE as Frontend
-    participant WS as websocket.py
-    participant CFG as config.py
-    participant RT as AgentRuntime
-
-    FE->>WS: update_settings {model, keys, skills, ...}
-    WS->>CFG: save_settings_to_env(payload)
-    CFG-->>WS: settings updated
-    WS->>RT: runtime.deps = AgentDependencies(skills=..., user_name=..., ...)
-    WS->>FE: settings_sync {full current settings}
-    FE->>FE: useAssistantStore.setPersonalization()
-    FE->>FE: useAssistantStore.setActiveModels()
+    WS_RESUME[resume_execution WS message] --> SET_EVENT[Set asyncio.Event]
+    SET_EVENT --> UNBLOCK[Loop resumes from where it paused]
 ```
 
 ---
 
-## 10. Token Tracking Flow
+## 12. Token Tracking
 
-```mermaid
-flowchart LR
-    AGENT_RUN[agent.run completes] --> USAGE[result.usage\nrequest + response + total]
-    USAGE --> DB[db.update_thread_tokens\naccumulate for thread_id]
-    USAGE --> WS_RESP[assistant_response\npayload includes usage]
-    WS_RESP --> STORE[assistantStore\nupdateTokenUsage]
-    STORE --> HUD[HUD display\nTOKEN USAGE + SESSION TOTAL]
+Token usage is tracked at two levels:
 
-    HISTORY_LOAD[thread_loaded] --> DB_READ[db.get_thread_tokens\nstored token counts]
-    DB_READ --> RESTORE[assistantStore\nrestoreThreadTokens]
-    RESTORE --> HUD
-```
+| Level | Scope | Reset |
+|-------|-------|-------|
+| **Thread** | Per active conversation thread | On "New Thread" |
+| **Session** | Cumulative across all threads | On app restart |
+| **Global (per model)** | Lifetime token usage per model key | Persisted in localStorage |
+
+Token data is extracted from PydanticAI `result.usage` — handles both `request_tokens`/`response_tokens` and `input`/`output` field name variants across PydanticAI versions.

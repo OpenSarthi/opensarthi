@@ -3,7 +3,7 @@
 > **Purpose:** This file is the single source of truth for any LLM (Gemini, Claude, GPT, Copilot, Cursor, Codex, etc.) working on this codebase.  
 > Read this **first** before writing or modifying any code. It captures architecture, conventions, invariants, contracts, and pitfalls that are not obvious from the code alone.
 
-> **Last updated:** June 2026 — LangGraph integration, 23 bug fixes, word-by-word streaming.
+> **Last updated:** July 2026 — Dual execution engine (AgentRuntime + LangGraph), SileroVAD ONNX (no PyTorch), 32-tool registry, conversational settings tool (`update_settings`), long-term memory toggle + model caching, audio cues engine, multi-tab threads, smart overlay mode with edge snapping, full markdown response rendering + clickable URLs, separate AI/All save in settings, `DevLogger` structured run logs, `OverlayIdleView` compact strip.
 
 ---
 
@@ -80,53 +80,65 @@
 
 | Layer | Technology | Notes |
 |-------|-----------|-------|
-| Python | **3.12** | 3.14+ is NOT supported (no wheels for ML packages) |
-| API | **FastAPI** + **uvicorn** | Single WebSocket endpoint at `/ws` |
+| Python | **3.12** | 3.13+ not supported (no ML wheels) |
+| API | **FastAPI** + **uvicorn** | Single WebSocket endpoint `/ws` |
 | Agent | **PydanticAI ≥ 0.2** | `Agent` with `deps_type=AgentDependencies` |
-| Graph | **LangGraph ≥ 0.4** | Optional; `runtime/graph/` — activate with `USE_LANGGRAPH=true` |
-| Checkpoints | **langgraph-checkpoint-sqlite** | SqliteSaver at `~/.config/opensarthi/checkpoints.db` |
-| Validation | **Pydantic v2** | All schemas in `planner/schemas.py` |
+| Graph | **LangGraph ≥ 0.4** | Optional; activate with `USE_LANGGRAPH=true` |
+| Checkpoints | **langgraph-checkpoint-sqlite** | `SqliteSaver` at `~/.config/opensarthi/checkpoints.db` |
+| Validation | **Pydantic v2** | Schemas in `planner/schemas.py` |
 | Config | **pydantic-settings** | Loads from `~/.config/opensarthi/.env` |
 | DB | **SQLite** via **aiosqlite** | Chat history + token tracking |
-| Voice STT | **SpeechRecognition** (Google) + **faster-whisper** (local) | Dual STT pipeline |
-| ```
+| Voice STT | **SpeechRecognition** + **faster-whisper** | Dual STT pipeline |
+| VAD | **SileroVAD via ONNX Runtime** | Replaces PyTorch/torchaudio — CPU only |
+| Memory | **sentence-transformers** + SQLite | Cached module-level, toggle bypass |
+| Logging | **DevLogger** (`dev_logger.py`) | Structured run logs per agent execution |
+
+---
+
+## 4. Repository Structure
+
+```
 opensarthi/
 ├── apps/desktop/                    # Tauri v2 + React 19 frontend
 │   ├── src/
-│   │   ├── App.tsx                 # Root: onboarding gate + modal state + theme application
+│   │   ├── App.tsx                 # Root: onboarding gate + modal state + theme
 │   │   ├── components/
-│   │   │   ├── assistant/          # AssistantOverlay (3-panel HUD + multi-tab), TaskList (+ JSON import)
+│   │   │   ├── assistant/          # AssistantOverlay, OverlayIdleView, ResponseBubble, TaskList
 │   │   │   ├── onboarding/         # OnboardingView (cold-start + edit mode)
 │   │   │   ├── execution/          # ActionLog (tool execution timeline)
 │   │   │   ├── permissions/        # PermissionDialog, InputDialog
 │   │   │   └── settings/           # SettingsView, HistoryView
 │   │   ├── hooks/
 │   │   │   ├── useWebSocket.ts     # WS client, message routing, settings sync
+│   │   │   ├── useWindowOverlay.ts # Smart overlay mode + edge snapping
+│   │   │   ├── useAudioCues.ts     # Web Audio API synthesized sound cues
 │   │   │   └── useTauriEvent.ts    # Tauri IPC event listeners
 │   │   ├── stores/
-│   │   │   └── assistantStore.ts   # Zustand: messages, tabs, tokens, personalization, themes
+│   │   │   └── assistantStore.ts   # Zustand: messages, tabs, tokens, memory toggle, themes
 │   │   ├── lib/
 │   │   │   ├── ws.ts               # WebSocket client singleton
 │   │   │   ├── schemas.ts          # Zod schemas for WS payloads
 │   │   │   └── constants.ts        # Tauri event names, defaults
-│   │   └── styles/                 # Global CSS + 6 theme token sets
+│   │   └── styles/                 # Global CSS + 10 theme token sets
 │   └── src-tauri/
 │       ├── src/
 │       │   ├── lib.rs              # App entry, sidecar launch
 │       │   ├── sidecar.rs          # Python process management & port detection
 │       │   ├── tray.rs             # System tray
 │       │   └── ipc.rs              # Tauri IPC commands
-│       ├── binaries/               # Bootstrap script
+│       ├── binaries/               # Bootstrap launcher
 │       └── resources/uv            # Bundled uv binary for Python management
 │
 ├── runtime/                         # Python AI sidecar
 │   ├── main.py                     # FastAPI app + port negotiation
 │   ├── config.py                   # pydantic-settings (loads ~/.config/opensarthi/.env)
 │   ├── db.py                       # SQLite: messages + thread token storage
-│   ├── agent_runtime.py            # Stateful executor + self-heal (HealerAgent, ReviewerAgent)
-│   ├── observation.py              # Desktop snapshot (screenshot + window info + AT-SPI + OCR)
+│   ├── agent_runtime.py            # Stateful executor + self-heal
+│   ├── observation.py              # Desktop snapshot (screenshot + window info + AT-SPI)
 │   ├── state_machine.py            # AgentState enum + AgentStateContext dataclass
 │   ├── sync_primitives.py          # Async helpers: wait_for_window, wait_for_text
+│   ├── dev_logger.py               # Structured run logging per agent execution
+│   ├── window_session.py           # Foreground window tracking for smart overlay
 │   ├── api/
 │   │   └── websocket.py            # Session, ConnectionManager, all WS message handlers
 │   ├── agents/
@@ -137,53 +149,47 @@ opensarthi/
 │   │   └── behavioral_observer.py  # BehavioralObserver: preference learning
 │   ├── planner/
 │   │   ├── agent.py                # PydanticAI Agent + build_system_prompt + build_structured_context
-│   │   └── schemas.py              # Plan, PlanStep, ToolResult, ToolResultConfidence
+│   │   ├── decomposer.py           # Topological sort for parallel step groups
+│   │   └── schemas.py              # Plan, PlanStep, ToolResult
 │   ├── tools/
 │   │   ├── base.py                 # BaseTool ABC + RiskLevel enum + safe_execute
 │   │   ├── desktop.py              # click, type_text, press_key, open_app, click_element, focus_window
-│   │   ├── system.py               # shell (with blocked patterns + sudo handling)
+│   │   ├── system.py               # shell (bubblewrap-sandboxed)
 │   │   ├── wait_tools.py           # wait_for_window, wait_for_text
 │   │   ├── memory.py               # remember, recall, forget_memory tools
 │   │   ├── notes.py                # save_note, get_notes tools
+│   │   ├── media.py                # MediaControlTool: play/pause/next/prev
 │   │   ├── self_fix.py             # SelfFixTool: AI code rewrite + rollback
-│   │   └── registry.py             # Tool registry (all_tools, get)
+│   │   ├── settings_tool.py        # UpdateSettingsTool: conversational settings control
+│   │   ├── productivity.py         # WebSearch, Weather, Timer, ListFiles, Volume, Battery, WiFi
+│   │   └── registry.py             # 32-tool registry (all_tools, get, get_schemas)
 │   ├── memory/
-│   │   ├── long_term.py            # Semantic SQLite memory (all-MiniLM-L6-v2 + cosine sim)
+│   │   ├── long_term.py            # Semantic SQLite memory (all-MiniLM-L6-v2, cached model)
 │   │   ├── manager.py              # Unified MemoryManager (recall, store)
 │   │   └── passive.py              # Passive memory extraction hook
+│   ├── graph/                      # LangGraph orchestration (USE_LANGGRAPH=true)
+│   │   ├── state.py                # OpenSarthiState typed schema
+│   │   ├── nodes.py                # 8 async node implementations
+│   │   ├── edges.py                # Conditional edge routing functions
+│   │   └── graph.py                # StateGraph builder, get_compiled_graph()
 │   ├── providers/
 │   │   └── linux/
 │   │       └── accessibility.py    # AT-SPI via GObject Introspection
+│   ├── observer/
+│   │   └── screen.py               # AT-SPI window query (Wayland-compatible)
 │   └── voice/
-│       ├── stt.py                  # Dual STT: Google + Whisper
-│       └── pipeline.py             # Wake word, VAD, echo protection, TTS
+│       ├── pipeline.py             # PyAudio → SileroVAD → FasterWhisper → TTS
+│       ├── stt.py                  # FasterWhisperSTT (local offline)
+│       ├── vad.py                  # SileroVAD via ONNX Runtime (no PyTorch)
+│       ├── wakeword.py             # OpenWakeWord detector
+│       └── android_bridge.py       # Android STT/TTS bridge
 │
-├── docs/                            # Technical documentation
-│   ├── 01_frontend_and_desktop_shell.md
-│   ├── 02_backend_runtime_and_infra.md
-│   ├── 03_agentic_flow.md           # ← Updated with self-healing + self-improving flows
-│   └── 04_websocket_protocol.md
-│
-├── package.json                     # pnpm workspace root
-├── pnpm-workspace.yaml
-├── SKILLS.md                        # ← YOU ARE HERE
-└── README.md
-```── desktop.py              # click, type_text, press_key, open_app, click_element, focus_window
-│   │   ├── system.py               # shell (with blocked patterns + sudo handling)
-│   │   ├── wait_tools.py           # wait_for_window, wait_for_text
-│   │   └── registry.py             # Tool registry (all_tools, get)
-│   ├── providers/
-│   │   └── linux/
-│   │       └── accessibility.py    # AT-SPI via GObject Introspection
-│   └── voice/
-│       ├── stt.py                  # Dual STT: Google + Whisper
-│       └── pipeline.py             # Wake word, VAD, echo protection, TTS
-│
-├── docs/                            # Technical documentation
+├── docs/
 │   ├── 01_frontend_and_desktop_shell.md
 │   ├── 02_backend_runtime_and_infra.md
 │   ├── 03_agentic_flow.md
-│   └── 04_websocket_protocol.md
+│   ├── 04_websocket_protocol.md
+│   └── 05_android_implementation.md
 │
 ├── package.json                     # pnpm workspace root
 ├── pnpm-workspace.yaml
@@ -191,7 +197,6 @@ opensarthi/
 └── README.md
 ```
 
----
 
 ## 5. The Agent Loop — How It Actually Works
 
@@ -277,17 +282,32 @@ BaseTool (ABC)
 | Type Text | `type_text` | MODERATE | `text: str` |
 | Press Key | `press_key` | MODERATE | `key: str` |
 | Open App | `open_app` | MODERATE | `app: str` |
-| Focus Window | `focus_window` | MODERATE | `title: str` |
+| Focus Window | `focus_window` | SAFE | `title: str` |
 | Click Element | `click_element` | MODERATE | `role: str, name: str` |
-| Shell | `shell` | DANGEROUS | `command: str, timeout?: float` |
+| Observe Desktop | `observe_desktop` | SAFE | — |
+| Shell | `shell` | HIGH | `command: str, timeout?: float` |
 | Wait for Window | `wait_for_window` | SAFE | `title: str, timeout?: float` |
 | Wait for Text | `wait_for_text` | SAFE | `text: str, timeout?: float` |
 | Remember | `remember` | SAFE | `fact: str, importance?: float` |
 | Recall | `recall` | SAFE | `query: str` |
-| Forget Memory | `forget_memory` | SAFE | `query: str` |
+| Forget Memory | `forget_memory` | MODERATE | `query: str` |
 | Save Note | `save_note` | SAFE | `title: str, content: str` |
 | Get Notes | `get_notes` | SAFE | `query?: str` |
-| Self Fix | `self_fix` | DANGEROUS | `description: str, target_file: str` |
+| Self Fix | `self_fix` | HIGH | `description: str, target_file: str` |
+| Update Settings | `update_settings` | SAFE/MODERATE | setting fields to update |
+| Web Search | `web_search` | SAFE | `query: str` |
+| Weather | `get_weather` | SAFE | `location: str` |
+| Set Timer | `set_timer` | SAFE | `seconds: int, label?: str` |
+| List Timers | `list_timers` | SAFE | — |
+| Cancel Timer | `cancel_timer` | SAFE | `timer_id: str` |
+| List Files | `list_files` | SAFE | `path?: str` |
+| Open Path | `open_path` | MODERATE | `path: str` |
+| Read File | `read_file` | SAFE | `path: str` |
+| Volume Control | `set_volume` | SAFE | `volume: int` |
+| Battery Status | `get_battery` | SAFE | — |
+| Toggle WiFi | `toggle_wifi` | MODERATE | `enabled: bool` |
+| Media Control | `media_control` | SAFE | `action: str` |
+
 
 ### 6.3 ToolResult Contract
 
@@ -583,15 +603,20 @@ Single store manages:
 
 ### Theme System & Transparency Invariants
 
-5 built-in themes via CSS custom properties on `document.body`:
-- `theme-red-black` (Red HUD — default)
-- `theme-green-black` (Forest Green)
-- `theme-purple-black` (Deep Purple)
-- `theme-sky-white` (Cyber Sky)
-- `theme-pink-white` (Sakura Pink)
+5 built-in themes via CSS custom properties on `document.body` (10 total):
+- `theme-green-black` (Matrix Green — default) [Dark]
+- `theme-red-black` (Red accent) [Dark]
+- `theme-purple-black` (Purple accent) [Dark]
+- `theme-blue-black` (Cyan/blue accent) [Dark]
+- `theme-mono-dark` (Gray/white flat) [Dark]
+- `theme-light-sakura` (Sakura Pink) [Light]
+- `theme-light-slate` (Slate accent) [Light]
+- `theme-light-clean` (Clean white) [Light]
+- `theme-multicolor-dark` (Animated rainbow) [Dark]
+- `theme-multicolor-light` (Animated rainbow) [Light]
 
 **Convention:** Theme is applied by toggling a class on `document.body`. All CSS rules use `var(--token-name)`.
-**Tauri Rounded Corner Glass Blur Invariant:** To prevent WebKit/Tauri rounded corner rendering glitches (where glass blurs spill outside the rounded borders as solid rectangular boxes), `backdrop-filter: blur(...)` is completely removed. Theme backgrounds must use solid, opaque custom colors (`var(--bg-secondary)`) on rounded layouts.
+**Tauri Rounded Corner Glass Blur Invariant:** To prevent rounded corner rendering glitches, `backdrop-filter: blur(...)` is completely removed. Theme backgrounds must use solid, opaque custom colors (`var(--bg-secondary)`) on rounded layouts.
 
 ### Overlay HUD Window Snapping Layouts
 

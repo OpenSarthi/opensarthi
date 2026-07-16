@@ -109,27 +109,43 @@ Core AI logic server. Executes intent classifiers, schedules tool calls, manages
 ```mermaid
 graph TD
     Start([User Input]) --> Classify{Classify Intent}
-    Classify -->|Direct Chat| Respond[Response Bubble]
-    Classify -->|System Task| Plan[Create Plan Graph]
-    Plan --> Execute[Execute First/Next Tool]
-    Execute --> Assess{Assess Result}
-    Assess -->|Success & More Tools| Execute
-    Assess -->|Task Finished| Respond
-    Assess -->|Execution Failure| Heal[Self-Healing Node]
+    
+    Classify -->|Direct Chat| Chat[Chat Node]
+    Classify -->|System Task| Observe[Observe Node<br/>Snapshot + Memory Recall]
+    Classify -->|Invalid/Clarify| End([END])
+    
+    Observe --> Plan[Plan Node<br/>LLM Plan Generator]
+    
+    Plan -->|No Steps / Success| Review[Review Node<br/>Lesson Extraction]
+    Plan -->|Steps to Run| Execute[Execute Step Node<br/>Run Tool Call]
+    Plan -->|Cancelled| End
+    
+    Execute -->|More Steps| Execute
+    Execute -->|All Steps Done| Review
+    Execute -->|Step Failed| Heal{Heal Node<br/>Heuristics / LLM Fix}
+    Execute -->|Unrecoverable| Replan[Replan Node<br/>Reset current plan]
+    Execute -->|Cancelled| End
+    
     Heal -->|Auto-Healed| Execute
-    Heal -->|Blockage / Retry Limit| Replan[Replan / Revise Graph]
-    Replan --> Execute
-    Respond --> End([Done])
+    Heal -->|Heal Failed / Cap Exceeded| Replan
+    Heal -->|Cancelled| End
+    
+    Replan -->|Retries Left| Observe
+    Replan -->|Max Retries Exceeded| End
+    
+    Review --> End
+    Chat --> End
 
     style Start fill:#0D1117,stroke:#00D9FF,stroke-width:2px,color:#fff
     style End fill:#0D1117,stroke:#00D9FF,stroke-width:2px,color:#fff
     style Classify fill:#00D9FF,stroke:#0D1117,stroke-width:1px,color:#000
-    style Assess fill:#7B2FFE,stroke:#0D1117,stroke-width:1px,color:#fff
+    style Observe fill:#0D1117,stroke:#7B2FFE,stroke-width:1px,color:#fff
     style Plan fill:#0D1117,stroke:#00D9FF,stroke-width:1px,color:#fff
     style Execute fill:#0D1117,stroke:#7B2FFE,stroke-width:1px,color:#fff
     style Heal fill:#FF5722,stroke:#0D1117,stroke-width:1px,color:#fff
     style Replan fill:#FF5722,stroke:#0D1117,stroke-width:1px,color:#fff
-    style Respond fill:#2F8D46,stroke:#0D1117,stroke-width:1px,color:#fff
+    style Review fill:#2F8D46,stroke:#0D1117,stroke-width:1px,color:#fff
+    style Chat fill:#2F8D46,stroke:#0D1117,stroke-width:1px,color:#fff
 ```
 
 <br/>
@@ -241,12 +257,12 @@ graph TD
 
 | Provider | Supported Models | Performance Notes |
 |----------|------------------|-------------------|
-| **Google Gemini** | 2.5 Flash, 2.5 Pro, 2.0 Flash | Recommended default (lowest latency structured logs) |
+| **Google Gemini** | 2.5 Flash, 2.5 Pro, 2.0 Flash, 1.5 Pro | Recommended default (lowest latency structured logs) |
 | **OpenAI** | GPT-4o, GPT-4o Mini, GPT-4 Turbo | High reliability structured plans |
-| **Anthropic** | Claude 3.5 Sonnet, Claude 3 Opus | Complex multi-step reasoning capabilities |
-| **Groq** | Llama 3.3 70B, Llama 3.1 8B | Ultra-high inference velocity |
-| **OpenRouter** | Any compatible model | Aggregated multi-endpoint routing |
-| **Ollama** | Llama 3, Phi 3, Mistral | 100% offline local processing (0 token fees) |
+| **Anthropic** | Claude Opus 4.5, Claude Sonnet 4.5, Claude Haiku 3.5 | Complex multi-step reasoning capabilities |
+| **Groq** | Llama 3.3 70B, Llama 3.1 8B, Qwen3 32B, Llama 4 Scout | Ultra-high inference velocity |
+| **OpenRouter** | DeepSeek Chat, Mistral Large, etc. | Aggregated multi-endpoint routing |
+| **Ollama** | qwen2.5-coder, llama3.2, mistral | 100% offline local processing (0 token fees) |
 
 <br/>
 

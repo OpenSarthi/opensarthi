@@ -1,419 +1,460 @@
-# OpenSarthi Desktop Agent & Assistant
-# Part 1: Frontend Shell, Desktop Core & UI/UX
+# OpenSarthi — Frontend & Desktop Shell
 
----
-
-> [!NOTE]
-> This document describes the architecture, layout, and IPC protocol design of OpenSarthi, updated to match the latest implementation.
+> **Updated:** July 2026 — Multi-tab threads, smart overlay mode + edge snapping, OverlayIdleView, audio cues engine, full markdown rendering + URL links, ResponseBubble modal with eye animations, STOP button, separate AI/all settings save, Long-Term Memory toggle, 10 themes, persistent panel widths.
 
 ---
 
 ## 1. Architecture Overview
 
 ```
-┌─────────────────────────────────────────┐
-│            Tauri v2 Shell               │
-│   React 19 + TypeScript + Vite          │
-│   (WebView Frontend)                    │
-└──────────────┬──────────────────────────┘
+┌──────────────────────────────────────────┐
+│            Tauri v2 Shell                │
+│   React 19 + TypeScript + Vite 6         │
+│   (WebView Frontend)                     │
+└──────────────┬───────────────────────────┘
                │ Tauri IPC (invoke/events)
-┌──────────────▼──────────────────────────┐
-│          Rust Native Core               │
-│  Audio Capture │ Tray │ System Hooks    │
-│  Screenshot    │ IPC Bridge │ Sidecar   │
-└──────────────┬──────────────────────────┘
-               │ WebSocket + HTTP (localhost)
-┌──────────────▼──────────────────────────┐
-│       Python Runtime (Sidecar)          │
-│  (Covered in Part 2)                    │
-└─────────────────────────────────────────┘
+┌──────────────▼───────────────────────────┐
+│          Rust Native Core                │
+│  sidecar.rs │ tray.rs │ ipc.rs           │
+└──────────────┬───────────────────────────┘
+               │ WebSocket ws://127.0.0.1:PORT/ws
+┌──────────────▼───────────────────────────┐
+│       Python Runtime (Sidecar)           │
+│  FastAPI + LangGraph + PydanticAI        │
+└──────────────────────────────────────────┘
 ```
-
-**Key decisions:**
-- Tauri v2 (not v1) — granular permissions, mobile-ready IPC, system tray improvements
-- Python runtime runs as a **sidecar process**, not embedded
-- Frontend ↔ Rust via Tauri IPC; Frontend ↔ Python via local HTTP/WebSocket
 
 ---
 
-## 2. Tech Stack — Frontend & Desktop Shell
-
-### 2.1 Desktop Shell
+## 2. Tech Stack
 
 | Layer | Technology | Rationale |
 |-------|-----------|-----------|
-| **Framework** | **Tauri v2** | Lightweight (~5MB binary), Rust-powered, granular permissions, cross-platform |
-| **Bundler** | **Vite 6+** | Fast HMR, native ESM, excellent Tauri integration |
-| **UI Framework** | **React 19** | Ecosystem maturity, concurrent features, component model |
-| **Language** | **TypeScript 5.5+** | Type safety across IPC boundaries |
-
-### 2.2 Styling & UI Components
-
-| Layer | Technology | Rationale |
-|-------|-----------|-----------|
-| **CSS Framework** | **TailwindCSS v4** | Utility-first, tree-shaken, fast iteration |
-| **Component Library** | **shadcn/ui** | Unstyled primitives, full ownership, accessible |
-| **Animation** | **Framer Motion** | Declarative animations, layout transitions, gesture support |
-| **Icons** | **Lucide React** | Consistent, lightweight, tree-shakeable |
-| **Fonts** | **Inter** (via Google Fonts or local) | Clean, variable-weight, optimized for UI |
-
-### 2.3 State & Communication
-
-| Layer | Technology | Rationale |
-|-------|-----------|-----------|
-| **State Management** | **Zustand** | Minimal boilerplate, outside-React access (for IPC handlers) |
-| **Server State** | **TanStack Query v5** | Caching, retry, deduplication for Python API calls |
-| **IPC (Rust)** | **Tauri invoke + events** | Type-safe, permission-scoped, built-in |
-| **IPC (Python)** | **WebSocket + REST** | Robust, debuggable, language-agnostic |
-| **Schema Validation** | **Zod** | Runtime validation of IPC payloads |
+| **Desktop Framework** | Tauri v2 | ~5MB binary, granular permissions, cross-platform |
+| **UI Framework** | React 19 + TypeScript | Concurrent features, type-safe IPC |
+| **Bundler** | Vite 6 | Fast HMR, native ESM |
+| **Animation** | Framer Motion | Layout transitions, declarative animations |
+| **State** | Zustand | Minimal boilerplate, outside-React access for WS handlers |
+| **Styling** | Vanilla CSS + custom design tokens | Full control, 10 themes |
+| **Icons** | Lucide React | Tree-shakeable, consistent |
+| **Markdown** | react-markdown + remark-gfm | Tables, code blocks, GFM support |
+| **WebSocket** | Native browser WebSocket | Auto-reconnect, no library overhead |
 
 ---
 
-## 3. Rust Native Core
+## 3. Component Architecture
 
-The Rust core handles **performance-critical, OS-level operations** that cannot run in Python or the WebView.
-
-### 3.1 Responsibilities & Crates
-
-| Responsibility | Rust Crate | Notes |
-|---------------|-----------|-------|
-| **Microphone Capture** | `cpal` (not rodio) | Low-level input streams; rodio is playback-only |
-| **Audio Playback** | `rodio` | For TTS audio output |
-| **System Tray** | Tauri v2 built-in `tray-icon` | Dynamic icon/menu, click handlers |
-| **Screenshots** | `xcap` or platform API | Cross-platform screen capture |
-| **Notifications** | `tauri-plugin-notification` | Native OS notifications |
-| **Global Hotkeys** | `tauri-plugin-global-shortcut` | Wake-key activation (keyboard alternative to wake word) |
-| **Sidecar Management** | `tauri-plugin-shell` | Spawn/monitor Python process |
-| **Clipboard** | `tauri-plugin-clipboard-manager` | Read/write system clipboard |
-| **File Dialogs** | `tauri-plugin-dialog` | Native open/save dialogs |
-| **Auto-start** | `tauri-plugin-autostart` | Launch on login |
-| **Logging** | `tracing` + `tracing-subscriber` | Structured logs, spans |
-
-### 3.2 Audio Pipeline (Rust-side)
+### 3.1 Full Component Tree
 
 ```
-Microphone (cpal)
-    → Ring Buffer (crossbeam channel)
-    → Wake Word Check (forward to Python via IPC)
-    → If triggered: stream audio to Python STT
-    → TTS response audio → rodio playback
-```
-
-> [!NOTE]
-> Wake word detection and STT run in **Python** (OpenWakeWord / Faster Whisper). Rust captures raw audio and streams it via IPC. This avoids duplicating ML runtimes in Rust.
-
-### 3.3 Sidecar Architecture
-
-The Python runtime is bundled as a **PyInstaller binary** and managed via Tauri's shell plugin:
-
-1. Tauri spawns the Python sidecar on app launch
-2. Python starts a **FastAPI** server on `127.0.0.1:<dynamic-port>`
-3. Python prints the port to stdout → Rust reads it
-4. Frontend connects via WebSocket to that port
-5. Tauri monitors the sidecar process; restarts on crash
-
-**Port negotiation flow:**
-```
-Tauri (Rust) → spawn sidecar binary
-Python sidecar → find free port → bind FastAPI → print "PORT:8421" to stdout
-Tauri (Rust) → read stdout → store port → emit event to frontend
-Frontend → connect WebSocket to ws://127.0.0.1:8421/ws
-```
-
----
-
-## 4. IPC Protocol Design
-
-### 4.1 Frontend ↔ Rust (Tauri IPC)
-
-Used for: tray control, audio control, screenshots, native dialogs, hotkeys.
-
-```typescript
-// Example: Tauri invoke (type-safe)
-const screenshot = await invoke<Uint8Array>('capture_screen', { region: null });
-const audioState = await invoke<boolean>('toggle_microphone');
-```
-
-### 4.2 Frontend ↔ Python (WebSocket)
-
-Used for: AI interactions, tool execution status, transcript updates.
-
-**Message Schema (JSON):**
-```typescript
-interface WSMessage {
-  id: string;           // UUID for request correlation
-  type: WSMessageType;
-  payload: unknown;
-  timestamp: number;
-}
-
-type WSMessageType =
-  // Incoming Messages (Client -> Server)
-  | 'run_json_plan'        // Request to execute pre-built JSON plan directly
-  | 'user_message'         // User text/voice prompt
-  | 'session_state'        // Voice session active/inactive toggle
-  | 'voice_state'          // Manual/automatic voice listening states
-  | 'new_chat'             // Trigger a new chat thread
-  | 'cancel_execution'     // Request cancellation of active agent task
-  | 'pause_execution'      // Request pausing of active execution
-  | 'resume_execution'     // Request resuming of paused execution
-  | 'permission_response'  // User response to permission dialog
-  | 'input_response'       // User response providing text input (like sudo password)
-  | 'get_history'          // Query chat history list
-  | 'delete_thread'        // Delete a specific chat thread
-
-  // Outgoing Messages (Server -> Client)
-  | 'agent_state'          // Agent state broadcast (e.g. idle, planning, executing)
-  | 'tool_action'          // Real-time tool action execution state update
-  | 'permission_request'   // Request approval for dangerous operations
-  | 'input_request'        // Request arbitrary input from the user (e.g. sudo password)
-  | 'speech_started'       // Event signifying TTS playback started
-  | 'speech_completed'     // Event signifying TTS playback completed
-  | 'assistant_response'   // Final completion response with token usage
-  | 'plan_created'         // Plan steps outline event
-  | 'tool_terminated'      // Triggered when plan steps are aborted/cancelled
-  | 'task_paused'          // Confirmation of paused state
-  | 'task_resumed'         // Confirmation of resumed state
-  | 'history_response'     // Historical conversation list payload
-  | 'error';               // Error reporting event
-```
-
-### 4.3 Rust ↔ Python (Audio Streaming)
-
-For real-time audio: use a **Unix domain socket** (not WebSocket) for lower latency.
-
-```
-Rust (cpal) → raw PCM chunks → Unix socket → Python (Faster Whisper)
-Python (Piper TTS) → synthesized PCM → Unix socket → Rust (rodio)
-```
-
----
-
-## 5. Frontend Architecture
-
-### 5.1 Directory Structure
-
-```
-apps/desktop/
-├── src/
-│   ├── main.tsx                    # Entry point
-│   ├── App.tsx                     # Root layout + routing
-│   │
-│   ├── components/
-│   │   ├── ui/                     # shadcn/ui primitives
-│   │   ├── assistant/
-│   │   │   ├── AssistantOverlay.tsx # Main floating window
-│   │   │   ├── VoiceButton.tsx     # Mic toggle with waveform
-│   │   │   ├── Waveform.tsx        # Audio visualizer
-│   │   │   ├── TranscriptView.tsx  # Live STT transcript
-│   │   │   └── ResponseBubble.tsx  # AI response display
-│   │   ├── execution/
-│   │   │   ├── ActionLog.tsx       # Tool execution timeline
-│   │   │   ├── ScreenPreview.tsx   # Screenshot display
-│   │   │   └── PlanViewer.tsx      # Current plan steps
-│   │   ├── permissions/
-│   │   │   └── PermissionDialog.tsx # Confirm dangerous actions
-│   │   └── settings/
-│   │       ├── SettingsPanel.tsx
-│   │       ├── ModelSettings.tsx
-│   │       ├── VoiceSettings.tsx
-│   │       └── PermissionSettings.tsx
-│   │
-│   ├── stores/
-│   │   ├── assistantStore.ts       # Conversation, session state
-│   │   ├── audioStore.ts           # Mic state, volume, waveform data
-│   │   ├── executionStore.ts       # Current plan, tool status
-│   │   └── settingsStore.ts        # User preferences
-│   │
-│   ├── hooks/
-│   │   ├── useWebSocket.ts         # WebSocket connection + reconnect
-│   │   ├── useTauriEvent.ts        # Tauri event listener wrapper
-│   │   ├── useAudio.ts             # Audio control via Tauri invoke
-│   │   └── usePermission.ts        # Permission dialog flow
-│   │
-│   ├── lib/
-│   │   ├── ipc.ts                  # Typed Tauri invoke wrappers
-│   │   ├── ws.ts                   # WebSocket client
-│   │   ├── schemas.ts              # Zod schemas for IPC payloads
-│   │   └── constants.ts
-│   │
-│   └── styles/
-│       └── globals.css             # Tailwind base + custom tokens
+App.tsx  (Root: modal state, tab management, onboarding gate)
 │
-├── index.html
-├── vite.config.ts
-├── tailwind.config.ts
-├── tsconfig.json
-└── package.json
+├── OnboardingView           (cold-start wizard / edit-mode popup)
+│
+├── AssistantOverlay         (main HUD — full window mode)
+│   ├── ParticleBackground   (animated canvas, state-aware particle density)
+│   ├── TaskList             (left panel: multi-tab threads + JSON import)
+│   │   └── JsonImportModal  (JSON step import UI)
+│   ├── MessageList + ResponseBubble  (centre panel)
+│   │   └── ResponseBubble   (per-message: markdown, code, tables, URLs, streaming, eye animations)
+│   │       └── ContextModal (expandable full-screen response modal)
+│   ├── ActionLog            (right panel: tool log + cumulative plan + token stats)
+│   ├── VoiceButton          (mic toggle + Waveform animation)
+│   ├── TranscriptView       (live STT overlay)
+│   └── OverlayIdleView      (compact 280×560 strip in overlay mode)
+│
+├── PermissionDialog         (tool approval popup with permanent grant option)
+├── InputDialog              (agent user-input request popup)
+├── SettingsView             (4-tab settings: AI · Voice · UI · Memory)
+└── HistoryView              (past threads + token restore)
 ```
 
-### 5.2 Zustand Store Design
+### 3.2 HUD Layout
+
+Three-panel grid with draggable resize handles. Panel widths persist to `localStorage`.
+
+```
+┌────────────────┬───────────────────────────┬────────────────┐
+│  AGENT TASKS   │    CHAT / MAIN VIEW       │  LIVE PLAN &   │
+│                │                           │    ACTIVITY    │
+│  Multi-tab     │  Messages + streaming     │  Tool log +    │
+│  thread list   │  responses + voice input  │  cumulative    │
+│  + JSON import │  + transcript overlay     │  plan steps +  │
+│                │                           │  token stats   │
+├────────────────┴───────────────────────────┴────────────────┤
+│  Provider · Model · Token Usage · Session Total · Version   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| Panel | Default Width | Content |
+|-------|-------------|---------|
+| Left | 260px | `TaskList` — multi-tab thread management + JSON import |
+| Centre | flex-1 | Chat messages + voice input + streaming response + transcript |
+| Right | 240px | `ActionLog` — tool calls + plan steps + token stats |
+
+---
+
+## 4. Smart Overlay Mode (`useWindowOverlay.ts`)
+
+When the agent starts a screen-interaction task, the window automatically shrinks to a **280×560 compact strip** pinned to the screen edge. This stays above all other windows (always-on-top) so the user can monitor progress.
+
+### Overlay Modes
+
+| Mode | Size | Behavior |
+|------|------|---------|
+| **Snapped Right** | 280×560 | Default position (right edge, vertically centered) |
+| **Snapped Left** | 280×560 | When dragged to left edge |
+| **Floating** | 320×440 | When in centre of screen |
+
+### Transition Sequence (full → overlay)
+
+1. Save current window size and position
+2. `unmaximize()` if maximized (150ms WM delay)
+3. `setAlwaysOnTop(true)`
+4. `setDecorations(false)`
+5. `setSize(280, 560)` → position at right edge
+6. Deferred 150ms `setAlwaysOnTop(true)` + `setFocus()` for Wayland
+7. Start `onMoved` edge-snapping listener (300ms debounce)
+
+### Transition Sequence (overlay → full)
+
+1. `setAlwaysOnTop(false)`
+2. `setDecorations(true)`
+3. Restore saved size and position
+4. Re-maximize if was previously maximized
+5. `setFocus()`
+
+### User Override
+
+If user clicks "Expand" while a task is running → `userExpandedDuringTask = true` → subsequent `minimize_hint` events are ignored for that task's duration.
+
+### `OverlayIdleView` Component
+
+Compact overlay strip UI shown when in overlay mode and no task is actively executing:
+- Voice state indicator with color (green/amber/blue/red)
+- Last 8 chat messages (compressed, markdown stripped)
+- Expandable latest assistant reply
+- Text input bar + mic button
+- Connection status dot
+
+---
+
+## 5. Multi-Tab Thread Management
+
+Each conversation thread runs in its own **tab** within `assistantStore.tabs: ThreadTab[]`.
 
 ```typescript
-// assistantStore.ts — core shape
-interface AssistantState {
-  sessionActive: boolean;
+interface ThreadTab {
+  id: string;
+  title: string;          // auto-computed from first user message keywords
   messages: Message[];
-  currentTranscript: string | null;
-  currentPlan: PlanStep[] | null;
-  executingToolIndex: number | null;
-  isProcessing: boolean;
-
-  // Actions
-  startSession: () => void;
-  endSession: () => void;
-  addMessage: (msg: Message) => void;
-  updateTranscript: (text: string) => void;
-  setPlan: (plan: PlanStep[]) => void;
-  updateToolStatus: (index: number, status: ToolStatus) => void;
+  currentPlan: Plan | null;
+  executingStepIndex: number | null;
+  taskPaused: boolean;
+  tokenUsage: TokenUsage;
 }
 ```
 
+**Tab title auto-computation:** Matches keywords in the first user message to labels like "System Update", "Install Package", "Launch App", "UI Automation", etc. Falls back to the first 3 words in caps.
+
+**Actions:** `addTab()` | `removeTab(id)` | `setActiveThreadId(id)` | `loadThreadToTab(id, messages, tokens)`
+
 ---
 
-## 6. UI/UX Design
+## 6. Response Rendering (`ResponseBubble.tsx`)
 
-### 6.1 MVP UI Components
+Full markdown rendering via `react-markdown` + `remark-gfm`:
 
-#### Floating Assistant Window
-- **Always-on-top** overlay (toggleable)
-- **Compact mode**: small circular voice button with pulsing animation
-- **Expanded mode**: transcript + action log + response
-- **Resizable/draggable** via Tauri window APIs
-- **Glassmorphism** backdrop with blur
+| Element | Rendering |
+|---------|---------|
+| Headers (`#`–`####`) | Styled with accent color gradient |
+| Bold / italic | Standard |
+| Code blocks (` ``` `) | Syntax-highlighted with copy button |
+| Inline code | Styled monospace chip |
+| Tables | Full HTML table with theme-aware borders |
+| Horizontal rules | Styled separator |
+| Bullet / ordered lists | Properly indented |
+| URLs | Clickable links → `shell.open()` → system default browser |
+| Streaming text | Word-by-word animation with blinking cursor |
 
-#### Voice Button States
-| State | Visual |
-|-------|--------|
-| Idle | Subtle pulse animation, muted color |
-| Listening | Active waveform, accent glow |
-| Processing | Spinner/loading dots |
-| Speaking | Waveform (TTS output) |
-| Error | Red flash, retry icon |
+### Eye Animations
 
-#### Action Log Timeline
-- Vertical timeline showing each tool execution step
-- Color-coded: pending (gray), running (blue pulse), success (green), error (red)
-- Expandable to show tool arguments and observations
-- Auto-scrolls to current step
+The response bubble displays animated "AI eyes" that change state:
 
-#### Permission Dialogs
-- Modal overlay with clear description of the action
-- Shows: command/action, risk level, affected resources
-- Buttons: **Allow Once**, **Allow Always**, **Deny**
-- Auto-deny after 30s timeout
+| Eye State | When |
+|-----------|------|
+| Idle / slow blink | Waiting for input |
+| Rapid blink | Typing / streaming response |
+| Wide open | Reading / processing |
+| Glowing | Speaking (TTS active) |
 
-### 6.2 Design Tokens & Themes
+### Response Modal (`ContextModal`)
 
-OpenSarthi supports 6 premium themes (Red-Black, Green-Black, Purple-Black, Cyber-Sky, Sakura-Pink, and Simple Dark). Visual elements are entirely configured via HSL/RGBA CSS custom properties matching the active theme:
+Clicking a response opens a full-screen modal with:
+- Full markdown render (no truncation)
+- Copy button
+- Read Aloud button (triggers TTS)
+- Close button
 
+### Typing Loader Bubble
+
+While a response is streaming (between user message and first character), a pulsing "thinking" bubble is shown to prevent perceived latency.
+
+---
+
+## 7. Settings (`SettingsView.tsx`)
+
+Settings organized in four tabs. Opening settings always reflects the currently active model/provider without resetting.
+
+### Tab 1 — AI Settings
+
+- **Provider** dropdown: Ollama · Google · OpenAI · Anthropic · Groq · OpenRouter
+- **Model** dropdown: pre-populated curated models per provider; currently selected model is always shown
+- **API Key** field: masked; left blank = key unchanged on backend
+- **"Save AI Details"** button: saves only provider/model/key, emits `settings_sync`
+
+**Curated Model Lists:**
+
+| Provider | Models |
+|----------|--------|
+| Google | gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash, gemini-1.5-pro |
+| OpenAI | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo |
+| Anthropic | claude-opus-4-5, claude-sonnet-4-5, claude-haiku-3-5 |
+| Groq | llama-3.3-70b-versatile, llama-3.1-8b-instant, qwen/qwen3-32b, llama-4-scout |
+| OpenRouter | gpt-4o, claude-opus-4, gemini-2.5-pro, deepseek-chat, mistral-large |
+| Ollama | Free-form text input |
+
+### Tab 2 — Voice & Wake Word
+
+| Setting | Control |
+|---------|---------|
+| Voice Accent | Dropdown |
+| Voice Speed | Slider (0.5–2.0) |
+| Continuous Listening | Animated Toggle |
+| Wake Word Enabled | Animated Toggle |
+| Wake Word Threshold | Slider (0.3–0.9) |
+| Custom Wake Phrases | Comma-separated text input |
+
+All toggles use custom animated Toggle switch components.
+
+### Tab 3 — UI & Sounds
+
+| Setting | Control |
+|---------|---------|
+| Theme | Selection grid (10 themes) |
+| Sound Effects | Animated Toggle |
+| Sound Volume | Slider (0–100) |
+
+### Tab 4 — Memory
+
+| Setting | Control |
+|---------|---------|
+| Long-Term Memory | Animated Toggle |
+
+When disabled → `SentenceTransformer` model never loaded on backend → faster startup & lower RAM.
+
+### Save Behavior
+
+- **"Save AI Details"** → only AI fields (provider, model, API key)
+- **"Save All Settings"** → everything (AI + voice + UI + memory)
+- Both buttons emit `settings_sync` back from backend to update all UI state
+
+---
+
+## 8. Audio Cues Engine (`useAudioCues.ts`)
+
+All sounds are **synthesized via Web Audio API** — no audio files needed. Respects `soundEnabled` and `soundVolume` store settings.
+
+Exported as both:
+- `playCue(name)` — standalone function callable from any context (WS handlers, etc.)
+- `useAudioCues()` — React hook returning `{ playCue }`
+
+| Cue | Trigger | Design |
+|-----|---------|--------|
+| `wake` | Wake word detected | Ascending double-glide 480→960 Hz |
+| `listen_start` | Mic opens | Soft double-ping 680/880 Hz |
+| `listen_stop` | Mic closes | Gentle down-glide 620→380 Hz |
+| `processing` | Query sent | Short triangle click 440 Hz |
+| `response_ready` | Response arrives | Warm chime 820→1080 Hz |
+| `speech_start` | TTS begins | Warm single tone 560 Hz |
+| `speech_end` | TTS finishes | Falling sign-off 540→360 Hz |
+| `error` | Error state | Sawtooth two-tone alarm |
+| `task_done` | Task completes | Three-note chime C5→E5→G5 |
+
+Uses a shared, lazily-created `AudioContext` singleton reused across all cues.
+
+---
+
+## 9. Zustand Store (`assistantStore.ts`)
+
+### State Shape
+
+```typescript
+// Session
+voiceState: 'idle' | 'listening' | 'processing' | 'speaking' | 'error'
+isConnected: boolean
+currentTranscript: string | null
+
+// Multi-tab Threads
+activeThreadId: string
+tabs: ThreadTab[]
+
+// Active Tab (legacy mapped aliases)
+messages: Message[]
+currentPlan: Plan | null
+executingStepIndex: number | null
+taskPaused: boolean
+
+// Overlay
+isOverlayMode: boolean
+snapAlign: 'left' | 'right' | 'none'
+userOverrodeMinimize: boolean
+
+// LLM Config
+activeProvider: string
+activeLocalModel: string
+activeCloudModel: string
+geminiApiKey / openaiApiKey / anthropicApiKey / groqApiKey / openrouterApiKey: string
+activeTheme: string
+
+// Voice
+voiceAccent: string
+voiceSpeed: number
+continuousListening: boolean
+wakeWords: string[]
+wakeWordEnabled: boolean
+wakeWordThreshold: number
+
+// Memory
+longTermMemoryEnabled: boolean
+
+// Token Tracking
+tokenUsage: TokenUsage           // active thread
+globalSessionTokens: Record<string, number>  // per model key, persisted localStorage
+
+// Personalization
+userName: string
+userSkills: string[]
+customPrompt: string
+onboardingCompleted: boolean      // persisted localStorage
+
+// Streaming & Shell Output
+streamingResponse: string | null
+shellOutputLines: string[]
+lastClassification: string | null
+
+// Sound
+soundEnabled: boolean
+soundVolume: number  // 0–100
+```
+
+### Key Actions
+
+| Action | Effect |
+|--------|--------|
+| `addMessage(msg, thread_id?)` | Appends to thread messages |
+| `setPlan(plan, thread_id?)` | Sets plan in active/specified tab |
+| `updateStepStatus(index, update)` | Updates plan step status |
+| `addOrUpdateToolAction(tool, desc, status, result)` | Updates ActionLog entry |
+| `updateTokenUsage(usage, thread_id?)` | Accumulates thread token counts |
+| `setOverlayMode(val)` | Triggers window resize via `useWindowOverlay` |
+| `setLongTermMemoryEnabled(bool)` | Updates memory toggle |
+| `setSoundSettings(enabled, volume)` | Updates audio cue settings |
+| `appendStreamChunk(chunk)` | Appends to streaming response |
+| `addTab(id?)` | Creates new thread tab |
+| `removeTab(id)` | Removes thread tab |
+| `loadThreadToTab(id, messages, tokens)` | Restores history to tab |
+| `setPersonalization(name, skills, prompt)` | Updates personalization |
+| `resetSessionTokens()` | Clears session counters |
+
+---
+
+## 10. WebSocket Hook (`useWebSocket.ts`)
+
+Auto-connects to the Python runtime on the dynamically negotiated port. Handles reconnection automatically.
+
+### Message Routing Table
+
+| Message Type | Action |
+|-------------|--------|
+| `assistant_response` | `addMessage()` + `updateTokenUsage()` + `playCue("response_ready")` |
+| `stream_chunk` | `appendStreamChunk(chunk)` |
+| `plan_created` | `setPlan()` |
+| `tool_started` | `updateStepStatus(index, {status: "running"})` + `setExecutingStep(index)` |
+| `tool_completed` | `updateStepStatus(index, {status: "success", result})` |
+| `tool_error` | `updateStepStatus(index, {status: "error", error})` |
+| `tool_action` | `addOrUpdateToolAction()` |
+| `tool_terminated` | `updateStepStatus(index, {status: "terminated"})` |
+| `intent_classified` | `setLastClassification(classification)` |
+| `voice_state` | `setVoiceState()` + appropriate `playCue()` |
+| `session_state` | `setConnected()` |
+| `settings_sync` | Updates all provider/model/key/theme/memory/personalization fields |
+| `history_response` | `setThreads()` |
+| `thread_loaded` | `loadThreadToTab()` |
+| `task_paused` | `setTaskPaused(true)` |
+| `task_resumed` | `setTaskPaused(false)` |
+| `window_control` | `setOverlayMode()` based on action |
+| `permission_request` | Shows `PermissionDialog` |
+| `input_request` | Shows `InputDialog` |
+| `shell_output` | `appendShellOutputLine()` |
+| `transcript_update` | `setTranscript()` |
+
+**Permanent permission grants:** Once a user grants permanent permission for a tool, it's stored in a `permanentGrants: Set<string>` in the hook closure. Future requests for the same tool auto-approve without showing a dialog.
+
+---
+
+## 11. Hooks Reference
+
+| Hook | File | Purpose |
+|------|------|---------|
+| `useWebSocket` | `hooks/useWebSocket.ts` | WS connection + full message routing |
+| `useWindowOverlay` | `hooks/useWindowOverlay.ts` | Smart overlay mode, edge snapping, size/position management |
+| `useAudioCues` | `hooks/useAudioCues.ts` | Web Audio API synthesized sound cues |
+| `useSpeechRecognition` | `hooks/useSpeechRecognition.ts` | Browser Web Speech API (optional fallback STT) |
+| `usePermission` | `hooks/usePermission.ts` | Permission gate for tool approval dialogs |
+| `useTauriEvent` | `hooks/useTauriEvent.ts` | Tauri IPC event listener wrapper |
+
+---
+
+## 12. Theme System
+
+10 themes in `styles/themes.css`, applied via `document.body.className`:
+
+| Theme ID | Palette | Mode |
+|---------|---------|------|
+| `theme-green-black` | Matrix Green (default) | Dark |
+| `theme-red-black` | Red accent | Dark |
+| `theme-purple-black` | Purple accent | Dark |
+| `theme-blue-black` | Cyan/blue accent | Dark |
+| `theme-mono-dark` | Gray/white flat | Dark |
+| `theme-light-sakura` | Pink accent | Light |
+| `theme-light-slate` | Slate accent | Light |
+| `theme-light-clean` | Clean white | Light |
+| `theme-multicolor-dark` | Animated rainbow gradient | Dark |
+| `theme-multicolor-light` | Animated rainbow gradient | Light |
+
+Themes can also be changed by voice: *"Switch to cyberpunk theme"* → agent calls `update_settings` tool.
+
+**Core CSS variables shared across all themes:**
 ```css
-/* Example design tokens */
-:root {
-  --bg-primary: hsl(220, 20%, 8%);
-  --bg-secondary: hsl(220, 18%, 12%);
-  --bg-glass: hsla(220, 20%, 15%, 0.6);
-  --text-primary: hsl(0, 0%, 95%);
-  --text-secondary: hsl(220, 10%, 60%);
-  --accent: hsl(250, 80%, 65%);        /* Purple-blue default */
-  --accent-glow: hsla(250, 80%, 65%, 0.3);
-  --success: hsl(150, 60%, 50%);
-  --warning: hsl(40, 90%, 55%);
-  --danger: hsl(0, 70%, 55%);
-  --border: hsla(220, 15%, 30%, 0.5);
-}
+--accent             /* main accent color */
+--accent-glow        /* rgba glow version */
+--bg-primary         /* window background */
+--bg-secondary       /* panel backgrounds */
+--text-primary       /* main text */
+--text-secondary     /* muted/label text */
+--border             /* panel borders */
+--font-mono          /* monospace for HUD labels */
+--font-sans          /* sans-serif for UI text */
 ```
 
-Modals like the **Customise Persona & Skills** modal and **MCP Settings** modal use the straight-bracket HUD styling (`.hud-panel`) to maintain consistency with the rest of the workspace panels. All four corner ticks render dynamically based on the active theme's `--border` and `--accent` parameters, ensuring unified aesthetics.
-
 ---
 
-### 6.3 Future UI (Post-MVP)
+## 13. Tauri Configuration
 
-| Feature | Description |
-|---------|-------------|
-| **Desktop Overlays** | Highlight elements the agent is interacting with (bounding boxes on screen) |
-| **Workflow Editor** | Visual drag-and-drop workflow builder |
-| **Reasoning Graph** | Live visualization of the planning loop |
-| **Memory Inspector** | Browse/search/delete stored memories |
-| **Quick Actions Palette** | Cmd+K style launcher for common commands |
-
----
-
-### 6.4 UI Backlog / Unimplemented Backend Features
-
-The Python backend runtime currently supports several capabilities that emit WebSocket events, but these lack corresponding UI components or handlers in the React frontend:
-
-| Missing UI Feature | Backend Event / Property | Description |
-|--------------------|--------------------------|-------------|
-| **Markdown Rendering** | `assistant_response` | The backend `CHAT` handler sends properly formatted Markdown and code blocks, but `AssistantOverlay.tsx` strips Markdown rendering it as plain text. Requires a `react-markdown` integration. |
-| **Intent Indicators** | `intent_classified` | The backend dynamically classifies tasks (`CHAT`, `TASK`, `CLARIFY`), but the UI does not visually distinguish these intents (e.g., no "Thinking (Task)" badge). |
-| **Live Shell Output Console** | `shell_output` | The `ShellTool` streams stdout line-by-line. The frontend stores this, but lacks a terminal/console window to actually view the stream. |
-| **Pause/Cancel Controls** | `pause_execution`, `request_cancel` | The backend planner can be paused or aborted mid-execution, but the UI lacks corresponding "Pause", "Resume", or "Cancel Plan" buttons. |
-| **Manual TTS Playback** | `manual` flag in `speak_text` | The backend supports reading text manually without triggering continuous listening, but the UI lacks a "Read Aloud" button on past messages. |
-
----
-
-## 7. Monorepo Structure
-
-```
-ai-desktop-agent/
-│
-├── apps/
-│   └── desktop/                    # Tauri v2 + React app
-│       ├── src/                    # React frontend (see §5.1)
-│       ├── src-tauri/              # Rust core
-│       │   ├── src/
-│       │   │   ├── main.rs
-│       │   │   ├── audio.rs        # cpal mic capture
-│       │   │   ├── tray.rs         # System tray setup
-│       │   │   ├── sidecar.rs      # Python process management
-│       │   │   ├── screenshot.rs   # Screen capture
-│       │   │   ├── ipc.rs          # IPC commands & events
-│       │   │   └── hotkeys.rs      # Global shortcuts
-│       │   ├── Cargo.toml
-│       │   ├── tauri.conf.json
-│       │   └── capabilities/       # Tauri v2 permission caps
-│       ├── package.json
-│       └── vite.config.ts
-│
-├── runtime/                        # Python runtime (see Part 2)
-│
-├── shared/
-│   └── schemas/                    # Shared JSON schemas (IPC contracts)
-│       ├── messages.schema.json
-│       └── tools.schema.json
-│
-├── scripts/
-│   ├── dev.sh                      # Start Tauri + Python in dev mode
-│   ├── build.sh                    # Full production build
-│   ├── bundle-sidecar.sh           # PyInstaller packaging
-│   └── lint.sh
-│
-├── docs/
-│   ├── architecture.md
-│   ├── ipc-protocol.md
-│   └── contributing.md
-│
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-│
-├── package.json                    # Root workspace (pnpm)
-├── pnpm-workspace.yaml
-└── README.md
-```
-
-**Package manager:** `pnpm` (workspaces, fast, disk-efficient)
-
----
-
-## 8. Tauri v2 Configuration Highlights
-
-### 8.1 Capabilities (Permission Scoping)
+### Capabilities (`src-tauri/capabilities/main.json`)
 
 ```json
-// src-tauri/capabilities/main.json
 {
   "identifier": "main-window",
   "windows": ["main"],
@@ -421,6 +462,7 @@ ai-desktop-agent/
     "core:default",
     "shell:allow-spawn",
     "shell:allow-stdin-write",
+    "shell:allow-open",
     "notification:default",
     "global-shortcut:allow-register",
     "clipboard-manager:allow-read",
@@ -431,88 +473,88 @@ ai-desktop-agent/
 }
 ```
 
-### 8.2 Window Configuration
+`shell:allow-open` is required for clickable URLs in response bubbles — opens URLs in the system default browser.
 
-```json
-{
-  "windows": [
-    {
-      "label": "main",
-      "title": "AI Desktop Agent",
-      "width": 420,
-      "height": 680,
-      "resizable": true,
-      "alwaysOnTop": true,
-      "transparent": true,
-      "decorations": false,
-      "skipTaskbar": false
-    }
-  ]
-}
+### Window Configuration
+
+Default window: 1100×700, resizable, transparent, no decorations. `alwaysOnTop` is managed dynamically by `useWindowOverlay.ts`.
+
+---
+
+## 14. Directory Structure
+
+```
+apps/desktop/
+├── src/
+│   ├── main.tsx                        # Vite entry point
+│   ├── App.tsx                         # Root: modal state, tab management, onboarding gate
+│   ├── components/
+│   │   ├── assistant/
+│   │   │   ├── AssistantOverlay.tsx    # Main HUD (3-panel + controls + STOP button)
+│   │   │   ├── OverlayIdleView.tsx     # Compact overlay strip (280×560)
+│   │   │   ├── ResponseBubble.tsx      # Markdown render, URLs, streaming, eye animations
+│   │   │   ├── TaskList.tsx            # Multi-tab thread panel + JSON import
+│   │   │   ├── JsonImportModal.tsx     # JSON step import UI
+│   │   │   ├── ContextModal.tsx        # Full-screen response modal
+│   │   │   ├── VoiceButton.tsx         # Mic toggle + waveform animation
+│   │   │   ├── Waveform.tsx            # Audio visualizer canvas
+│   │   │   ├── ParticleBackground.tsx  # Animated canvas background
+│   │   │   └── TranscriptView.tsx      # Live STT transcript overlay
+│   │   ├── onboarding/
+│   │   │   └── OnboardingView.tsx      # 3-step cold-start wizard + edit modal
+│   │   ├── execution/
+│   │   │   └── ActionLog.tsx           # Live tool log + cumulative plan (right panel)
+│   │   ├── permissions/
+│   │   │   ├── PermissionDialog.tsx    # Tool approval with permanent grant option
+│   │   │   └── InputDialog.tsx         # Agent user-input popup
+│   │   └── settings/
+│   │       ├── SettingsView.tsx        # 4-tab settings (AI · Voice · UI · Memory)
+│   │       └── HistoryView.tsx         # Thread list + token restore
+│   ├── hooks/
+│   │   ├── useWebSocket.ts             # WS connection + all message routing
+│   │   ├── useWindowOverlay.ts         # Smart overlay mode + edge snapping
+│   │   ├── useAudioCues.ts             # Web Audio API synthesized cues
+│   │   ├── useSpeechRecognition.ts     # Browser Web Speech API fallback
+│   │   ├── usePermission.ts            # Permission gate hook
+│   │   └── useTauriEvent.ts            # Tauri IPC event listener
+│   ├── stores/
+│   │   └── assistantStore.ts           # Zustand: all app state + actions
+│   ├── lib/
+│   │   ├── ws.ts                       # WS client singleton
+│   │   ├── schemas.ts                  # Zod: Message, Plan, PlanStep, WSMessage types
+│   │   └── constants.ts                # TAURI_EVENTS, etc.
+│   └── styles/
+│       ├── globals.css                 # Base styles, overlay-mode rules, animations
+│       └── themes.css                  # 10 theme token sets
+│
+├── src-tauri/
+│   ├── src/
+│   │   ├── lib.rs                      # App entry, window setup, sidecar launch
+│   │   ├── sidecar.rs                  # Python spawn, PORT: reader, stderr relay
+│   │   ├── tray.rs                     # System tray icon + menu
+│   │   └── ipc.rs                      # Tauri invoke command handlers
+│   ├── binaries/
+│   │   └── opensarthi-runtime-x86_64-unknown-linux-gnu  # Bootstrap launcher
+│   ├── resources/
+│   │   └── uv                          # Bundled uv binary
+│   ├── capabilities/
+│   │   └── main.json                   # Tauri v2 permission scoping
+│   └── tauri.conf.json
+│
+├── package.json
+├── vite.config.ts
+└── tsconfig.json
 ```
 
 ---
 
-## 9. Development Workflow
+## 15. UI Backlog
 
-### 9.1 Dev Environment Setup
+Backend features with no frontend UI yet:
 
-```bash
-# Prerequisites
-rustup update stable          # Rust toolchain
-pnpm install                  # Node dependencies
-python -m venv .venv          # Python venv (for runtime/)
-pip install -r runtime/requirements.txt
-
-# Development
-pnpm dev                      # Starts Tauri dev + Python sidecar
-```
-
-### 9.2 Frontend Dev Priorities (Build Order)
-
-| Priority | Task | Depends On |
-|----------|------|------------|
-| **P0** | Tauri v2 shell bootstrapping (Vite + React) | — |
-| **P0** | System tray with show/hide toggle | P0 shell |
-| **P1** | WebSocket client + connection management | Python runtime |
-| **P1** | Zustand stores (assistant, audio, execution) | — |
-| **P2** | Voice button + waveform visualizer | Rust audio module |
-| **P2** | Transcript view (live STT display) | WebSocket |
-| **P3** | Action log timeline | WebSocket tool events |
-| **P3** | Permission dialog system | WebSocket permission events |
-| **P4** | Settings panel | — |
-| **P5** | Desktop overlays / highlight system | Automation layer |
-
----
-
-## 10. Key Recommendations & Deviations from Original Spec
-
-| Original Proposal | Recommendation | Why |
-|-------------------|---------------|-----|
-| WebSocket only for IPC | **WebSocket + REST + Unix socket** | REST for request/response (settings, config); WS for streaming (transcripts, events); Unix socket for audio (lowest latency) |
-| Unspecified bundler | **Vite 6+** | Fastest HMR, native ESM, Tauri-recommended |
-| Unspecified package manager | **pnpm** | Workspace support, fast, disk-efficient |
-| Separate `core/rust-core/` dir | **Colocated in `apps/desktop/src-tauri/`** | Tauri v2 convention; avoids complex Cargo workspace linking for the shell |
-| TailwindCSS (unversioned) | **TailwindCSS v4** | New engine, CSS-first config, faster |
-| No schema validation mentioned | **Zod + JSON Schema** | Critical for type-safe IPC across 3 languages |
-| No query/cache layer | **TanStack Query v5** | Deduplication, caching, retry for Python API calls |
-
----
-
-## 11. Window Overlay & Snapping Transition
-
-To improve user experience on single-monitor setups during automation, OpenSarthi features a dynamic, translucent window overlay mode that collapses during active execution:
-
-### 11.1 Transition Behavior
-- **Auto-Collapse**: When an agent task begins execution, the main window stores its current size, position, and maximization state, then transitions into a compact overlay window (`340x560` logical pixels) set to `alwaysOnTop = true` and `decorations = false` (transparent borderless glass).
-- **Auto-Restore**: Once the task is completed, paused, or canceled, the window automatically restores its original position, dimensions, and maximization state, returning focus to the chat HUD.
-- **Manual Control**: An expand icon button is available in the compact view header to manually restore full window dimensions at any point.
-
-### 11.2 Native Dragging & Edge Snapping
-- **Native OS Dragging**: Dragging is initiated via Tauri's `appWindow.startDragging()`, letting the native OS handle the drag-and-drop mechanics smoothly.
-- **Edge Snapping**: Position changes are tracked via the `onMoved` event listener. When dragging stops (debounced by 300ms) within a `100px` threshold of the left or right monitor boundaries, the window automatically snaps/docks to the corresponding edge (`x = 8` or `x = monitorWidth - windowWidth - 8`).
-
----
-
-> [!TIP]
-> **Next:** See **Part 2** for the Python runtime, AI orchestration, automation layer, voice pipeline, security model, memory system, and backend development priorities.
+| Feature | Backend Event | Status |
+|---------|--------------|--------|
+| Intent badge in UI | `intent_classified` | Store captured; no badge shown |
+| Live shell console | `shell_output` | Lines captured in store; no console UI |
+| Pause/Resume buttons | `pause_execution`/`resume_execution` | Backend works; no UI buttons |
+| Read Aloud on past messages | `speak_text` manual flag | TTS works on new responses; no button on history |
