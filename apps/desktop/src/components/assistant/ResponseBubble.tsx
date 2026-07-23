@@ -5,6 +5,7 @@ import type { Message } from "../../lib/schemas";
 import { wsClient } from "../../lib/ws";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useAssistantStore } from "../../stores/assistantStore";
 
 
 interface ResponseBubbleProps {
@@ -119,6 +120,78 @@ function ThinkingBlock({ thinking, isComplete, timestamp }: { thinking: string; 
             }}
           >
             {thinking.trim()}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ReasoningBlock({ text, attempt }: { text: string; attempt?: number }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div style={{
+      border: "1px solid rgba(0, 230, 180, 0.2)",
+      background: "rgba(0, 230, 180, 0.02)",
+      borderRadius: "var(--radius-md)",
+      marginBottom: "8px",
+      overflow: "hidden",
+      backdropFilter: "blur(6px)",
+      WebkitBackdropFilter: "blur(6px)"
+    }}>
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          padding: "7px 12px",
+          background: "rgba(0, 0, 0, 0.2)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          cursor: "pointer",
+          fontSize: "11px",
+          color: "var(--accent)",
+          fontWeight: 600,
+          letterSpacing: "0.05em",
+          userSelect: "none"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{
+            width: "6px",
+            height: "6px",
+            borderRadius: "50%",
+            background: "var(--accent)",
+            boxShadow: "0 0 6px var(--accent)",
+          }} />
+          <span style={{ display: "flex", alignItems: "center", gap: "4px", opacity: 0.9 }}>
+            🧠 AI PLAN REASONING {attempt !== undefined && attempt > 0 ? `(ATTEMPT ${attempt + 1})` : ""}
+          </span>
+        </div>
+        <span style={{ fontSize: "9px", color: "var(--text-secondary)", opacity: 0.7 }}>
+          {isOpen ? "COLLAPSE ▲" : "EXPAND ▼"}
+        </span>
+      </div>
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 0.9 }}
+            exit={{ height: 0, opacity: 0 }}
+            style={{
+              padding: "10px 12px",
+              fontSize: "12px",
+              lineHeight: 1.5,
+              color: "var(--text-secondary)",
+              borderTop: "1px solid rgba(0, 230, 180, 0.15)",
+              background: "rgba(0, 0, 0, 0.15)",
+              maxHeight: "180px",
+              overflowY: "auto"
+            }}
+          >
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              {text.trim()}
+            </ReactMarkdown>
           </motion.div>
         )}
       </AnimatePresence>
@@ -426,6 +499,7 @@ function parseResponseBlocks(text: string): ResponseBlock[] {
   const detailsRegex = /<details[^>]*>([\s\S]*?)<\/details>/gi;
   const executeRegex = /<execute[^>]*>([\s\S]*?)<\/execute>/gi;
   const nextActionRegex = /<next_action[^>]*>([\s\S]*?)<\/next_action>/gi;
+  const jsonBlockRegex = /```json\s*([\s\S]*?)\s*```/gi;
   
   interface MatchItem {
     type: "details" | "execute" | "next_action";
@@ -463,6 +537,16 @@ function parseResponseBlocks(text: string): ResponseBlock[] {
       type: "next_action",
       start: match.index,
       end: nextActionRegex.lastIndex,
+      content: match[1]
+    });
+  }
+
+  jsonBlockRegex.lastIndex = 0;
+  while ((match = jsonBlockRegex.exec(text)) !== null) {
+    matches.push({
+      type: "execute",
+      start: match.index,
+      end: jsonBlockRegex.lastIndex,
       content: match[1]
     });
   }
@@ -744,8 +828,11 @@ function CustomDetailsBlock({ summary, content }: { summary: string; content: st
   );
 }
 
+const EMPTY_REASONINGS: any[] = [];
+
 export function ResponseBubble({ message }: ResponseBubbleProps) {
   const isUser = message.role === "user";
+  const planReasonings = useAssistantStore((s) => s.planReasonings[s.activeThreadId] || EMPTY_REASONINGS);
   const [displayedContent, setDisplayedContent] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -892,6 +979,10 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
           {thinking && (
             <ThinkingBlock thinking={thinking} isComplete={isComplete} timestamp={message.timestamp} />
           )}
+
+          {!isUser && planReasonings.length > 0 && planReasonings.map((r, rIdx) => (
+            <ReasoningBlock key={rIdx} text={r.text} attempt={r.attempt} />
+          ))}
           
           {response && (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>

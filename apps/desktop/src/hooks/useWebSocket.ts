@@ -5,6 +5,7 @@ import { usePermissionStore } from "../stores/permissionStore";
 import { playCue } from "./useAudioCues";
 import {
   PlanSchema,
+  PlanReasoningSchema,
   PermissionRequestSchema,
   MessageSchema,
 } from "../lib/schemas";
@@ -93,9 +94,16 @@ export function useWebSocket(port: number | null) {
         const plan = PlanSchema.parse(msg.payload);
         const store = useAssistantStore.getState();
         store.setUserOverrodeMinimize(false);
+        // Clear old reasonings for this thread when a new plan arrives
+        if (thread_id) store.clearPlanReasonings(thread_id);
         setPlan(plan, thread_id);
         setVoiceState("processing");
         playCue("processing");
+      }),
+
+      wsClient.on("plan_reasoning", (msg) => {
+        const reasoning = PlanReasoningSchema.parse(msg.payload);
+        useAssistantStore.getState().addPlanReasoning(reasoning);
       }),
 
       wsClient.on("tool_action", (msg) => {

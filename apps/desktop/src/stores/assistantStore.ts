@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Message, Plan, PlanStep, VoiceState } from "../lib/schemas";
+import type { Message, Plan, PlanStep, PlanReasoning, VoiceState } from "../lib/schemas";
 
 export interface Thread {
   id: string;
@@ -185,6 +185,10 @@ interface AssistantState {
   soundEnabled: boolean;
   soundVolume: number; // 0–100
   setSoundSettings: (enabled: boolean, volume: number) => void;
+  // Plan reasoning (LLM prose text before the JSON plan)
+  planReasonings: Record<string, PlanReasoning[]>; // threadId → list of reasoning objects
+  addPlanReasoning: (reasoning: PlanReasoning) => void;
+  clearPlanReasonings: (thread_id: string) => void;
 }
 
 export const useAssistantStore = create<AssistantState>((set) => ({
@@ -240,6 +244,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     ? parseInt(localStorage.getItem("opensarthi_sound_volume") || "60", 10)
     : 60,
   longTermMemoryEnabled: true,
+  planReasonings: {},
 
   setVoiceState: (voiceState) => set({ voiceState }),
   setConnected: (isConnected) => set({ isConnected }),
@@ -360,6 +365,11 @@ export const useAssistantStore = create<AssistantState>((set) => ({
 
     const title = computeTabTitle(messages, `Thread ${existingIndex >= 0 ? existingIndex + 1 : s.tabs.length + 1}`);
 
+    // Restore any historical plan reasonings stored in messages
+    const restoredReasonings = messages
+      .filter(m => m.plan?.reasoning)
+      .map(m => ({ text: m.plan!.reasoning!, attempt: 0, thread_id: id }));
+
     const tab: ThreadTab = {
       id,
       title,
@@ -370,21 +380,19 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       tokenUsage,
     };
 
-    const newTabs = [...s.tabs];
-    if (existingIndex >= 0) {
-      newTabs[existingIndex] = tab;
-    } else {
-      newTabs.push(tab);
-    }
-
     return {
-      tabs: newTabs,
       activeThreadId: id,
-      messages: tab.messages,
-      currentPlan: tab.currentPlan,
-      executingStepIndex: tab.executingStepIndex,
-      taskPaused: tab.taskPaused,
-      tokenUsage: tab.tokenUsage,
+      tabs: existingIndex >= 0
+        ? s.tabs.map((t, idx) => idx === existingIndex ? tab : t)
+        : [...s.tabs, tab],
+      messages,
+      currentPlan: null,
+      executingStepIndex: null,
+      taskPaused: false,
+      tokenUsage,
+      planReasonings: restoredReasonings.length > 0
+        ? { ...s.planReasonings, [id]: restoredReasonings }
+        : s.planReasonings,
     };
   }),
 
@@ -715,4 +723,21 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     }
     set({ soundEnabled: enabled, soundVolume: volume });
   },
+
+  addPlanReasoning: (reasoning) => set((state) => {
+    const tid = reasoning.thread_id || "default";
+    const existing = state.planReasonings[tid] || [];
+    return {
+      planReasonings: {
+        ...state.planReasonings,
+        [tid]: [...existing, reasoning],
+      }
+    };
+  }),
+
+  clearPlanReasonings: (thread_id) => set((state) => {
+    const updated = { ...state.planReasonings };
+    delete updated[thread_id];
+    return { planReasonings: updated };
+  }),
 }));

@@ -6,6 +6,7 @@ export const WSMessageTypeSchema = z.enum([
   "user_message",
   "transcript_update",
   "plan_created",
+  "plan_reasoning",
   "tool_started",
   "tool_completed",
   "tool_error",
@@ -50,6 +51,16 @@ export const WSMessageTypeSchema = z.enum([
 ]);
 export type WSMessageType = z.infer<typeof WSMessageTypeSchema>;
 
+// ─── Plan Reasoning ──────────────────────────────────────────────────────────
+
+export const PlanReasoningSchema = z.object({
+  text: z.string(),
+  attempt: z.number().default(0),
+  thread_id: z.string().nullable().optional(),
+});
+export type PlanReasoning = z.infer<typeof PlanReasoningSchema>;
+
+
 export const WSMessageSchema = z.object({
   id: z.string().uuid(),
   type: WSMessageTypeSchema,
@@ -77,6 +88,7 @@ export const PlanSchema = z.object({
   goal: z.string(),
   steps: z.array(PlanStepSchema),
   recovery_hint: z.string().nullable(),
+  reasoning: z.string().optional().nullable(),
 });
 export type Plan = z.infer<typeof PlanSchema>;
 
