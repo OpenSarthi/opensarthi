@@ -20,6 +20,45 @@ from graph.state import OpenSarthiState
 logger = structlog.get_logger()
 
 
+# ── Step deduplication helpers ───────────────────────────────────────────────
+def _normalise_step_sig(tool: str, args: dict, description: str) -> str:
+    """Build a canonical string signature for a step to check for duplicates."""
+    # Normalise args — sort keys so order doesn't matter
+    try:
+        args_sig = json.dumps(args or {}, sort_keys=True)
+    except Exception:
+        args_sig = str(args)
+    return f"{tool}::{args_sig}"
+
+
+def _is_step_already_done(tool: str, args: dict, description: str, completed_actions: list[str]) -> bool:
+    """
+    Returns True if this step appears to duplicate an already-completed action.
+    Matching strategy (in order):
+      1. Exact tool+args signature match against completed_actions entries that
+         were stored in the format "<description>" (plain text) — we check if
+         the description substring appears in any completed entry.
+      2. We additionally check the normalised signature for structural matches.
+    This is the hard programmatic guard — it works even when the LLM ignores
+    the REPLANNING prompt instruction to skip completed steps.
+    """
+    if not completed_actions:
+        return False
+    desc_lower = (description or tool).lower().strip()
+    sig = _normalise_step_sig(tool, args, description)
+    for done in completed_actions:
+        done_lower = done.lower().strip()
+        # Short-circuit: description substring check
+        if desc_lower and len(desc_lower) > 8 and desc_lower in done_lower:
+            return True
+        if done_lower and len(done_lower) > 8 and done_lower in desc_lower:
+            return True
+        # Structural: if the done entry was stored in "tool::args" format (future)
+        if done_lower.startswith(f"{tool}::") and done_lower == sig.lower():
+            return True
+    return False
+
+
 # ── classify_node ───────────────────────────────────────────────────────────────
 async def classify_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     """Classify the user goal into CHAT | TASK | CLARIFY."""
@@ -125,9 +164,11 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         result = await agent.run(context, deps=deps, model=model, message_history=state.messages)
         if logger_instance:
             logger_instance.log_llm_response(state.retry_count, result.output)
-            
+
         usage = getattr(result, "usage", None)
-        token_delta = _extract_tokens(usage)
+        # Defect 5: pass response text so Ollama (usage=None) gets estimated tokens
+        response_text_for_tokens = result.output if isinstance(result.output, str) else ""
+        token_delta = _extract_tokens(usage, response_text_for_tokens)
 
         from agent_runtime import AgentRuntime
         plan, text_response = AgentRuntime._parse_response(None, result.output)
@@ -135,8 +176,30 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         updates = {**_accumulate_tokens(state, token_delta)}
 
         if plan is not None:
+            #Filter out steps already completed in previous attempts
+            # This is the hard programmatic guard that works regardless of LLM compliance.
+            # Even if the LLM re-generates a step that was already done, we strip it here.
+            completed = state.completed_actions or []
+            filtered_steps = []
+            skipped_count = 0
+            for s in plan.steps:
+                step_desc = s.description or s.tool
+                step_args = s.args or {}
+                if _is_step_already_done(s.tool, step_args, step_desc, completed):
+                    logger.info(
+                        "plan_node: skipping duplicate step (already completed)",
+                        tool=s.tool,
+                        description=step_desc[:80],
+                    )
+                    skipped_count += 1
+                else:
+                    filtered_steps.append(s)
+
+            if skipped_count:
+                logger.info("plan_node: filtered out duplicate steps", count=skipped_count, remaining=len(filtered_steps))
+
             steps_data = []
-            for idx, s in enumerate(plan.steps):
+            for idx, s in enumerate(filtered_steps):
                 steps_data.append({
                     "index": idx,
                     "tool": s.tool,
@@ -148,7 +211,7 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     "depends_on": getattr(s, "depends_on", []) or [],
                 })
             updates["plan_steps"] = steps_data
-            
+
             # Preserve finished steps
             finished_prev_steps = [s for s in (state.cumulative_steps or []) if s.get("status") in ("success", "error", "terminated", "divider")]
             if finished_prev_steps:
@@ -166,6 +229,8 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                 updates["cumulative_steps"] = steps_data
 
             updates["current_step_index"] = 0
+            if text_response and text_response.strip():
+                updates["plan_reasoning"] = text_response.strip()
 
             if ws:
                 import uuid
@@ -175,6 +240,15 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     "steps": updates["cumulative_steps"],
                     "recovery_hint": plan.recovery_hint,
                 })
+
+                # Emit the LLM's reasoning text (prose before the JSON block) so the frontend
+                # can show it as a collapsible "AI Reasoning" block.
+                if text_response and text_response.strip():
+                    await ws.send_message("plan_reasoning", {
+                        "text": text_response.strip(),
+                        "attempt": state.retry_count,
+                        "thread_id": getattr(state, "thread_id", None),
+                    })
 
                 # ── Smart overlay: only minimize when plan contains screen-interaction tools ──
                 SCREEN_TOOLS = {
@@ -220,6 +294,28 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
     from tools.registry import get as get_tool
 
     step = PlanStep(**step_data)
+
+    # Even if plan_node already filtered duplicates, this is the last-line-of-defence
+    # guard inside the executor — ensures we never re-execute a completed step.
+    if _is_step_already_done(step.tool, step.args or {}, step.description or step.tool, state.completed_actions or []):
+        logger.info(
+            "execute_step_node: step skipped — already completed",
+            tool=step.tool,
+            description=(step.description or step.tool)[:80],
+            step_idx=idx,
+        )
+        if ws:
+            await ws.send_message("tool_action", {
+                "tool": step.tool,
+                "description": f"[SKIPPED - already completed] {step.description or step.tool}",
+                "status": "success",
+                "result": "Step was already completed in a previous attempt — skipped.",
+            })
+        return {
+            "current_step_index": idx + 1,
+            "completed_actions": state.completed_actions,  # No new addition — already there
+        }
+
     tool = get_tool(step.tool)
 
     if tool is None:
@@ -428,14 +524,31 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         )
 
         if healed:
-            # Patch the step with healed tool/args so execute_step_node retries it
+            # Patch the plan_steps with healed tool/args so execute_step_node retries it
             updated_steps = list(state.plan_steps)
+            healed_desc = f"[HEALED] {step_data.get('description')} → {healed.get('description', '')}"
             updated_steps[idx] = {
                 **step_data,
                 "tool": healed["tool"],
                 "args": healed.get("args", {}),
-                "description": f"[HEALED] {step_data.get('description')} → {healed.get('description', '')}",
+                "description": healed_desc,
             }
+
+            # also patch cumulative_steps so the UI reflects the healed state
+            # and ReviewerAgent can learn the correct step for future plans.
+            C = len(state.cumulative_steps or [])
+            P = len(state.plan_steps or [])
+            cumulative_idx = (C - P) + idx if C >= P else idx
+            updated_cumulative = list(state.cumulative_steps or [])
+            if 0 <= cumulative_idx < len(updated_cumulative):
+                updated_cumulative[cumulative_idx] = {
+                    **updated_cumulative[cumulative_idx],
+                    "tool": healed["tool"],
+                    "args": healed.get("args", {}),
+                    "description": healed_desc,
+                    "status": "pending",  # Reset to pending — will be retried
+                }
+
             if ws:
                 await ws.send_message("tool_action", {
                     "tool": "self_heal",
@@ -445,6 +558,7 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                 })
             return {
                 "plan_steps": updated_steps,
+                "cumulative_steps": updated_cumulative,
                 "current_step_index": idx,  # Retry same step
                 "heal_attempts": {**state.heal_attempts, idx: attempts},
             }
@@ -464,12 +578,17 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
 
 # ── review_node ─────────────────────────────────────────────────────────────────
 async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
-    """Fire-and-forget: ReviewerAgent learns from successful execution."""
+    """ReviewerAgent learns from execution and formats final response."""
     model = config["configurable"]["model"]
     deps = config["configurable"]["deps"]
     memory_manager = config["configurable"].get("memory_manager")
 
-    if memory_manager and state.completed_actions:
+    completed = state.completed_actions or []
+    failed = state.failed_actions or []
+    max_retries_reached = state.retry_count >= state.max_retries
+    has_successes = bool(completed)
+
+    if memory_manager and completed and not max_retries_reached:
         from agents.reviewer import ReviewerAgent
         reviewer = ReviewerAgent(model, deps)
         asyncio.create_task(reviewer.review_and_learn(
@@ -480,63 +599,79 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         ))
         # Store successful execution summary in memory
         asyncio.create_task(memory_manager.store(
-            content=f"Goal: {state.goal}\nOutcome: Completed successfully.\nActions: {state.completed_actions}",
+            content=f"Goal: {state.goal}\nOutcome: Completed successfully.\nActions: {completed}",
             source="agent",
             importance=0.9,
         ))
 
-    # Build a meaningful completion response from actual tool results (no extra LLM call)
     ws = config["configurable"].get("ws_handler")
     final = state.final_response
-    if not final or final == "Task completed successfully.":
+
+    # If final response is not set or is generic default, format based on actual execution outcome
+    if not final or final in ("Task completed successfully.", "Task completed."):
         goal = state.goal or ""
-        completed = state.completed_actions or []
         steps = state.cumulative_steps or []
         action_count = len(completed)
         plural = "step" if action_count == 1 else "steps"
 
-        # Gather key tool observations
-        key_results = []
-        for s in steps:
-            if s.get("status") == "success":
-                obs = s.get("result") or s.get("observation")
-                desc = s.get("description") or s.get("tool", "")
-                tool_name = s.get("tool", "")
-                if obs and isinstance(obs, str) and obs.strip() and len(obs.strip()) > 10:
-                    obs_clean = obs.strip()
-                    if tool_name == "search_web" or "search_web" in desc.lower():
-                        # Format DuckDuckGo search results beautifully
-                        blocks = obs_clean.split("\n\n---\n\n")
-                        formatted_blocks = []
-                        for block in blocks:
-                            lines = block.split("\n")
-                            if len(lines) >= 3:
-                                title = lines[0].replace("**", "").strip()
-                                snippet = lines[1].strip()
-                                url_val = lines[2].strip()
-                                formatted_blocks.append(f"##### 🔗 [{title}]({url_val})\n>{snippet}")
-                            else:
-                                formatted_blocks.append(block)
-                        result_str = "\n\n".join(formatted_blocks)
-                        key_results.append(f"### 🔍 Web Search Results:\n{result_str}")
-                    else:
-                        # Limit standard tool results to 1000 characters to keep UI readable
-                        key_results.append(f"- **{desc}**: {obs_clean[:1000]}")
+        # Determine if execution ended in failure
+        if max_retries_reached or (failed and not has_successes):
+            failed_summary = ""
+            if failed:
+                # Show unique failure reasons
+                unique_failures = list(dict.fromkeys(failed))[-3:]
+                failed_summary = "\n".join(f"- ❌ {f}" for f in unique_failures)
+            else:
+                failed_summary = "- Could not generate a working plan for this task."
 
-        if key_results:
-            result_section = "\n\n".join(key_results[:5])
             final = (
-                f"\u2705 Task completed! I've finished **{goal}** in {action_count} {plural}.\n\n"
-                f"{result_section}"
-            )
-        elif completed:
-            steps_list = "\n".join(f"- {a}" for a in completed[:8])
-            final = (
-                f"\u2705 Done! I've completed **{goal}**.\n\n"
-                f"**What I did ({action_count} {plural}):**\n{steps_list}"
+                f"⚠️ I couldn't complete the task: **{goal}**\n\n"
+                f"**Errors encountered:**\n{failed_summary}\n\n"
+                f"*Please check if the required application or tool is available and try again.*"
             )
         else:
-            final = f"\u2705 Task completed: **{goal}**."
+            # Gather key tool observations for success
+            key_results = []
+            for s in steps:
+                if s.get("status") == "success":
+                    obs = s.get("result") or s.get("observation")
+                    desc = s.get("description") or s.get("tool", "")
+                    tool_name = s.get("tool", "")
+                    if obs and isinstance(obs, str) and obs.strip() and len(obs.strip()) > 10:
+                        obs_clean = obs.strip()
+                        if tool_name == "search_web" or "search_web" in desc.lower():
+                            # Format DuckDuckGo search results beautifully
+                            blocks = obs_clean.split("\n\n---\n\n")
+                            formatted_blocks = []
+                            for block in blocks:
+                                lines = block.split("\n")
+                                if len(lines) >= 3:
+                                    title = lines[0].replace("**", "").strip()
+                                    snippet = lines[1].strip()
+                                    url_val = lines[2].strip()
+                                    formatted_blocks.append(f"##### 🔗 [{title}]({url_val})\n>{snippet}")
+                                else:
+                                    formatted_blocks.append(block)
+                            result_str = "\n\n".join(formatted_blocks)
+                            key_results.append(f"### 🔍 Web Search Results:\n{result_str}")
+                        else:
+                            # Limit standard tool results to 1000 characters to keep UI readable
+                            key_results.append(f"- **{desc}**: {obs_clean[:1000]}")
+
+            if key_results:
+                result_section = "\n\n".join(key_results[:5])
+                final = (
+                    f"✅ Task completed! I've finished **{goal}** in {action_count} {plural}.\n\n"
+                    f"{result_section}"
+                )
+            elif completed:
+                steps_list = "\n".join(f"- {a}" for a in completed[:8])
+                final = (
+                    f"✅ Done! I've completed **{goal}**.\n\n"
+                    f"**What I did ({action_count} {plural}):**\n{steps_list}"
+                )
+            else:
+                final = f"✅ Task completed: **{goal}**."
 
     # Restore window overlay after task completes
     if ws:
@@ -588,7 +723,8 @@ async def chat_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         result = await chat_agent.run(state.goal, message_history=state.messages)
         final_text = result.output
         usage = getattr(result, "usage", None)
-        token_delta = _extract_tokens(usage)
+        #pass response text so Ollama (usage=None) gets estimated tokens
+        token_delta = _extract_tokens(usage, final_text)
 
         # Stream word-by-word if ws_handler supports it
         if ws and hasattr(ws, "stream_text"):
@@ -605,14 +741,31 @@ async def chat_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
-def _extract_tokens(usage: Any) -> dict:
-    if not usage:
-        return {"req": 0, "res": 0, "tot": 0}
-    return {
-        "req": getattr(usage, "request_tokens", getattr(usage, "input_tokens", 0)) or 0,
-        "res": getattr(usage, "response_tokens", getattr(usage, "output_tokens", 0)) or 0,
-        "tot": getattr(usage, "total_tokens", 0) or 0,
-    }
+def _extract_tokens(usage: Any, response_text: str = "") -> dict:
+    """Extract token counts from a PydanticAI usage object.
+
+    Defect 5 Fix: Ollama and some local providers return usage=None.
+    When usage is None, fall back to a word-count heuristic so the Token
+    Tracking HUD always shows *something* rather than a permanent 0.
+    The estimated values are marked with a negative sign convention internally;
+    the UI should display them with a '~' prefix to indicate approximation.
+    """
+    if usage:
+        req = getattr(usage, "request_tokens", getattr(usage, "input_tokens", 0)) or 0
+        res = getattr(usage, "response_tokens", getattr(usage, "output_tokens", 0)) or 0
+        tot = getattr(usage, "total_tokens", 0) or 0
+        if tot == 0 and (req or res):
+            tot = req + res
+        return {"req": req, "res": res, "tot": tot}
+
+    # Heuristic fallback for providers that return usage=None (e.g. Ollama)
+    if response_text:
+        # Rough estimate: ~1.3 tokens per word
+        estimated_res = int(len(response_text.split()) * 1.3)
+        # Mark as estimated with negative values — callers can detect this
+        return {"req": 0, "res": estimated_res, "tot": estimated_res, "estimated": True}
+
+    return {"req": 0, "res": 0, "tot": 0}
 
 
 def _accumulate_tokens(state: OpenSarthiState, delta: dict) -> dict:
