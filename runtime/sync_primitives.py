@@ -63,6 +63,12 @@ async def wait_for_window(
             else:
                 # Let's check using wmctrl if available for robust title normalization matching
                 found = False
+                def normalize(s: str) -> str:
+                    s = s.lower().replace("-", " ").replace("_", " ").replace("—", " ").replace("–", " ")
+                    return "".join(c for c in s if c.isalnum() or c == " ")
+
+                target_norm = normalize(title_contains)
+
                 if shutil.which("wmctrl"):
                     proc = await asyncio.create_subprocess_exec(
                         "wmctrl", "-l",
@@ -72,12 +78,6 @@ async def wait_for_window(
                     stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2)
                     lines = stdout.decode("utf-8", errors="ignore").strip().split("\n")
                     
-                    # Normalize helper: lowercase, strip extra spaces/special chars, replace dashes
-                    def normalize(s: str) -> str:
-                        s = s.lower().replace("—", "-").replace("–", "-")
-                        return "".join(c for c in s if c.isalnum() or c in " -")
-
-                    target_norm = normalize(title_contains)
                     for line in lines:
                         parts = line.split(None, 3)
                         if len(parts) >= 4:
@@ -94,13 +94,12 @@ async def wait_for_window(
                         from gi.repository import Atspi
                         desktop = Atspi.get_desktop(0)
                         if desktop:
-                            target = title_contains.lower()
                             for i in range(desktop.get_child_count()):
                                 app = desktop.get_child_at_index(i)
                                 if not app:
                                     continue
                                 app_name = app.get_name() or ""
-                                if target in app_name.lower():
+                                if target_norm in normalize(app_name) or title_contains.lower() in app_name.lower():
                                     found = True
                                     break
                                 for j in range(app.get_child_count()):
@@ -108,11 +107,23 @@ async def wait_for_window(
                                     if not win:
                                         continue
                                     win_name = win.get_name() or ""
-                                    if target in win_name.lower():
+                                    if target_norm in normalize(win_name) or title_contains.lower() in win_name.lower():
                                         found = True
                                         break
                                 if found:
                                     break
+                    except Exception:
+                        pass
+
+                # Fallback to process table check (psutil)
+                if not found:
+                    try:
+                        import psutil
+                        for proc_item in psutil.process_iter(['name']):
+                            pname = (proc_item.info['name'] or "").lower()
+                            if target_norm in normalize(pname) or title_contains.lower() in pname:
+                                found = True
+                                break
                     except Exception:
                         pass
 
