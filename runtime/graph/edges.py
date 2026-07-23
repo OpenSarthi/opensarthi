@@ -46,31 +46,30 @@ def route_after_execute(state: OpenSarthiState) -> str:
         # All steps done → review + finish
         return "review"
     else:
-        retryable = last.get("retryable", True)
-        if not retryable:
-            # Unrecoverable error → replan
-            if state.retry_count < state.max_retries:
-                return "replan"
-            return "__end__"
-        # Try self-healing first
-        return "heal"
+        if state.retry_count < state.max_retries:
+            retryable = last.get("retryable", True)
+            if retryable:
+                return "heal"
+            return "replan"
+        # Max retries reached → route to review node to construct informative error response
+        return "review"
 
 
 def route_after_heal(state: OpenSarthiState) -> str:
     """After healing attempt: retry execute if successfully patched, otherwise replan."""
     if state.is_cancelled:
         return "__end__"
-    
+
     idx = state.current_step_index
     if idx < len(state.plan_steps):
         current_step = state.plan_steps[idx]
         if current_step.get("description", "").startswith("[HEALED]"):
             return "execute"
-            
-    # If not patched or no healing path found -> replan
+
+    # If not patched or no healing path found -> replan or review if retries exhausted
     if state.retry_count < state.max_retries:
         return "replan"
-    return "__end__"
+    return "review"
 
 
 def route_replan(state: OpenSarthiState) -> str:
@@ -79,4 +78,4 @@ def route_replan(state: OpenSarthiState) -> str:
         return "__end__"
     if state.retry_count < state.max_retries:
         return "observe"  # Observe fresh state, then re-plan
-    return "__end__"
+    return "review"

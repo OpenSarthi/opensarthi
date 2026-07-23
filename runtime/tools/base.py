@@ -30,9 +30,9 @@ class BaseTool(ABC):
             desc = v.get("description", "")
             enum_vals = v.get("enum", [])
             enum_str = f" [{', '.join(map(str, enum_vals))}]" if enum_vals else ""
-            req_mark = "" if k in required else "?"
+            req_mark = "(REQUIRED)" if k in required else "(optional)"
             detail = f" — {desc}" if desc else ""
-            parts.append(f"{k}{req_mark}: {t}{enum_str}{detail}")
+            parts.append(f"{k} {req_mark}: {t}{enum_str}{detail}")
         return ", ".join(parts)
 
     @abstractmethod
@@ -52,7 +52,7 @@ class BaseTool(ABC):
         required_fields = self.schema.get("required", [])
         for field in required_fields:
             if field not in args or args[field] is None or args[field] == "":
-                return ToolResult.fail(f"Missing or empty required argument: {field}", retryable=False)
+                return ToolResult.fail(f"Missing or empty required argument: '{field}'", retryable=True)
 
         if self.risk_level == RiskLevel.DANGEROUS and permission_manager:
             approved = await permission_manager.request_permission(self.name, args)
