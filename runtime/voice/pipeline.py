@@ -40,6 +40,10 @@ class VoicePipeline:
             phrases=getattr(settings, "wake_words", ["hey sarthi", "hello sarthi"]),
             threshold=getattr(settings, "wake_word_threshold", 0.5)
         )
+        # Defect 6 Fix: store pending wake words here so if settings are updated
+        # before initialize() is called, the words are not lost.
+        self._pending_wake_words: list = []
+        self._pipeline_initialized: bool = False
 
     async def initialize(self):
         """Pre-adjust for ambient noise and pre-load local offline STT model."""
@@ -94,6 +98,17 @@ class VoicePipeline:
             logger.info("Local offline STT model pre-loaded successfully.")
         except Exception as e:
             logger.error(f"Could not pre-load STT model: {e}")
+
+        # Defect 6 Fix: re-apply any wake words that were set while the pipeline
+        # was not yet initialized (e.g. user saved settings before activating voice).
+        self._pipeline_initialized = True
+        if self._pending_wake_words:
+            try:
+                self.wake_detector.update_phrases(self._pending_wake_words)
+                logger.info("Applied pending wake words after pipeline init", words=self._pending_wake_words)
+                self._pending_wake_words = []
+            except Exception as e:
+                logger.warning("Failed to apply pending wake words on init", error=str(e))
 
     def _listen_worker(self):
         import pyaudio
