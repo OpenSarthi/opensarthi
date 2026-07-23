@@ -513,7 +513,8 @@ class Session:
                     "id": str(uuid.uuid4()),
                     "goal": text,
                     "steps": plan_steps,
-                    "recovery_hint": None
+                    "recovery_hint": None,
+                    "reasoning": res_dict.get("plan_reasoning"),
                 }
                 plan_db_str = _json.dumps(plan_payload)
             
@@ -799,11 +800,19 @@ class Session:
             )
 
             # Propagate to running voice pipeline
+            # pending wake words so they are applied automatically on initialize().
             if hasattr(self, 'voice_pipeline') and self.voice_pipeline:
                 try:
-                    if hasattr(self.voice_pipeline, 'wake_detector') and self.voice_pipeline.wake_detector:
-                        self.voice_pipeline.wake_detector.update_phrases(settings.wake_words)
-                        self.voice_pipeline.wake_detector.threshold = settings.wake_word_threshold
+                    pipeline_ready = getattr(self.voice_pipeline, '_pipeline_initialized', False)
+                    if pipeline_ready:
+                        if hasattr(self.voice_pipeline, 'wake_detector') and self.voice_pipeline.wake_detector:
+                            self.voice_pipeline.wake_detector.update_phrases(settings.wake_words)
+                            self.voice_pipeline.wake_detector.threshold = settings.wake_word_threshold
+                    else:
+                        # Pipeline not yet initialized — store for deferred application
+                        if hasattr(self.voice_pipeline, '_pending_wake_words'):
+                            self.voice_pipeline._pending_wake_words = list(settings.wake_words)
+                            logger.info("Wake words saved as pending (pipeline not initialized yet)", words=settings.wake_words)
                 except Exception as ve:
                     logger.warning("Failed to propagate wake word updates to pipeline", error=str(ve))
 

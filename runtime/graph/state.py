@@ -25,6 +25,7 @@ class OpenSarthiState(BaseModel):
 
     # ── Execution plan ──────────────────────────────────────────────────
     plan_steps: list = Field(default_factory=list)          # List[PlanStep dicts]
+    plan_reasoning: Optional[str] = None                    # LLM prose reasoning text before JSON plan
     current_step_index: int = 0
     completed_actions: list[str] = Field(default_factory=list)
     failed_actions: list[str] = Field(default_factory=list)

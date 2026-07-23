@@ -828,61 +828,75 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
                         json_text = json_match.group(1).strip()
 
             if json_text:
+                data = None
                 try:
                     data = json.loads(json_text)
-                    TOOL_ARG_ORDER = {
-                        "open_app": ["app"],
-                        "click": ["x", "y", "button"],
-                        "type_text": ["text"],
-                        "press_key": ["key"],
-                        "shell": ["command", "timeout"],
-                        "wait_for_window": ["title", "timeout"],
-                        "wait_for_text": ["text", "timeout"],
-                        "click_element": ["role", "name"],
-                        "focus_window": ["title"],
-                    }
+                except Exception:
+                    # Clean trailing commas and try again
+                    cleaned = re.sub(r',\s*([\]}])', r'\1', json_text)
+                    try:
+                        data = json.loads(cleaned)
+                    except Exception:
+                        try:
+                            import ast
+                            val = ast.literal_eval(json_text)
+                            if isinstance(val, (list, dict)):
+                                data = val
+                        except Exception:
+                            pass
 
-                    def _cleanup_step(s: dict) -> dict:
-                        if "tool" not in s and "action" in s:
-                            s["tool"] = s.pop("action")
-                        if "description" not in s and "comment" in s:
-                            s["description"] = s.pop("comment")
-                        elif "description" not in s:
-                            s["description"] = ""
-                        for p_key in ("params", "arguments", "parameters"):
-                            if "args" not in s and p_key in s:
-                                s["args"] = s.pop(p_key)
-                        if "args" not in s or s["args"] is None:
-                            s["args"] = {}
-                        elif isinstance(s["args"], list):
-                            tool_name = s.get("tool", "")
-                            arg_keys = TOOL_ARG_ORDER.get(tool_name, [])
-                            s["args"] = {k: v for k, v in zip(arg_keys, s["args"])}
-                        # Hoist root-level tool arg keys into args.
-                        # LLMs sometimes emit {"tool":"shell","command":"...","args":{}}
-                        # instead of {"tool":"shell","args":{"command":"..."}}.
-                        reserved_step_keys = {"tool", "action", "args", "description",
-                                              "comment", "params", "arguments",
-                                              "parameters", "verify_with", "wait_after",
-                                              "depends_on"}
-                        for k in list(s.keys()):
-                            if k not in reserved_step_keys:
-                                s["args"].setdefault(k, s.pop(k))
-                        return s
+                if data is not None:
+                    try:
+                        TOOL_ARG_ORDER = {
+                            "open_app": ["app"],
+                            "click": ["x", "y", "button"],
+                            "type_text": ["text"],
+                            "press_key": ["key"],
+                            "shell": ["command", "timeout"],
+                            "wait_for_window": ["title", "timeout"],
+                            "wait_for_text": ["text", "timeout"],
+                            "click_element": ["role", "name"],
+                            "focus_window": ["title"],
+                        }
 
-                    if isinstance(data, list):
-                        steps = [PlanStep(**_cleanup_step(s)) for s in data]
-                        return Plan(goal="", steps=steps), None
-                    elif isinstance(data, dict):
-                        if "steps" in data:
-                            data["steps"] = [_cleanup_step(s) for s in data["steps"]]
-                            return Plan(**data), None
-                        else:
-                            step = PlanStep(**_cleanup_step(data))
-                            return Plan(goal="", steps=[step]), None
-                except Exception as e:
-                    import structlog
-                    structlog.get_logger().error("Plan JSON parsed but validation failed", error=str(e))
+                        def _cleanup_step(s: dict) -> dict:
+                            if "tool" not in s and "action" in s:
+                                s["tool"] = s.pop("action")
+                            if "description" not in s and "comment" in s:
+                                s["description"] = s.pop("comment")
+                            elif "description" not in s:
+                                s["description"] = ""
+                            for p_key in ("params", "arguments", "parameters"):
+                                if "args" not in s and p_key in s:
+                                    s["args"] = s.pop(p_key)
+                            if "args" not in s or s["args"] is None:
+                                s["args"] = {}
+                            elif isinstance(s["args"], list):
+                                tool_name = s.get("tool", "")
+                                arg_keys = TOOL_ARG_ORDER.get(tool_name, [])
+                                s["args"] = {k: v for k, v in zip(arg_keys, s["args"])}
+                            reserved_step_keys = {"tool", "action", "args", "description",
+                                                  "comment", "params", "arguments",
+                                                  "parameters", "verify_with", "wait_after",
+                                                  "depends_on"}
+                            for k in list(s.keys()):
+                                if k not in reserved_step_keys:
+                                    s["args"].setdefault(k, s.pop(k))
+                            return s
+
+                        if isinstance(data, list):
+                            steps = [PlanStep(**_cleanup_step(s)) for s in data]
+                            return Plan(goal="", steps=steps), None
+                        elif isinstance(data, dict):
+                            if "steps" in data:
+                                data["steps"] = [_cleanup_step(s) for s in data["steps"]]
+                                return Plan(**data), None
+                            else:
+                                step = PlanStep(**_cleanup_step(data))
+                                return Plan(goal="", steps=[step]), None
+                    except Exception as e:
+                        import structlog
+                        structlog.get_logger().error("Plan JSON parsed but validation failed", error=str(e))
             return None, raw_output
 
         return None, str(raw_output)

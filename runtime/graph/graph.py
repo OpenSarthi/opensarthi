@@ -136,6 +136,7 @@ def build_graph(use_sqlite: bool = False) -> StateGraph:
         {
             "execute": "execute",
             "replan": "replan",
+            "review": "review",
             "__end__": END,
         },
     )
@@ -145,6 +146,7 @@ def build_graph(use_sqlite: bool = False) -> StateGraph:
         route_replan,
         {
             "observe": "observe",
+            "review": "review",
             "__end__": END,
         },
     )
@@ -269,13 +271,20 @@ async def run_graph(
 
     try:
         result = await graph.ainvoke(initial_state, config=config)
-        final_res = result.get("final_response") or "Task completed."
+        final_res = result.get("final_response")
+        if not final_res:
+            failed = result.get("failed_actions") or []
+            if failed:
+                final_res = f"⚠️ Task execution finished with errors for: **{goal}**\n- {failed[-1]}"
+            else:
+                final_res = f"Task execution finished for: **{goal}**"
         final_res = format_graph_response(final_res, result.get("cumulative_steps") or [])
         if logger_instance:
             logger_instance.finalize(final_res)
         return {
             "final_response": final_res,
-            "cumulative_steps": result.get("cumulative_steps") or []
+            "cumulative_steps": result.get("cumulative_steps") or [],
+            "plan_reasoning": result.get("plan_reasoning"),
         }
     except Exception as e:
         err_str = str(e)
