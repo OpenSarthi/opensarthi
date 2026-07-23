@@ -753,7 +753,7 @@ These are rules that **must not be violated**. Breaking them will cause subtle b
 
 8. **`mock_pkg_config` in build command** is needed because Arch Linux returns incorrect paths for `pkg-config --variable=gdk_pixbuf_binarydir`.
 
-9. **`open_app` has an extensive alias table** — LLMs often generate display names like "Chrome" instead of binary names like "google-chrome-stable". The alias table handles this, but new apps need to be added manually.
+9. **`open_app` has an extensive alias table** — LLMs often generate display names like "Chrome" instead of binary names like "google-chrome-stable". As of July 2026, the table covers 90+ apps (browsers, editors, terminals, KDE apps, media, communication, notes, design). If an app is still not found by binary, a 3-stage fallback chain runs: `gtk-launch <app>.desktop` → `flatpak run <bundle_id>` (18 known Flatpak IDs) → `xdg-open <app>`.
 
 10. **Sudo password handling** pipes the password via `echo | sudo -S`, which is visible in process listings. This is a known security concern documented for future improvement.
 

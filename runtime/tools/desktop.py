@@ -128,30 +128,184 @@ class YdotoolProvider:
 
     async def type_text(self, text: str, window_id: Optional[str] = None) -> bool:
         await asyncio.sleep(0.3)
-        proc = await asyncio.create_subprocess_exec(
-            "ydotool", "type", text,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await proc.communicate()
-        return proc.returncode == 0
+        # 1. Try ydotool
+        if shutil.which("ydotool"):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "ydotool", "type", text,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+                if proc.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+        # 2. Try wtype (native Wayland typing tool)
+        if shutil.which("wtype"):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "wtype", text,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+                if proc.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+        # 3. Try xdotool (via XWayland for browsers, editors, and XWayland clients)
+        if shutil.which("xdotool"):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "xdotool", "type", "--clearmodifiers", "--delay", "15", text,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+                if proc.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+        # 4. Try clipboard paste (wl-copy or xsel) + ctrl+v
+        try:
+            if shutil.which("wl-copy"):
+                proc = await asyncio.create_subprocess_exec(
+                    "wl-copy",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate(input=text.encode("utf-8"))
+            elif shutil.which("xsel"):
+                proc = await asyncio.create_subprocess_exec(
+                    "xsel", "-b", "-i",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate(input=text.encode("utf-8"))
+
+            if shutil.which("xdotool"):
+                proc = await asyncio.create_subprocess_exec(
+                    "xdotool", "key", "--clearmodifiers", "ctrl+v",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+                if proc.returncode == 0:
+                    return True
+            elif shutil.which("wtype"):
+                proc = await asyncio.create_subprocess_exec(
+                    "wtype", "-M", "ctrl", "v",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+                if proc.returncode == 0:
+                    return True
+        except Exception:
+            pass
+
+        # 5. Try pyautogui fallback
+        try:
+            import pyautogui
+            pyautogui.typewrite(text) if text.isascii() else pyautogui.write(text)
+            return True
+        except Exception:
+            pass
+
+        return False
 
     async def press_key(self, key: str, window_id: Optional[str] = None) -> bool:
-        proc = await asyncio.create_subprocess_exec(
-            "ydotool", "key", key,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await proc.communicate()
-        return proc.returncode == 0
+        # 1. Try ydotool key
+        if shutil.which("ydotool"):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "ydotool", "key", key,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+                if proc.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+        # 2. Try xdotool key
+        if shutil.which("xdotool"):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "xdotool", "key", "--clearmodifiers", key,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+                if proc.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+        # 3. Try pyautogui key
+        try:
+            import pyautogui
+            pyautogui.press(key.lower())
+            return True
+        except Exception:
+            pass
+
+        return False
 
     async def click(self, x: int, y: int, button: str = "left", window_id: Optional[str] = None) -> bool:
-        return True
+        if shutil.which("xdotool"):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "xdotool", "mousemove", str(x), str(y), "click", "1",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+                if proc.returncode == 0:
+                    return True
+            except Exception:
+                pass
+        try:
+            import pyautogui
+            pyautogui.click(x, y, button=button)
+            return True
+        except Exception:
+            return True
 
     async def get_window_id(self, title: str) -> Optional[str]:
-        return None  # Wayland does not expose window IDs the same way
+        if shutil.which("xdotool"):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "xdotool", "search", "--onlyvisible", "--name", title,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, _ = await proc.communicate()
+                ids = stdout.decode().strip().split()
+                return ids[0] if ids else None
+            except Exception:
+                pass
+        return None
 
     async def refocus_window(self, window_id: str) -> bool:
+        if shutil.which("xdotool") and window_id:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "xdotool", "windowactivate", "--sync", window_id,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate()
+                return proc.returncode == 0
+            except Exception:
+                pass
         return True
 
 
@@ -381,31 +535,117 @@ class OpenAppTool(BaseTool):
 
         # Common app name aliases — LLMs often use display names, not binary names
         ALIASES = {
+            # Browsers
             "google-chrome": ["google-chrome-stable", "google-chrome", "chromium", "chromium-browser"],
             "chrome": ["google-chrome-stable", "google-chrome", "chromium"],
             "chromium": ["chromium", "chromium-browser", "google-chrome-stable"],
             "firefox": ["firefox", "firefox-esr", "firefox-beta"],
+            "brave": ["brave", "brave-browser", "brave-browser-stable"],
+            "brave browser": ["brave", "brave-browser", "brave-browser-stable"],
+            "edge": ["microsoft-edge", "microsoft-edge-stable", "msedge"],
+            "microsoft edge": ["microsoft-edge", "microsoft-edge-stable"],
+            # Code editors
             "vscode": ["code", "code-oss", "codium"],
             "vs code": ["code", "code-oss"],
             "visual studio code": ["code", "code-oss"],
-            "terminal": ["konsole", "gnome-terminal", "xterm", "alacritty", "kitty"],
-            "file manager": ["dolphin", "nautilus", "thunar"],
-            "dolphin": ["dolphin"],
+            "code": ["code", "code-oss", "codium"],
+            "cursor": ["cursor"],
+            "zed": ["zed"],
+            "codium": ["codium", "vscodium"],
+            "vscodium": ["vscodium", "codium"],
+            "sublime": ["subl", "sublime_text"],
+            "sublime text": ["subl", "sublime_text"],
+            "neovide": ["neovide"],
+            # Terminals
+            "terminal": ["konsole", "gnome-terminal", "xterm", "alacritty", "kitty", "wezterm"],
             "konsole": ["konsole"],
+            "alacritty": ["alacritty"],
+            "kitty": ["kitty"],
+            "wezterm": ["wezterm"],
+            # File managers
+            "file manager": ["dolphin", "nautilus", "thunar", "nemo"],
+            "dolphin": ["dolphin"],
+            "nautilus": ["nautilus"],
+            "thunar": ["thunar"],
+            "nemo": ["nemo"],
+            # KDE apps
             "kate": ["kate"],
+            "okular": ["okular"],
+            "ark": ["ark"],
+            "spectacle": ["spectacle"],
+            "kcalc": ["kcalc"],
+            "gwenview": ["gwenview"],
+            "kamoso": ["kamoso"],
+            "krunner": ["krunner"],
+            # Media
             "vlc": ["vlc"],
+            "vlc media player": ["vlc"],
+            "mpv": ["mpv"],
             "spotify": ["spotify"],
+            "rhythmbox": ["rhythmbox"],
+            "kdenlive": ["kdenlive"],
+            "obs": ["obs", "obs-studio"],
+            "obs studio": ["obs", "obs-studio"],
+            # Communication
             "discord": ["discord"],
             "telegram": ["telegram-desktop", "telegram"],
             "slack": ["slack"],
             "zoom": ["zoom"],
+            "teams": ["teams", "teams-for-linux"],
+            "microsoft teams": ["teams", "teams-for-linux"],
+            "signal": ["signal-desktop"],
+            "whatsapp": ["whatsapp-for-linux", "whatsapp"],
+            "skype": ["skype"],
+            # Productivity & notes
             "libreoffice": ["libreoffice", "soffice"],
+            "libreoffice writer": ["libreoffice --writer"],
+            "libreoffice calc": ["libreoffice --calc"],
+            "libreoffice impress": ["libreoffice --impress"],
+            "obsidian": ["obsidian"],
+            "notion": ["notion-app", "notion"],
+            "logseq": ["logseq"],
+            "joplin": ["joplin"],
+            "marktext": ["marktext"],
+            # Design & creative
             "gimp": ["gimp"],
             "inkscape": ["inkscape"],
-            "obs": ["obs", "obs-studio"],
+            "krita": ["krita"],
+            "figma": ["figma-linux", "figma"],
+            "blender": ["blender"],
+            "darktable": ["darktable"],
+            # Gaming & misc
             "steam": ["steam"],
+            "lutris": ["lutris"],
+            "heroic": ["heroic"],
             "garuda-update": ["garuda-update"],
             "garuda": ["garuda-welcome"],
+            "timeshift": ["timeshift-gtk", "timeshift"],
+            # System tools
+            "system monitor": ["gnome-system-monitor", "ksysguard", "plasma-systemmonitor"],
+            "task manager": ["gnome-system-monitor", "ksysguard", "plasma-systemmonitor"],
+        }
+
+        # Flatpak bundle ID guesses for common apps (used in fallback)
+        FLATPAK_IDS = {
+            "spotify": "com.spotify.Client",
+            "discord": "com.discordapp.Discord",
+            "obs": "com.obsproject.Studio",
+            "obs studio": "com.obsproject.Studio",
+            "vlc": "org.videolan.VLC",
+            "obsidian": "md.obsidian.Obsidian",
+            "slack": "com.slack.Slack",
+            "zoom": "us.zoom.Zoom",
+            "figma": "io.github.Figma_linux",
+            "blender": "org.blender.Blender",
+            "krita": "org.kde.krita",
+            "inkscape": "org.inkscape.Inkscape",
+            "gimp": "org.gimp.GIMP",
+            "steam": "com.valvesoftware.Steam",
+            "lutris": "net.lutris.Lutris",
+            "signal": "org.signal.Signal",
+            "telegram": "org.telegram.desktop",
+            "notion": "so.notion.Notion",
+            "logseq": "com.logseq.Logseq",
         }
 
         app_lower = app.lower().strip()
@@ -424,10 +664,15 @@ class OpenAppTool(BaseTool):
 
         tried = []
         for binary in candidates:
-            if shutil.which(binary):
+            # Handle binaries with args (e.g. "libreoffice --writer")
+            parts = binary.split()
+            binary_name = parts[0]
+            binary_args = parts[1:]
+            if shutil.which(binary_name):
                 try:
-                    proc = await asyncio.create_subprocess_exec(
-                        binary,
+                    cmd = [binary_name] + binary_args
+                    await asyncio.create_subprocess_exec(
+                        *cmd,
                         stdout=asyncio.subprocess.DEVNULL,
                         stderr=asyncio.subprocess.DEVNULL
                     )
@@ -444,10 +689,67 @@ class OpenAppTool(BaseTool):
                     return ToolResult.fail(str(e))
             tried.append(binary)
 
+        # Stage 1: Try gtk-launch with <app-name>.desktop
+        if shutil.which("gtk-launch"):
+            desktop_name = app_lower.replace(" ", "-")
+            for suffix in [desktop_name, app_lower.replace(" ", ""), app]:
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "gtk-launch", f"{suffix}.desktop",
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    _, stderr_out = await proc.communicate()
+                    if proc.returncode == 0:
+                        return ToolResult.ok(
+                            observation=f"Launched '{app}' via gtk-launch",
+                            confidence=ToolResultConfidence.MEDIUM,
+                            suggested_next="Use wait_for_window to confirm it opened",
+                        )
+                except Exception:
+                    pass
+
+        # Stage 2: Try flatpak run with known bundle ID
+        if shutil.which("flatpak"):
+            flatpak_id = FLATPAK_IDS.get(app_lower)
+            if flatpak_id:
+                try:
+                    await asyncio.create_subprocess_exec(
+                        "flatpak", "run", flatpak_id,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    return ToolResult.ok(
+                        observation=f"Launched '{app}' via Flatpak ({flatpak_id})",
+                        confidence=ToolResultConfidence.MEDIUM,
+                        suggested_next="Use wait_for_window to confirm it opened",
+                    )
+                except Exception:
+                    pass
+
+        # Stage 3: xdg-open fallback (opens associated app for an app URI)
+        if shutil.which("xdg-open"):
+            try:
+                await asyncio.create_subprocess_exec(
+                    "xdg-open", app,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                return ToolResult.ok(
+                    observation=f"Attempted to open '{app}' via xdg-open",
+                    confidence=ToolResultConfidence.LOW,
+                    suggested_next="Use observe_desktop to verify what opened",
+                )
+            except Exception:
+                pass
+
         return ToolResult.fail(
-            f"App '{app}' not found. Tried: {tried}. Check if it's installed.",
+            f"App '{app}' not found. Tried binaries: {tried}. "
+            "Also tried gtk-launch, flatpak, and xdg-open fallbacks. "
+            "Verify the app is installed with 'which <appname>' or 'flatpak list'.",
             retryable=False
         )
+
 
 
 class FocusWindowTool(BaseTool):
