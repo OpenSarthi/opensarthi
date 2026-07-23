@@ -10,15 +10,19 @@ class MediaControlTool(BaseTool):
     schema = {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["play-pause", "next", "previous", "stop", "volume-up", "volume-down"], "description": "Media control action"},
+            "action": {
+                "type": "string",
+                "enum": ["play-pause", "next", "previous", "stop", "volume-up", "volume-down"],
+                "description": "Media control action. Default is 'play-pause' if unspecified."
+            },
         },
-        "required": ["action"],
+        "required": [],
     }
 
     async def execute(self, args: dict) -> ToolResult:
-        action = args.get("action", "").lower()
+        action = (args.get("action") or "").lower().strip()
         if not action:
-            return ToolResult.fail("Missing action parameter", retryable=False)
+            action = "play-pause"
 
         if not shutil.which("playerctl"):
             from tools.desktop import _provider, XdotoolProvider, YdotoolProvider, PyAutoGUIProvider
@@ -114,6 +118,24 @@ class MediaControlTool(BaseTool):
                     return ToolResult.ok("No active media players running currently")
                 return ToolResult.fail(err, retryable=True)
 
-            return ToolResult.ok(obs)
+        except FileNotFoundError:
+            # playerctl binary not executable or missing, fall back to keyboard simulation
+            from tools.desktop import _provider, XdotoolProvider, YdotoolProvider, PyAutoGUIProvider
+            X11_KEYS = {
+                "play-pause": "XF86AudioPlay",
+                "next": "XF86AudioNext",
+                "previous": "XF86AudioPrev",
+                "stop": "XF86AudioStop",
+                "volume-up": "XF86AudioRaiseVolume",
+                "volume-down": "XF86AudioLowerVolume",
+            }
+            key = X11_KEYS.get(action)
+            if key and _provider:
+                try:
+                    await _provider.press_key(key)
+                    return ToolResult.ok(f"Media command '{action}' simulated via keyboard key '{key}'")
+                except Exception as kb_err:
+                    return ToolResult.fail(f"Media command fallback failed: {kb_err}", retryable=False)
+            return ToolResult.fail("playerctl missing and no keyboard fallback available.", retryable=False)
         except Exception as e:
             return ToolResult.fail(str(e))
