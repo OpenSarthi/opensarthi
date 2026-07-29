@@ -118,26 +118,61 @@ class AgentRuntime:
         # Return the clean text response. ActionLog on the frontend displays step details.
         return response
 
-    def _build_success_response(self, goal: str, completed_actions: list, cumulative_steps: list) -> str:
-        """Build a meaningful task completion response using actual tool results.
-
-        Instead of a static 'Task completed successfully.' this constructs a
-        natural summary from what the AI actually did and any key observations
-        returned by tools — without an extra LLM round-trip.
-        """
+    async def _build_success_response(self, goal: str, completed_actions: list, cumulative_steps: list) -> str:
+        """Build a meaningful task completion response using actual tool results."""
         if not cumulative_steps and not completed_actions:
-            return f"Done! I've completed the task: **{goal}**."        # Collect key observations from successful steps (tool output)
-        key_results = []
-        for s in cumulative_steps:
-            if s.get("status") == "success":
-                obs = s.get("result") or s.get("observation")
-                desc = s.get("description") or s.get("tool", "")
-                tool_name = s.get("tool", "")
-                if obs and isinstance(obs, str) and obs.strip():
-                    obs_clean = obs.strip()
-                    if len(obs_clean) > 10:  # skip trivial one-liners
+            return f"Done! I've completed the task: **{goal}**."
+
+        # Let the LLM format the final response based on observations
+        from pydantic_ai import Agent as PydanticAgent
+        formatter = PydanticAgent(
+            model=self.model,
+            system_prompt=(
+                "You are OpenSarthi review agent. Your task is to generate a helpful, user-friendly, and well-formatted final response "
+                "to the user based on the execution log. The user asked for a goal, and we executed several tools (e.g. terminal shell commands, web searches, etc.).\n"
+                "RULES:\n"
+                "1. DO NOT include generic meta-text like 'Task completed!', '✅ Done!', or 'I have finished this in 1 step'. The user already knows the task is done.\n"
+                "2. Directly present the structured/formatted results (e.g. terminal command stdout, system specs, web search answers) clearly in Markdown.\n"
+                "3. Keep the tone professional, concise, and helpful."
+            )
+        )
+
+        steps_log = []
+        for i, s in enumerate(cumulative_steps):
+            status = s.get("status", "unknown")
+            tool = s.get("tool", "unknown")
+            desc = s.get("description", "")
+            result = s.get("result") or s.get("observation") or ""
+            error = s.get("error") or ""
+
+            step_str = f"Step {i+1} (Tool: {tool}, Description: {desc}):\nStatus: {status.upper()}"
+            if error:
+                step_str += f"\nError: {error}"
+            if result:
+                step_str += f"\nResult/Output:\n{result}"
+            steps_log.append(step_str)
+
+        prompt = (
+            f"Original User Goal: {goal}\n\n"
+            f"Execution Steps Log:\n"
+            f"{chr(10).join(steps_log)}\n"
+        )
+
+        try:
+            res = await formatter.run(prompt, deps=self.deps)
+            return res.output.strip()
+        except Exception as e:
+            logger.error("LLM final response generation failed, falling back to manual format", error=str(e))
+            # Fallback manual template if LLM call fails
+            key_results = []
+            for s in cumulative_steps:
+                if s.get("status") == "success":
+                    obs = s.get("result") or s.get("observation")
+                    desc = s.get("description") or s.get("tool", "")
+                    tool_name = s.get("tool", "")
+                    if obs and isinstance(obs, str) and obs.strip() and len(obs.strip()) > 10:
+                        obs_clean = obs.strip()
                         if tool_name == "search_web" or "search_web" in desc.lower():
-                            # Format DuckDuckGo search results beautifully
                             blocks = obs_clean.split("\n\n---\n\n")
                             formatted_blocks = []
                             for block in blocks:
@@ -149,29 +184,15 @@ class AgentRuntime:
                                     formatted_blocks.append(f"##### 🔗 [{title}]({url_val})\n>{snippet}")
                                 else:
                                     formatted_blocks.append(block)
-                            result_str = "\n\n".join(formatted_blocks)
-                            key_results.append(f"### 🔍 Web Search Results:\n{result_str}")
+                            key_results.append("### 🔍 Web Search Results:\n" + "\n\n".join(formatted_blocks))
                         else:
-                            # Limit standard tool results to 1000 characters
                             key_results.append(f"- **{desc}**: {obs_clean[:1000]}")
-
-        action_count = len(completed_actions)
-        plural = "step" if action_count == 1 else "steps"
-
-        if key_results:
-            result_section = "\n\n".join(key_results[:5])  # cap at 5 key results
-            return (
-                f"✅ Task completed! I've finished **{goal}** in {action_count} {plural}.\n\n"
-                f"{result_section}"
-            )
-        elif completed_actions:
-            steps_list = "\n".join(f"- {a}" for a in completed_actions[:8])
-            return (
-                f"✅ Done! I've completed **{goal}**.\n\n"
-                f"**What I did ({action_count} {plural}):**\n{steps_list}"
-            )
-        else:
-            return f"✅ Task completed: **{goal}**."
+            if key_results:
+                return "\n\n".join(key_results[:5])
+            elif completed_actions:
+                return "\n".join(f"- {a}" for a in completed_actions[:8])
+            else:
+                return f"Goal complete: **{goal}**."
 
     async def _cancellable_sleep(self, seconds: float):
 
@@ -653,7 +674,7 @@ class AgentRuntime:
                         importance=0.9
                     )
                 # Build a meaningful completion response from actual results
-                final_success_response = self._build_success_response(goal, completed_actions, self.cumulative_steps)
+                final_success_response = await self._build_success_response(goal, completed_actions, self.cumulative_steps)
                 # Restore overlay after screen-tool tasks complete
                 await self.ws.send_message("window_control", {"action": "restore_hint"})
                 return final_success_response

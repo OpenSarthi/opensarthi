@@ -630,48 +630,76 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                 f"*Please check if the required application or tool is available and try again.*"
             )
         else:
-            # Gather key tool observations for success
-            key_results = []
-            for s in steps:
-                if s.get("status") == "success":
-                    obs = s.get("result") or s.get("observation")
-                    desc = s.get("description") or s.get("tool", "")
-                    tool_name = s.get("tool", "")
-                    if obs and isinstance(obs, str) and obs.strip() and len(obs.strip()) > 10:
-                        obs_clean = obs.strip()
-                        if tool_name == "search_web" or "search_web" in desc.lower():
-                            # Format DuckDuckGo search results beautifully
-                            blocks = obs_clean.split("\n\n---\n\n")
-                            formatted_blocks = []
-                            for block in blocks:
-                                lines = block.split("\n")
-                                if len(lines) >= 3:
-                                    title = lines[0].replace("**", "").strip()
-                                    snippet = lines[1].strip()
-                                    url_val = lines[2].strip()
-                                    formatted_blocks.append(f"##### 🔗 [{title}]({url_val})\n>{snippet}")
-                                else:
-                                    formatted_blocks.append(block)
-                            result_str = "\n\n".join(formatted_blocks)
-                            key_results.append(f"### 🔍 Web Search Results:\n{result_str}")
-                        else:
-                            # Limit standard tool results to 1000 characters to keep UI readable
-                            key_results.append(f"- **{desc}**: {obs_clean[:1000]}")
+            # Let the LLM format the final response based on observations
+            from pydantic_ai import Agent as PydanticAgent
+            formatter = PydanticAgent(
+                model=model,
+                system_prompt=(
+                    "You are OpenSarthi review agent. Your task is to generate a helpful, user-friendly, and well-formatted final response "
+                    "to the user based on the execution log. The user asked for a goal, and we executed several tools (e.g. terminal shell commands, web searches, etc.).\n"
+                    "RULES:\n"
+                    "1. DO NOT include generic meta-text like 'Task completed!', '✅ Done!', or 'I have finished this in 1 step'. The user already knows the task is done.\n"
+                    "2. Directly present the structured/formatted results (e.g. terminal command stdout, system specs, web search answers) clearly in Markdown.\n"
+                    "3. Keep the tone professional, concise, and helpful."
+                )
+            )
 
-            if key_results:
-                result_section = "\n\n".join(key_results[:5])
-                final = (
-                    f"✅ Task completed! I've finished **{goal}** in {action_count} {plural}.\n\n"
-                    f"{result_section}"
-                )
-            elif completed:
-                steps_list = "\n".join(f"- {a}" for a in completed[:8])
-                final = (
-                    f"✅ Done! I've completed **{goal}**.\n\n"
-                    f"**What I did ({action_count} {plural}):**\n{steps_list}"
-                )
-            else:
-                final = f"✅ Task completed: **{goal}**."
+            steps_log = []
+            for i, s in enumerate(steps):
+                status = s.get("status", "unknown")
+                tool = s.get("tool", "unknown")
+                desc = s.get("description", "")
+                result = s.get("result") or s.get("observation") or ""
+                error = s.get("error") or ""
+
+                step_str = f"Step {i+1} (Tool: {tool}, Description: {desc}):\nStatus: {status.upper()}"
+                if error:
+                    step_str += f"\nError: {error}"
+                if result:
+                    step_str += f"\nResult/Output:\n{result}"
+                steps_log.append(step_str)
+
+            prompt = (
+                f"Original User Goal: {goal}\n\n"
+                f"Execution Steps Log:\n"
+                f"{chr(10).join(steps_log)}\n"
+            )
+
+            try:
+                res = await formatter.run(prompt, deps=deps)
+                final = res.output.strip()
+            except Exception as e:
+                logger.error("LLM final response generation failed, falling back to manual format", error=str(e))
+                # Fallback manual template if LLM call fails
+                key_results = []
+                for s in steps:
+                    if s.get("status") == "success":
+                        obs = s.get("result") or s.get("observation")
+                        desc = s.get("description") or s.get("tool", "")
+                        tool_name = s.get("tool", "")
+                        if obs and isinstance(obs, str) and obs.strip() and len(obs.strip()) > 10:
+                            obs_clean = obs.strip()
+                            if tool_name == "search_web" or "search_web" in desc.lower():
+                                blocks = obs_clean.split("\n\n---\n\n")
+                                formatted_blocks = []
+                                for block in blocks:
+                                    lines = block.split("\n")
+                                    if len(lines) >= 3:
+                                        title = lines[0].replace("**", "").strip()
+                                        snippet = lines[1].strip()
+                                        url_val = lines[2].strip()
+                                        formatted_blocks.append(f"##### 🔗 [{title}]({url_val})\n>{snippet}")
+                                    else:
+                                        formatted_blocks.append(block)
+                                key_results.append("### 🔍 Web Search Results:\n" + "\n\n".join(formatted_blocks))
+                            else:
+                                key_results.append(f"- **{desc}**: {obs_clean[:1000]}")
+                if key_results:
+                    final = "\n\n".join(key_results[:5])
+                elif completed:
+                    final = "\n".join(f"- {a}" for a in completed[:8])
+                else:
+                    final = f"Goal complete: **{goal}**."
 
     # Restore window overlay after task completes
     if ws:
