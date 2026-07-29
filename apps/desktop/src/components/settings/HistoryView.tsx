@@ -43,9 +43,9 @@ export function HistoryView({ onClose }: HistoryViewProps) {
       style={{
         position: "fixed",
         top: 0, left: 0, right: 0, bottom: 0,
-        background: "var(--bg-glass)",
-        backdropFilter: "blur(24px)",
-        WebkitBackdropFilter: "blur(24px)",
+        background: "rgba(0, 0, 0, 0.15)",
+        backdropFilter: "blur(32px) saturate(180%)",
+        WebkitBackdropFilter: "blur(32px) saturate(180%)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -99,7 +99,7 @@ export function HistoryView({ onClose }: HistoryViewProps) {
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", paddingRight: "4px" }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", paddingRight: "4px", paddingBottom: "24px" }}>
           {threads.length === 0 ? (
             <div style={{ color: "var(--text-secondary)", fontSize: "13px", textAlign: "center", marginTop: "40px" }}>
               NO PAST THREADS FOUND

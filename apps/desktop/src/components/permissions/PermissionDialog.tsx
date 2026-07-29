@@ -1,15 +1,15 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertTriangle, ShieldAlert, Shield, X, Check } from "lucide-react";
+import { AlertTriangle, ShieldAlert, Shield, X, Check, ShieldCheck, Terminal, Clock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePermission } from "../../hooks/usePermission";
 import { RISK_COLORS } from "../../lib/constants";
 import type { RiskLevel } from "../../lib/schemas";
 
 const RISK_ICONS: Record<RiskLevel, React.ReactNode> = {
-  safe:      <Shield size={20} />,
-  moderate:  <Shield size={20} />,
-  dangerous: <AlertTriangle size={20} />,
-  forbidden: <ShieldAlert size={20} />,
+  safe:      <Shield size={18} />,
+  moderate:  <Shield size={18} />,
+  dangerous: <AlertTriangle size={18} />,
+  forbidden: <ShieldAlert size={18} />,
 };
 
 export function PermissionDialog() {
@@ -26,9 +26,24 @@ export function PermissionDialog() {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [pendingRequest]);
+  }, [pendingRequest, respond]);
 
   const color = pendingRequest ? RISK_COLORS[pendingRequest.risk_level] : undefined;
+
+  // Extract full command or text parameter if available
+  const getFullCommand = (): string | null => {
+    if (!pendingRequest?.args) return null;
+    const args = pendingRequest.args as Record<string, any>;
+    if (typeof args.command === "string") return args.command;
+    if (typeof args.cmd === "string") return args.cmd;
+    if (typeof args.text === "string") return args.text;
+    if (typeof args.script === "string") return args.script;
+    if (typeof args.url === "string") return args.url;
+    return null;
+  };
+
+  const fullCommand = getFullCommand();
+  const rawArgs = pendingRequest?.args as Record<string, any> | undefined;
 
   return (
     <AnimatePresence>
@@ -37,91 +52,224 @@ export function PermissionDialog() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
           style={{
-            position: "fixed", inset: 0,
-            background: "hsla(0,0%,0%,0.6)",
-            backdropFilter: "blur(4px)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            zIndex: "var(--z-modal)",
-            padding: "16px",
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.15)",
+            backdropFilter: "blur(32px) saturate(180%)",
+            WebkitBackdropFilter: "blur(32px) saturate(180%)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 99999,
+            padding: "20px",
           }}
         >
           <motion.div
-            initial={{ scale: 0.92, y: 12 }}
-            animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.92, y: 12 }}
-            className="glass"
-            style={{ width: "100%", maxWidth: "360px", padding: "20px" }}
+            initial={{ scale: 0.92, y: 16, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.92, y: 16, opacity: 0 }}
+            transition={{ type: "spring", damping: 28, stiffness: 360 }}
+            style={{
+              width: "min(580px, 94vw)",
+              background: "rgba(4, 8, 20, 0.92)",
+              backdropFilter: "blur(24px) saturate(160%)",
+              WebkitBackdropFilter: "blur(24px) saturate(160%)",
+              border: `1px solid ${color}66`,
+              borderRadius: "12px",
+              boxShadow: `
+                0 0 0 1px ${color}22,
+                0 32px 80px rgba(0, 0, 0, 0.9),
+                inset 0 0 40px ${color}0d
+              `,
+              padding: "22px 24px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "16px",
+              overflow: "hidden",
+            }}
           >
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
-              <div style={{ color }}>
-                {RISK_ICONS[pendingRequest.risk_level]}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{
+                  padding: "8px",
+                  borderRadius: "8px",
+                  background: `${color}18`,
+                  border: `1px solid ${color}44`,
+                  color,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}>
+                  {RISK_ICONS[pendingRequest.risk_level]}
+                </div>
+                <div>
+                  <h3 style={{ fontSize: "13px", fontWeight: "bold", color: "var(--text-primary)", letterSpacing: "0.08em", margin: 0, textTransform: "uppercase" }}>
+                    {pendingRequest.risk_level} ACTION REQUIRED
+                  </h3>
+                  <p style={{ fontSize: "10px", color: "var(--text-muted)", margin: "2px 0 0 0", fontFamily: "var(--font-mono)", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <Clock size={10} /> AUTO-DENYING IN {timeLeft}S
+                  </p>
+                </div>
               </div>
-              <div>
-                <p style={{ fontSize: "13px", fontWeight: 600, textTransform: "capitalize" }}>
-                  {pendingRequest.risk_level} Action Required
-                </p>
-                <p style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                  Auto-denying in {timeLeft}s
-                </p>
+
+              {/* Tool badge */}
+              <div style={{
+                fontSize: "10px",
+                fontFamily: "var(--font-mono)",
+                fontWeight: "bold",
+                padding: "4px 10px",
+                borderRadius: "99px",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                color: "var(--accent)",
+                letterSpacing: "0.08em",
+              }}>
+                {pendingRequest.tool.toUpperCase()}
               </div>
             </div>
 
             {/* Description */}
-            <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "12px", lineHeight: 1.5 }}>
+            <p style={{
+              fontSize: "11.5px",
+              color: "rgba(255,255,255,0.75)",
+              lineHeight: "1.5",
+              margin: 0,
+            }}>
               {pendingRequest.description}
             </p>
 
-            {/* Tool + args */}
-            <div style={{
-              background: "var(--bg-primary)", borderRadius: "var(--radius-sm)", padding: "10px 12px",
-              fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--text-secondary)",
-              marginBottom: "16px", border: "1px solid var(--border)",
-            }}>
-              <span style={{ color }}>{pendingRequest.tool}</span>
-              {" "}
-              {JSON.stringify(pendingRequest.args)}
+            {/* Full Command display box */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "9.5px", color: "var(--text-muted)", letterSpacing: "0.08em", fontWeight: "bold", display: "flex", alignItems: "center", gap: "5px" }}>
+                  <Terminal size={11} color="var(--accent)" /> FULL REQUESTED COMMAND
+                </span>
+              </div>
+              <div style={{
+                background: "rgba(0, 0, 0, 0.65)",
+                border: `1px solid ${color}44`,
+                borderRadius: "8px",
+                padding: "12px 14px",
+                fontFamily: "var(--font-mono)",
+                fontSize: "11.5px",
+                color: "#00ff9f",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+                lineHeight: "1.55",
+                maxHeight: "180px",
+                overflowY: "auto",
+                boxShadow: "inset 0 0 20px rgba(0,0,0,0.6)",
+              }}>
+                {fullCommand ?? JSON.stringify(rawArgs, null, 2)}
+              </div>
             </div>
 
-            {/* Actions */}
-            <div style={{ display: "flex", gap: "8px", flexDirection: "column" }}>
-              <div style={{ display: "flex", gap: "8px" }}>
+            {/* Additional parameters if command was extracted separately */}
+            {fullCommand && rawArgs && Object.keys(rawArgs).filter(k => k !== "command" && k !== "cmd").length > 0 && (
+              <div style={{
+                padding: "8px 12px",
+                background: "rgba(255,255,255,0.02)",
+                border: "1px solid rgba(255,255,255,0.06)",
+                borderRadius: "6px",
+                fontSize: "10px",
+                fontFamily: "var(--font-mono)",
+                color: "var(--text-muted)",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "10px",
+              }}>
+                {Object.entries(rawArgs)
+                  .filter(([k]) => k !== "command" && k !== "cmd")
+                  .map(([k, v]) => (
+                    <span key={k}>
+                      <strong style={{ color: "var(--text-secondary)" }}>{k}:</strong> {JSON.stringify(v)}
+                    </span>
+                  ))}
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
+              <div style={{ display: "flex", gap: "10px" }}>
                 <button
                   id="permission-allow-once"
                   onClick={() => respond(true, false)}
                   style={{
-                    flex: 1, padding: "10px",
-                    background: "var(--accent)", borderRadius: "var(--radius-sm)",
-                    fontSize: "13px", fontWeight: 500, color: "#fff",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                    flex: 1,
+                    padding: "10px 14px",
+                    background: "rgba(0, 230, 180, 0.16)",
+                    border: "1px solid rgba(0, 230, 180, 0.45)",
+                    borderRadius: "6px",
+                    fontSize: "11px",
+                    fontWeight: "bold",
+                    color: "#00f5c4",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    cursor: "pointer",
+                    letterSpacing: "0.08em",
+                    transition: "all 0.15s",
                   }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0, 230, 180, 0.28)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0, 230, 180, 0.16)"; }}
                 >
-                  <Check size={14} /> Allow Once
+                  <Check size={14} /> ALLOW ONCE
                 </button>
+
                 <button
                   id="permission-deny"
                   onClick={() => respond(false)}
                   style={{
-                    flex: 1, padding: "10px",
-                    background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)",
-                    fontSize: "13px", color: "var(--text-secondary)", border: "1px solid var(--border)",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                    flex: 1,
+                    padding: "10px 14px",
+                    background: "rgba(255, 60, 60, 0.14)",
+                    border: "1px solid rgba(255, 60, 60, 0.4)",
+                    borderRadius: "6px",
+                    fontSize: "11px",
+                    fontWeight: "bold",
+                    color: "#ff5555",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    cursor: "pointer",
+                    letterSpacing: "0.08em",
+                    transition: "all 0.15s",
                   }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255, 60, 60, 0.25)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255, 60, 60, 0.14)"; }}
                 >
-                  <X size={14} /> Deny
+                  <X size={14} /> DENY
                 </button>
               </div>
+
               <button
                 id="permission-allow-always"
                 onClick={() => respond(true, true)}
                 style={{
-                  padding: "8px",
-                  background: "transparent", border: "1px solid var(--border-accent)",
-                  borderRadius: "var(--radius-sm)", fontSize: "12px", color: "var(--accent)",
+                  padding: "9px 14px",
+                  background: "rgba(0, 230, 180, 0.06)",
+                  border: "1px solid rgba(0, 230, 180, 0.3)",
+                  borderRadius: "6px",
+                  fontSize: "10.5px",
+                  fontWeight: "bold",
+                  color: "var(--accent)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  cursor: "pointer",
+                  letterSpacing: "0.08em",
+                  transition: "all 0.15s",
                 }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0, 230, 180, 0.14)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0, 230, 180, 0.06)"; }}
               >
-                Allow Always for this action
+                <ShieldCheck size={14} /> ALLOW ALWAYS FOR THIS ACTION
               </button>
             </div>
           </motion.div>

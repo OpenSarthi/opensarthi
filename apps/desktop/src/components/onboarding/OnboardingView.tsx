@@ -170,9 +170,9 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
         exit={{ opacity: 0 }}
         style={{
           position: "fixed", inset: 0, zIndex: 9999,
-          background: "rgba(0, 0, 0, 0.45)",
-          backdropFilter: "blur(20px) saturate(150%)",
-          WebkitBackdropFilter: "blur(20px) saturate(150%)",
+          background: "rgba(0, 0, 0, 0.15)",
+          backdropFilter: "blur(32px) saturate(180%)",
+          WebkitBackdropFilter: "blur(32px) saturate(180%)",
           display: "flex", alignItems: "center", justifyContent: "center",
           fontFamily: "var(--font-sans, 'Inter', sans-serif)",
         }}

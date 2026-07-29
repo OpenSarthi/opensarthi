@@ -360,8 +360,9 @@ export function SettingsView({
       style={{
         position: "fixed",
         top: 0, left: 0, right: 0, bottom: 0,
-        background: "var(--bg-glass)",
-        backdropFilter: "blur(12px)",
+        background: "rgba(0, 0, 0, 0.15)",
+        backdropFilter: "blur(32px) saturate(180%)",
+        WebkitBackdropFilter: "blur(32px) saturate(180%)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -399,7 +400,7 @@ export function SettingsView({
         </div>
 
         {/* Scrollable content in 2 Columns */}
-        <div style={{ overflowY: "auto", flex: 1, padding: "20px 24px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px" }}>
+        <div style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: "20px 24px 48px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px" }}>
           
           {/* Column 1: AI Provider & Model Config */}
           <div style={{ display: "flex", flexDirection: "column", gap: "20px", borderRight: "1px solid rgba(255,255,255,0.06)", paddingRight: "24px" }}>

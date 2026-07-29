@@ -31,21 +31,30 @@ export function InputDialog() {
           style={{
             position: "fixed",
             inset: 0,
-            background: "hsla(0,0%,0%,0.6)",
-            backdropFilter: "blur(4px)",
+            background: "rgba(0, 0, 0, 0.15)",
+            backdropFilter: "blur(32px) saturate(180%)",
+            WebkitBackdropFilter: "blur(32px) saturate(180%)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: "var(--z-modal)",
+            zIndex: 99999,
             padding: "16px",
           }}
         >
           <motion.div
-            initial={{ scale: 0.92, y: 12 }}
-            animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.92, y: 12 }}
-            className="glass"
-            style={{ width: "100%", maxWidth: "380px", padding: "24px" }}
+            initial={{ scale: 0.92, y: 12, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.92, y: 12, opacity: 0 }}
+            style={{
+              width: "min(440px, 94vw)",
+              background: "rgba(4, 8, 20, 0.92)",
+              backdropFilter: "blur(24px) saturate(160%)",
+              WebkitBackdropFilter: "blur(24px) saturate(160%)",
+              border: "1px solid rgba(0, 230, 180, 0.25)",
+              borderRadius: "12px",
+              boxShadow: "0 32px 80px rgba(0,0,0,0.85), inset 0 0 30px rgba(0,230,180,0.05)",
+              padding: "24px",
+            }}
           >
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>

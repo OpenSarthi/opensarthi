@@ -71,8 +71,9 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
             position: "fixed",
             inset: 0,
             zIndex: 99999, // Ensure it sits above overlay containers
-            background: "rgba(0,0,0,0.8)",
-            backdropFilter: "blur(12px)",
+            background: "rgba(0, 0, 0, 0.15)",
+            backdropFilter: "blur(30px) saturate(160%)",
+            WebkitBackdropFilter: "blur(30px) saturate(160%)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
