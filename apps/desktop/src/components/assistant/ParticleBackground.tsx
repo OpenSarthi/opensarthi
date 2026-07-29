@@ -101,6 +101,19 @@ const RINGS: Ring[] = [
   { radius: 1.55, tiltX: -0.4, tiltZ: 0.3,  phase: 3.8, speed: 0.40, particleCount: 290, thickness: 0.08, brightness: 0.45 },
 ];
 
+/* ─── HUD data stream particles (diagonal streaks across screen) ───────────── */
+function buildDataStreams(count: number, W: number, H: number) {
+  return Array.from({ length: count }, () => ({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    vx: (Math.random() - 0.5) * 0.8,
+    vy: Math.random() * 1.2 + 0.3,
+    len: Math.random() * 40 + 10,
+    alpha: Math.random() * 0.18 + 0.04,
+    speed: Math.random() * 0.6 + 0.2,
+  }));
+}
+
 /* ─── Nebula background particles (slow, large, very dim) ──────────────────── */
 function buildNebulaCloud(count: number, maxR: number) {
   return Array.from({ length: count }, () => {
@@ -141,13 +154,17 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
     let BASE_R = Math.pow(Math.min(W, H), 0.76) * 1.5;
 
     // Nebula particles
-    let nebula = buildNebulaCloud(500, BASE_R * 1.6);
+    let nebula = buildNebulaCloud(400, BASE_R * 1.6);
+
+    // Data streams (Jarvis-style falling particles)
+    let streams = buildDataStreams(35, W, H);
 
     const ro = new ResizeObserver(() => {
       W = canvas.width = parent?.clientWidth ?? W;
       H = canvas.height = parent?.clientHeight ?? H;
       BASE_R = Math.pow(Math.min(W, H), 0.76) * 1.5;
-      nebula = buildNebulaCloud(500, BASE_R * 1.6);
+      nebula = buildNebulaCloud(400, BASE_R * 1.6);
+      streams = buildDataStreams(35, W, H);
     });
     if (parent) ro.observe(parent);
 
@@ -200,14 +217,82 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
       /* ─── clear ─────────────────────────────────────────────────────────── */
       ctx.clearRect(0, 0, W, H);
 
-      /* ─── nebula cloud (background haze) ─────────────────────────────────── */
+      /* ─── Jarvis-style sparse hex grid (very dim) ─────────────────────── */
       ctx.globalCompositeOperation = "screen";
+      const hexSize = Math.max(W, H) * 0.07;
+      const hexAlpha = 0.012 + intensity * 0.014;
+      if (hexAlpha > 0.005) {
+        const cols = Math.ceil(W / (hexSize * 1.7)) + 2;
+        const rows = Math.ceil(H / (hexSize * 1.5)) + 2;
+        ctx.strokeStyle = `rgba(${r},${g},${b},${hexAlpha})`;
+        ctx.lineWidth = 0.5;
+        for (let row = -1; row < rows; row++) {
+          for (let col = -1; col < cols; col++) {
+            const hx = col * hexSize * 1.732 + (row % 2) * hexSize * 0.866;
+            const hy = row * hexSize * 1.5;
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+              const a = (Math.PI / 3) * i - Math.PI / 6;
+              const px = hx + hexSize * 0.92 * Math.cos(a);
+              const py = hy + hexSize * 0.92 * Math.sin(a);
+              if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.stroke();
+          }
+        }
+      }
+
+      /* ─── Data streams (Jarvis falling code rain style) ──────────────────── */
+      const streamAlpha = 0.06 + intensity * 0.08;
+      if (streamAlpha > 0.01) {
+        for (const s of streams) {
+          s.x += s.vx * 0.4;
+          s.y += s.vy * s.speed;
+          if (s.y > H + s.len) { s.y = -s.len; s.x = Math.random() * W; }
+          if (s.x < 0) s.x = W; if (s.x > W) s.x = 0;
+          const sg = ctx.createLinearGradient(s.x, s.y, s.x + s.vx * s.len, s.y + s.vy * s.len);
+          const sa = s.alpha * streamAlpha / 0.08;
+          sg.addColorStop(0, `rgba(${r},${g},${b},0)`);
+          sg.addColorStop(0.6, `rgba(${r},${g},${b},${sa})`);
+          sg.addColorStop(1, `rgba(${r},${g},${b},${sa * 0.3})`);
+          ctx.beginPath();
+          ctx.moveTo(s.x, s.y);
+          ctx.lineTo(s.x + s.vx * s.len * 0.5, s.y + s.vy * s.len * 0.5);
+          ctx.strokeStyle = sg;
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+        }
+      }
+
+      /* ─── nebula cloud (background haze) ─────────────────────────────────── */
       for (const n of nebula) {
         const twinkle = 0.85 + Math.sin(time * 1.4 + n.phase) * 0.15;
         const v = rotateX(rotateY({ x: n.x, y: n.y, z: n.z }, globalRotY * 0.5), 0.3);
         const { px, py, sc } = project(v, cx, cy, FL);
-        const a = n.alpha * twinkle * (0.3 + intensity * 0.25);
+        const a = n.alpha * twinkle * (0.25 + intensity * 0.22);
         safeArc(ctx, px, py, Math.max(0.1, n.sz * sc), 0, Math.PI * 2, `rgba(${r},${g},${b},${a})`);
+      }
+
+      /* ─── Crosshair targeting reticle (active state) ─────────────────────── */
+      if (intensity > 0.2) {
+        const crossA = (intensity - 0.2) * 0.08;
+        const crossR = BASE_R * 0.14 * (1 + Math.sin(time * 2.5) * 0.05);
+        ctx.strokeStyle = `rgba(${r},${g},${b},${crossA})`;
+        ctx.lineWidth = 0.7;
+        // Four arc corners + crosshair lines at center
+        for (let i = 0; i < 4; i++) {
+          const ca = (Math.PI / 2) * i;
+          ctx.beginPath();
+          ctx.arc(cx, cy, crossR, ca + 0.2, ca + Math.PI / 2 - 0.2);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.moveTo(cx - crossR * 0.35, cy);
+        ctx.lineTo(cx + crossR * 0.35, cy);
+        ctx.moveTo(cx, cy - crossR * 0.35);
+        ctx.lineTo(cx, cy + crossR * 0.35);
+        ctx.stroke();
       }
 
       /* ─── central core glow ──────────────────────────────────────────────── */

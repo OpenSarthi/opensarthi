@@ -1125,6 +1125,7 @@ export function MessageList({ messages, messageRefsMap, onSelectMessage }: Messa
         padding: "4px 0",
         overflowY: "auto",
         flex: 1,
+        minHeight: 0,
       }}
     >
       <AnimatePresence initial={false}>

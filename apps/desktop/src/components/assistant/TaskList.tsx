@@ -175,7 +175,7 @@ export function TaskList({
           </p>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px", overflowY: "auto", flex: 1 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", overflowY: "auto", flex: 1, minHeight: 0, paddingBottom: "24px" }}>
           <AnimatePresence initial={false}>
             {reversedTasks.map((task) => (
               <motion.div

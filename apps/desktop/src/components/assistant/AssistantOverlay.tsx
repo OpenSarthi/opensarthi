@@ -953,7 +953,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 </button>
               </div>
-              <div style={{ padding: "10px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
+              <div style={{ padding: "10px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                 <TaskList
                   messages={messages}
                   voiceState={voiceState}
@@ -1260,7 +1260,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             {/* Slow scan line sweep across the panel */}
             <div className="os-scan-line" />
 
-            <div style={{ flex: 1, overflowY: "auto", padding: "16px", zIndex: 1 }} ref={chatScrollRef}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 16px 40px", zIndex: 1 }} ref={chatScrollRef}>
               {messages.length === 0 && (
                 <div style={{
                   height: "100%", display: "flex", flexDirection: "column",
@@ -1623,7 +1623,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           <div data-panel="right" style={{ width: `${rightWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
             <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div className="hud-panel-title">// LIVE PLAN & ACTIVITY</div>
-              <div style={{ padding: "12px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div style={{ padding: "12px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
                 <TranscriptView transcript={currentTranscript} />
                 <ActionLog plan={currentPlan} selectedTaskId={selectedTaskId} messages={messages} />
               </div>
