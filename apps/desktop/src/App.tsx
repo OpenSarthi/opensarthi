@@ -12,6 +12,7 @@ import { useTauriEvent } from "./hooks/useTauriEvent";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useWindowOverlay } from "./hooks/useWindowOverlay";
 import { useAssistantStore } from "./stores/assistantStore";
+import { usePermissionStore } from "./stores/permissionStore";
 import { TAURI_EVENTS } from "./lib/constants";
 import { wsClient } from "./lib/ws";
 import { AnimatePresence } from "framer-motion";
@@ -192,6 +193,10 @@ export default function App() {
       setTimeout(() => clearInterval(interval), 10000);
     }
   };
+  const pendingRequest = usePermissionStore((s) => s.pendingRequest);
+  const pendingInputRequest = usePermissionStore((s) => s.pendingInputRequest);
+
+  const isModalOpen = showSettings || showHistory || showCustomizer || showMcpSettings || showJsonImport || showContext || !!pendingRequest || !!pendingInputRequest;
 
   return (
     <>
@@ -210,15 +215,29 @@ export default function App() {
           />
         )}
       </AnimatePresence>
-      <AssistantOverlay 
-        onOpenSettings={() => setShowSettings(true)} 
-        onOpenHistory={() => setShowHistory(true)}
-        onOpenCustomizer={() => setShowCustomizer(true)}
-        onOpenMcpSettings={() => setShowMcpSettings(true)}
-        onOpenJsonImport={() => setShowJsonImport(true)}
-        onOpenContext={() => setShowContext(true)}
-        onNewChat={() => resetSessionTokens()}
-      />
+
+      <div 
+        id="app-container" 
+        className={isModalOpen ? "blurred-layout" : ""}
+        style={{ 
+          width: "100%", 
+          height: "100%", 
+          display: "flex", 
+          flexDirection: "column",
+          transition: "filter 0.2s ease-out, transform 0.2s ease-out" 
+        }}
+      >
+        <AssistantOverlay 
+          onOpenSettings={() => setShowSettings(true)} 
+          onOpenHistory={() => setShowHistory(true)}
+          onOpenCustomizer={() => setShowCustomizer(true)}
+          onOpenMcpSettings={() => setShowMcpSettings(true)}
+          onOpenJsonImport={() => setShowJsonImport(true)}
+          onOpenContext={() => setShowContext(true)}
+          onNewChat={() => resetSessionTokens()}
+        />
+      </div>
+
       <PermissionDialog />
       <InputDialog />
       <McpSettingsModal isOpen={showMcpSettings} onClose={() => setShowMcpSettings(false)} />
