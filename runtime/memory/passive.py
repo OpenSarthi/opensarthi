@@ -22,6 +22,7 @@ async def extract_and_store_facts(
     assistant_response: str,
     model,
     thread_id: str = "global_user_memory",
+    ws_handler = None,
 ) -> None:
     """
     Fire-and-forget: extract facts from a conversation turn and store them.
@@ -59,6 +60,13 @@ OUTPUT RULES:
 OUTPUT (facts only, or empty):"""
 
         result = await extractor.run(prompt)
+        
+        if ws_handler and getattr(result, "usage", None):
+            try:
+                await ws_handler.accumulate_and_update_tokens(result.usage, thread_id=thread_id)
+            except Exception as e:
+                logger.debug("Failed to accumulate passive fact extraction tokens", error=str(e))
+
         raw = result.output.strip()
 
         if not raw or raw.lower() in ("none", "no facts", "nothing", "empty", "-"):
