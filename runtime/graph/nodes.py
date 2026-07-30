@@ -64,22 +64,44 @@ async def classify_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     """Classify the user goal into CHAT | TASK | CLARIFY."""
     model = config["configurable"]["model"]
     from agents.classifier import classify_intent_with_usage
+    ws = config["configurable"].get("ws_handler")
+    thread_id = config["configurable"].get("thread_id")
+    if ws:
+        await ws.send_message("graph_node_status", {"node": "CLASSIFY", "status": "running"}, thread_id=thread_id)
+    
+    if state.classification:
+        logger.info("classify_node using pre-resolved classification", classification=state.classification)
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "CLASSIFY", "status": "done"}, thread_id=thread_id)
+        return {"classification": state.classification}
+
     try:
         classification, usage = await classify_intent_with_usage(model, state.goal)
         token_delta = _extract_tokens(usage)
         logger.info("classify_node", classification=classification, goal=state.goal[:60])
+        if ws and usage:
+            await ws.accumulate_and_update_tokens(usage, thread_id=thread_id)
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "CLASSIFY", "status": "done"}, thread_id=thread_id)
         return {
             "classification": classification,
             **_accumulate_tokens(state, token_delta),
         }
     except Exception as e:
         logger.warning("classify_node failed, defaulting to TASK", error=str(e))
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "CLASSIFY", "status": "done"}, thread_id=thread_id)
         return {"classification": "TASK"}
 
 
 # ── observe_node ────────────────────────────────────────────────────────────────
 async def observe_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     """Take a desktop snapshot and recall relevant memories."""
+    ws = config["configurable"].get("ws_handler")
+    thread_id = config["configurable"].get("thread_id")
+    if ws:
+        await ws.send_message("graph_node_status", {"node": "OBSERVE", "status": "running"}, thread_id=thread_id)
+
     from observation import DesktopObserver
     observer = DesktopObserver()
     snapshot = await observer.snapshot()
@@ -113,6 +135,9 @@ async def observe_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         except Exception as e:
             logger.warning("observe_node memory recall failed", error=str(e))
 
+    if ws:
+        await ws.send_message("graph_node_status", {"node": "OBSERVE", "status": "done"}, thread_id=thread_id)
+
     return {
         "desktop_snapshot": snapshot.dict() if hasattr(snapshot, "dict") else vars(snapshot),
         "recalled_memories": recalled_memories,
@@ -126,6 +151,10 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     model = config["configurable"]["model"]
     deps = config["configurable"]["deps"]
     ws = config["configurable"].get("ws_handler")
+    thread_id = config["configurable"].get("thread_id")
+
+    if ws:
+        await ws.send_message("graph_node_status", {"node": "PLAN", "status": "running"}, thread_id=thread_id)
 
     from planner.agent import agent, build_structured_context
     from observation import DesktopSnapshot
@@ -169,6 +198,11 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         # Defect 5: pass response text so Ollama (usage=None) gets estimated tokens
         response_text_for_tokens = result.output if isinstance(result.output, str) else ""
         token_delta = _extract_tokens(usage, response_text_for_tokens)
+
+        ws = config["configurable"].get("ws_handler")
+        thread_id = config["configurable"].get("thread_id")
+        if ws:
+            await ws.accumulate_and_update_tokens(usage or token_delta, thread_id=thread_id)
 
         from agent_runtime import AgentRuntime
         plan, text_response = AgentRuntime._parse_response(None, result.output)
@@ -266,12 +300,18 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
             updates["final_response"] = text_response or "I couldn't generate a response."
             updates["plan_steps"] = []
 
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "PLAN", "status": "done"}, thread_id=thread_id)
         return updates
 
     except asyncio.CancelledError:
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "PLAN", "status": "done"}, thread_id=thread_id)
         return {"is_cancelled": True, "final_response": "Execution cancelled by user."}
     except Exception as e:
         logger.error("plan_node failed", error=str(e))
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "PLAN", "status": "done"}, thread_id=thread_id)
         return {"final_response": f"Planning failed: {e}", "plan_steps": []}
 
 
@@ -279,9 +319,14 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
 async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     """Execute the current pending step from the plan."""
     ws = config["configurable"].get("ws_handler")
+    thread_id = config["configurable"].get("thread_id")
+    if ws:
+        await ws.send_message("graph_node_status", {"node": "EXECUTE", "status": "running"}, thread_id=thread_id)
     idx = state.current_step_index
 
     if idx >= len(state.plan_steps):
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "EXECUTE", "status": "done"}, thread_id=thread_id)
         return {"final_response": "Task completed successfully.", "plan_steps": []}
 
     # Find the cumulative index for updates
@@ -463,6 +508,9 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
             result_obs=res.observation if res.success else (res.error or "Unknown error")
         )
 
+    if ws:
+        await ws.send_message("graph_node_status", {"node": "EXECUTE", "status": "done"}, thread_id=thread_id)
+
     return {
         "last_tool_result": res_dict,
         "current_step_index": idx + 1,
@@ -478,9 +526,15 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     model = config["configurable"]["model"]
     deps = config["configurable"]["deps"]
     ws = config["configurable"].get("ws_handler")
+    thread_id = config["configurable"].get("thread_id")
+
+    if ws:
+        await ws.send_message("graph_node_status", {"node": "HEAL", "status": "running"}, thread_id=thread_id)
 
     idx = state.current_step_index - 1
     if idx < 0 or idx >= len(state.plan_steps):
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "HEAL", "status": "done"}, thread_id=thread_id)
         return {}
 
     # Track and limit self-heal attempts per step index to avoid infinite loops
@@ -493,6 +547,7 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                 "description": f"Self-healing limit exceeded for: {state.plan_steps[idx].get('tool')}",
                 "status": "error", "result": "Exceeded maximum self-healing attempts (2). Retrying with a new plan...",
             })
+            await ws.send_message("graph_node_status", {"node": "HEAL", "status": "done"}, thread_id=thread_id)
         # Return state update with incremented attempts, but no patched steps, which triggers a replan edge
         return {"heal_attempts": {**state.heal_attempts, idx: attempts}}
 
@@ -522,6 +577,14 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
             error=err_msg,
             screen_summary=screen_text,
         )
+
+        usage = getattr(healer, "last_usage", None)
+        token_delta = _extract_tokens(usage)
+        thread_id = config["configurable"].get("thread_id")
+        if ws and usage:
+            await ws.accumulate_and_update_tokens(usage, thread_id=thread_id)
+
+        accumulated = _accumulate_tokens(state, token_delta)
 
         if healed:
             # Patch the plan_steps with healed tool/args so execute_step_node retries it
@@ -556,11 +619,13 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     "status": "success",
                     "result": f"Applying correction: {healed.get('description', healed['tool'])}",
                 })
+                await ws.send_message("graph_node_status", {"node": "HEAL", "status": "done"}, thread_id=thread_id)
             return {
                 "plan_steps": updated_steps,
                 "cumulative_steps": updated_cumulative,
                 "current_step_index": idx,  # Retry same step
                 "heal_attempts": {**state.heal_attempts, idx: attempts},
+                **accumulated,
             }
         else:
             if ws:
@@ -570,10 +635,22 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     "status": "error",
                     "result": "No healing path found.",
                 })
-            return {"heal_attempts": {**state.heal_attempts, idx: attempts}}  # No change — will trigger replan
+                await ws.send_message("graph_node_status", {"node": "HEAL", "status": "done"}, thread_id=thread_id)
+            return {
+                "heal_attempts": {**state.heal_attempts, idx: attempts},
+                **accumulated,
+            }
     except Exception as e:
         logger.debug("heal_node exception", error=str(e))
-        return {"heal_attempts": {**state.heal_attempts, idx: attempts}}
+        if ws:
+            try:
+                await ws.send_message("graph_node_status", {"node": "HEAL", "status": "done"}, thread_id=thread_id)
+            except Exception:
+                pass
+        return {
+            "heal_attempts": {**state.heal_attempts, idx: attempts},
+            **_accumulate_tokens(state, _extract_tokens(getattr(healer, "last_usage", None) if 'healer' in locals() else None)),
+        }
 
 
 # ── review_node ─────────────────────────────────────────────────────────────────
@@ -588,25 +665,61 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     max_retries_reached = state.retry_count >= state.max_retries
     has_successes = bool(completed)
 
-    if memory_manager and completed and not max_retries_reached:
+    ws = config["configurable"].get("ws_handler")
+    thread_id = config["configurable"].get("thread_id")
+    logger_instance = config["configurable"].get("dev_logger")
+
+    if ws:
+        await ws.send_message("graph_node_status", {"node": "REVIEW", "status": "running"}, thread_id=thread_id)
+
+    if memory_manager and (completed or failed):
+        outcome = "SUCCESS" if (completed and not max_retries_reached) else f"FAILED: {state.final_response[:100] if state.final_response else 'Max retries reached'}"
         from agents.reviewer import ReviewerAgent
         reviewer = ReviewerAgent(model, deps)
-        asyncio.create_task(reviewer.review_and_learn(
-            goal=state.goal,
-            execution_log=state.cumulative_steps,
-            outcome="SUCCESS",
-            memory_manager=memory_manager,
-        ))
-        # Store successful execution summary in memory
-        asyncio.create_task(memory_manager.store(
-            content=f"Goal: {state.goal}\nOutcome: Completed successfully.\nActions: {completed}",
-            source="agent",
-            importance=0.9,
-        ))
+        
+        async def run_review_bg():
+            try:
+                await reviewer.review_and_learn(
+                    goal=state.goal,
+                    execution_log=state.cumulative_steps,
+                    outcome=outcome,
+                    memory_manager=memory_manager,
+                    ws_handler=ws,
+                    thread_id=thread_id,
+                    dev_logger=logger_instance,
+                )
+            finally:
+                if ws:
+                    await ws.send_message("graph_node_status", {"node": "REVIEW", "status": "done"}, thread_id=thread_id)
+
+        asyncio.create_task(run_review_bg())
+        
+        if completed and not max_retries_reached:
+            # Store successful execution summary in memory
+            asyncio.create_task(memory_manager.store(
+                content=f"Goal: {state.goal}\nOutcome: Completed successfully.\nActions: {completed}",
+                source="agent",
+                importance=0.9,
+            ))
+        else:
+            # Store failed execution summary in memory
+            asyncio.create_task(memory_manager.store(
+                content=f"Goal: {state.goal}\nOutcome (Failed): {outcome}\nCompleted: {completed}\nFailed: {failed}",
+                source="agent",
+                importance=0.7,
+            ))
+    else:
+        # No review needed, immediately mark done
+        if ws:
+            try:
+                await ws.send_message("graph_node_status", {"node": "REVIEW", "status": "done"}, thread_id=thread_id)
+            except Exception:
+                pass
 
     ws = config["configurable"].get("ws_handler")
     final = state.final_response
 
+    token_delta = {"req": 0, "res": 0, "tot": 0}
     # If final response is not set or is generic default, format based on actual execution outcome
     if not final or final in ("Task completed successfully.", "Task completed."):
         goal = state.goal or ""
@@ -665,9 +778,36 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                 f"{chr(10).join(steps_log)}\n"
             )
 
+            token_delta = {"req": 0, "res": 0, "tot": 0}
             try:
+                if logger_instance:
+                    logger_instance.log("ReviewerAgent formatting final response...")
+                    try:
+                        import os
+                        filepath_prompt = os.path.join(logger_instance.run_dir, "reviewer_prompt.txt")
+                        with open(filepath_prompt, "w", encoding="utf-8") as f:
+                            f.write(prompt)
+                    except Exception as e:
+                        logger_instance.log(f"Failed to log review formatter prompt: {e}")
+
                 res = await formatter.run(prompt, deps=deps)
                 final = res.output.strip()
+
+                if logger_instance:
+                    try:
+                        import os
+                        filepath_res = os.path.join(logger_instance.run_dir, "reviewer_response.txt")
+                        with open(filepath_res, "w", encoding="utf-8") as f:
+                            f.write(final)
+                        logger_instance.log("Logged ReviewerAgent final response.")
+                    except Exception as e:
+                        logger_instance.log(f"Failed to log review formatter response: {e}")
+
+                usage = getattr(res, "usage", None)
+                token_delta = _extract_tokens(usage, final)
+                thread_id = config["configurable"].get("thread_id")
+                if ws:
+                    await ws.accumulate_and_update_tokens(usage or token_delta, thread_id=thread_id)
             except Exception as e:
                 logger.error("LLM final response generation failed, falling back to manual format", error=str(e))
                 # Fallback manual template if LLM call fails
@@ -708,7 +848,10 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         except Exception:
             pass
 
-    return {"final_response": final}
+    return {
+        "final_response": final,
+        **_accumulate_tokens(state, token_delta),
+    }
 
 
 # ── chat_node ───────────────────────────────────────────────────────────────────
@@ -717,6 +860,10 @@ async def chat_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     model = config["configurable"]["model"]
     deps = config["configurable"]["deps"]
     ws = config["configurable"].get("ws_handler")
+    thread_id = config["configurable"].get("thread_id")
+
+    if ws:
+        await ws.send_message("graph_node_status", {"node": "CHAT", "status": "running"}, thread_id=thread_id)
 
     from planner.agent import build_system_prompt
     from pydantic_ai import Agent as PydanticAgent
@@ -758,13 +905,19 @@ async def chat_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         if ws and hasattr(ws, "stream_text"):
             await ws.stream_text(final_text, thread_id=state.thread_id)
 
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "CHAT", "status": "done"}, thread_id=thread_id)
         return {
             "final_response": final_text,
             **_accumulate_tokens(state, token_delta),
         }
     except asyncio.CancelledError:
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "CHAT", "status": "done"}, thread_id=thread_id)
         return {"is_cancelled": True, "final_response": "Cancelled."}
     except Exception as e:
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "CHAT", "status": "done"}, thread_id=thread_id)
         return {"final_response": f"Chat failed: {e}"}
 
 

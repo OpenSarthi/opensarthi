@@ -207,7 +207,8 @@ async def run_graph(
     thread_id: Optional[str] = None,
     message_history: Optional[list] = None,
     summarized_context: Optional[str] = None,
-) -> str:
+    classification: Optional[str] = None,
+) -> dict:
     """
     High-level entry point: run the LangGraph for a user goal.
 
@@ -252,7 +253,7 @@ async def run_graph(
         "messages": message_history or [],
         "summarized_context": summarized_context,
         # Reset execution state for the new user goal on this thread to avoid checkpointer leakage
-        "classification": None,
+        "classification": classification,
         "plan_steps": [],
         "current_step_index": 0,
         "completed_actions": [],
@@ -341,6 +342,7 @@ async def stream_graph_events(
     thread_id: Optional[str] = None,
     message_history: Optional[list] = None,
     summarized_context: Optional[str] = None,
+    classification: Optional[str] = None,
 ):
     """
     Streaming variant of run_graph: yields events from astream_events().
@@ -364,7 +366,7 @@ async def stream_graph_events(
         "messages": message_history or [],
         "summarized_context": summarized_context,
         # Reset execution state for the new user goal on this thread to avoid checkpointer leakage
-        "classification": None,
+        "classification": classification,
         "plan_steps": [],
         "current_step_index": 0,
         "completed_actions": [],
