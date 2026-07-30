@@ -161,6 +161,8 @@ export function ContextModal({ isOpen, onClose }: ContextModalProps) {
     activeLocalModel,
     tokenUsage,
     planReasonings,
+    longTermMemories,
+    nodeStatuses,
     setPersonalization,
   } = useAssistantStore();
 
@@ -176,8 +178,9 @@ export function ContextModal({ isOpen, onClose }: ContextModalProps) {
     if (isOpen) {
       setLocalSkills(userSkills);
       setLocalPrompt(customPrompt);
+      wsClient.send("get_memories", { thread_id: activeThreadId });
     }
-  }, [isOpen, userSkills, customPrompt]);
+  }, [isOpen, activeThreadId, userSkills, customPrompt]);
 
   const toggleSkill = (id: string) => {
     setLocalSkills(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
@@ -225,13 +228,13 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
 
   // LangGraph node status
   const graphNodes = [
-    { name: "CLASSIFY", desc: "Intent router — TASK / CHAT / CLARIFY", status: lastClassification === null ? "idle" : "done" },
-    { name: "OBSERVE", desc: "Desktop observation & AT-SPI context", status: currentPlan ? "done" : "idle" },
-    { name: "PLAN", desc: "LangGraph plan creation & step generation", status: currentPlan ? "done" : "idle" },
-    { name: "EXECUTE", desc: "Tool dispatcher — calls tools sequentially", status: executingStepIndex != null ? "running" : currentPlan ? "done" : "idle" },
-    { name: "HEAL", desc: "Error recovery — retry failed steps", status: "idle" },
-    { name: "REVIEW", desc: "Post-execution summary & lesson store", status: "idle" },
-    { name: "CHAT", desc: "Direct conversational response handler", status: lastClassification === "CHAT" ? "done" : "idle" },
+    { name: "CLASSIFY", desc: "Intent router — TASK / CHAT / CLARIFY", status: nodeStatuses["CLASSIFY"] || (lastClassification === null ? "idle" : "done") },
+    { name: "OBSERVE", desc: "Desktop observation & AT-SPI context", status: nodeStatuses["OBSERVE"] || (currentPlan ? "done" : "idle") },
+    { name: "PLAN", desc: "LangGraph plan creation & step generation", status: nodeStatuses["PLAN"] || (currentPlan ? "done" : "idle") },
+    { name: "EXECUTE", desc: "Tool dispatcher — calls tools sequentially", status: nodeStatuses["EXECUTE"] || (executingStepIndex != null ? "running" : currentPlan ? "done" : "idle") },
+    { name: "HEAL", desc: "Error recovery — retry failed steps", status: nodeStatuses["HEAL"] || "idle" },
+    { name: "REVIEW", desc: "Post-execution summary & lesson store", status: nodeStatuses["REVIEW"] || "idle" },
+    { name: "CHAT", desc: "Direct conversational response handler", status: nodeStatuses["CHAT"] || (lastClassification === "CHAT" ? "done" : "idle") },
   ];
 
   const statusColor = (s: string) =>
@@ -405,7 +408,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                   {/* System Prompt */}
                   <Section title="ACTIVE SYSTEM PROMPT" icon={<Zap size={12} />} badge="LIVE">
                     <div style={{ position: "relative" }}>
-                      <MonoBlock>
+                      <MonoBlock maxH={300}>
                         {systemPromptPreview}
                       </MonoBlock>
                       <button
@@ -435,7 +438,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                         No messages in this thread yet.
                       </span>
                     ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "350px", overflowY: "auto", paddingRight: "4px" }}>
                         {messages.map((msg, i) => (
                           <div key={i} style={{
                             display: "flex",
@@ -481,7 +484,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                   {/* Plan Reasonings (LLM Thinking) */}
                   {currentReasonings.length > 0 && (
                     <Section title="AI PLAN REASONINGS (LAST RUN)" icon={<Brain size={12} />} badge={currentReasonings.length}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "300px", overflowY: "auto", paddingRight: "4px" }}>
                         {currentReasonings.map((r, i) => (
                           <div key={i} style={{
                             padding: "8px 10px",
@@ -509,7 +512,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                         <KVRow label="PLAN ID" value={currentPlan.id?.slice(0, 16) + "..."} />
                         <KVRow label="EXECUTING STEP" value={executingStepIndex != null ? `Step ${executingStepIndex + 1}` : "—"} />
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "300px", overflowY: "auto", paddingRight: "4px" }}>
                         {currentPlan.steps.map((step, si) => (
                           <div key={si} style={{
                             display: "flex", alignItems: "center", gap: "8px",
@@ -557,7 +560,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                   {/* Shell Output */}
                   {shellOutputLines.length > 0 && (
                     <Section title="LIVE TERMINAL OUTPUT BUFFER" icon={<Terminal size={12} />} badge={shellOutputLines.length} defaultOpen={true}>
-                      <MonoBlock>
+                      <MonoBlock maxH={300}>
                         <span style={{ color: "rgba(130,255,130,0.85)" }}>
                           {shellOutputLines.slice(-25).join("\n")}
                         </span>
@@ -662,15 +665,15 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
               {/* ═══════════ TAB: MEMORY ═══════════ */}
               {activeTab === "memory" && (
                 <>
-                  <Section title="SHORT-TERM MEMORY (CONVERSATION CONTEXT)" icon={<Clock size={12} />} badge={`${messages.length} turns`}>
+                  <Section title="SHORT-TERM MEMORY (CONVERSATION CONTEXT)" icon={<Clock size={12} />} badge={`${(activeTab_?.messages ?? messages).length} turns`}>
                     <p style={{ fontSize: "10.5px", color: "var(--text-secondary)", marginBottom: "10px", lineHeight: "1.5" }}>
                       Short-term memory is the full conversation history sent with every LLM call.
                       Each message below contributes to the context window.
                     </p>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      {messages.length === 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "300px", overflowY: "auto", paddingRight: "4px" }}>
+                      {(activeTab_?.messages ?? messages).length === 0 ? (
                         <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>No messages yet.</span>
-                      ) : messages.map((msg, i) => (
+                      ) : (activeTab_?.messages ?? messages).map((msg, i) => (
                         <div key={i} style={{
                           display: "flex",
                           gap: "8px",
@@ -698,20 +701,45 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                     </div>
                   </Section>
 
-                  <Section title="LONG-TERM MEMORY (PASSIVE FACTS)" icon={<Database size={12} />} defaultOpen={false}>
+                  <Section title="LONG-TERM MEMORY (PASSIVE FACTS)" icon={<Database size={12} />} badge={longTermMemories?.length ?? 0} defaultOpen={true}>
                     <p style={{ fontSize: "10.5px", color: "var(--text-secondary)", marginBottom: "8px", lineHeight: "1.5" }}>
                       Passively extracted facts from conversations. Stored in persistent memory. Injected into future prompts.
                     </p>
-                    <div style={{
-                      padding: "12px",
-                      background: "rgba(0,200,160,0.04)",
-                      border: "1px dashed rgba(0,200,160,0.15)",
-                      borderRadius: "6px",
-                      fontSize: "10.5px",
-                      color: "var(--text-muted)",
-                    }}>
-                      Long-term memory facts are managed by the backend PassiveMemoryExtractor.
-                      View the runtime logs for extracted facts.
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "300px", overflowY: "auto", paddingRight: "4px" }}>
+                      {!longTermMemories || longTermMemories.length === 0 ? (
+                        <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>No passive memories extracted yet.</span>
+                      ) : longTermMemories.map((mem, i) => (
+                        <div key={i} style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "4px",
+                          padding: "8px 10px",
+                          background: "rgba(0, 230, 180, 0.03)",
+                          borderRadius: "6px",
+                          border: "1px solid rgba(0, 230, 180, 0.08)",
+                        }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{
+                              fontSize: "8.5px", fontWeight: "bold",
+                              color: "var(--accent)",
+                              fontFamily: "var(--font-mono)",
+                              textTransform: "uppercase",
+                            }}>
+                              Source: {mem.source || "self_review"}
+                            </span>
+                            <span style={{
+                              fontSize: "8px",
+                              color: "var(--text-muted)",
+                              fontFamily: "var(--font-mono)",
+                            }}>
+                              Importance: {typeof mem.importance === 'number' ? (mem.importance * 100).toFixed(0) : "50"}%
+                            </span>
+                          </div>
+                          <span style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.72)", lineHeight: "1.55", wordBreak: "break-word" }}>
+                            {mem.content}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </Section>
 
@@ -719,7 +747,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                     {currentReasonings.length === 0 ? (
                       <span style={{ fontSize: "10.5px", color: "var(--text-muted)" }}>No reasoning recorded for this thread yet.</span>
                     ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "300px", overflowY: "auto", paddingRight: "4px" }}>
                         {currentReasonings.map((r, i) => (
                           <div key={i} style={{
                             padding: "8px 10px",
@@ -803,7 +831,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
 
                   <Section title="SYSTEM PROMPT PREVIEW" icon={<RefreshCcw size={12} />} defaultOpen={true}>
                     <div style={{ position: "relative" }}>
-                      <MonoBlock>
+                      <MonoBlock maxH={300}>
                         {systemPromptPreview}
                       </MonoBlock>
                       <button
