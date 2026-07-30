@@ -250,6 +250,10 @@ class AgentRuntime:
         self._same_tool_fail_count.clear()
         self._last_tool_error.clear()
 
+        # Reset CLASSIFY node status as done (since orchestrator routes us here)
+        if self.ws:
+            await self.ws.send_message("graph_node_status", {"node": "CLASSIFY", "status": "done"})
+
         # Reset window session for this fresh task run
         try:
             from window_session import reset_session
@@ -495,16 +499,22 @@ class AgentRuntime:
                                             "status": "running",
                                             "result": None
                                         })
+                                        await self.ws.send_message("graph_node_status", {"node": "HEAL", "status": "running"})
                                         snap = await self.observer.snapshot()
                                         screen_text = getattr(snap, "screen_text_summary", "") or ""
                                         healer = self._get_healer(model)
-                                        healed = await healer.diagnose_and_fix(
-                                            failed_tool=step.tool,
-                                            failed_args=step.args or {},
-                                            description=step.description or step.tool,
-                                            error=err_msg,
-                                            screen_summary=screen_text,
-                                        )
+                                        try:
+                                            healed = await healer.diagnose_and_fix(
+                                                failed_tool=step.tool,
+                                                failed_args=step.args or {},
+                                                description=step.description or step.tool,
+                                                error=err_msg,
+                                                screen_summary=screen_text,
+                                            )
+                                            if healer.last_usage:
+                                                await self.ws.accumulate_and_update_tokens(healer.last_usage)
+                                        finally:
+                                            await self.ws.send_message("graph_node_status", {"node": "HEAL", "status": "done"})
                                         if healed:
                                             from planner.schemas import PlanStep as PS
                                             healed_step = PS(
@@ -650,14 +660,25 @@ class AgentRuntime:
                 await self._transition(AgentState.COMPLETE)
                 # ── Fire-and-forget: learn from this successful execution ──
                 if self.memory and completed_actions:
-                    asyncio.create_task(
-                        self._get_reviewer(model).review_and_learn(
-                            goal=goal,
-                            execution_log=self.cumulative_steps,
-                            outcome="SUCCESS",
-                            memory_manager=self.memory,
-                        )
-                    )
+                    await self.ws.send_message("graph_node_status", {"node": "EXECUTE", "status": "done"})
+                    await self.ws.send_message("graph_node_status", {"node": "REVIEW", "status": "running"})
+                    reviewer = self._get_reviewer(model)
+                    
+                    async def run_review_bg():
+                        try:
+                            await reviewer.review_and_learn(
+                                goal=goal,
+                                execution_log=self.cumulative_steps,
+                                outcome="SUCCESS",
+                                memory_manager=self.memory,
+                                ws_handler=self.ws,
+                                thread_id=self.thread_id,
+                                dev_logger=self.logger,
+                            )
+                        finally:
+                            await self.ws.send_message("graph_node_status", {"node": "REVIEW", "status": "done"})
+                            
+                    asyncio.create_task(run_review_bg())
                     if message_history:
                         asyncio.create_task(
                             self._get_observer_agent(model).observe_and_store(
@@ -708,15 +729,25 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
                     source="agent",
                     importance=0.7
                 )
-                # Fire-and-forget: reviewer + behavioral observer on failure too
-                asyncio.create_task(
-                    self._get_reviewer(model).review_and_learn(
-                        goal=goal,
-                        execution_log=self.cumulative_steps,
-                        outcome=f"FAILED: {response[:100]}",
-                        memory_manager=self.memory,
-                    )
-                )
+                await self.ws.send_message("graph_node_status", {"node": "EXECUTE", "status": "done"})
+                await self.ws.send_message("graph_node_status", {"node": "REVIEW", "status": "running"})
+                reviewer = self._get_reviewer(model)
+                
+                async def run_review_bg_failed():
+                    try:
+                        await reviewer.review_and_learn(
+                            goal=goal,
+                            execution_log=self.cumulative_steps,
+                            outcome=f"FAILED: {response[:100]}",
+                            memory_manager=self.memory,
+                            ws_handler=self.ws,
+                            thread_id=self.thread_id,
+                            dev_logger=self.logger,
+                        )
+                    finally:
+                        await self.ws.send_message("graph_node_status", {"node": "REVIEW", "status": "done"})
+                        
+                asyncio.create_task(run_review_bg_failed())
             return self._format_final_response(response, self.cumulative_steps)
 
         except asyncio.CancelledError:
@@ -823,6 +854,24 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
     async def _transition(self, new_state: AgentState, **kwargs):
         self.state.transition(new_state, **kwargs)
         await self.ws.emit_state(self.state, thread_id=self.thread_id)
+
+        # Emit graph node statuses for UI parity with LangGraph
+        node_status_map = {
+            AgentState.OBSERVING: ("OBSERVE", "running"),
+            AgentState.PLANNING: ("PLAN", "running"),
+            AgentState.EXECUTING: ("EXECUTE", "running"),
+            AgentState.COMPLETE: ("REVIEW", "running"),
+        }
+        if new_state in node_status_map:
+            node, status = node_status_map[new_state]
+            await self.ws.send_message("graph_node_status", {"node": node, "status": status})
+            
+            if new_state == AgentState.PLANNING:
+                await self.ws.send_message("graph_node_status", {"node": "OBSERVE", "status": "done"})
+            elif new_state == AgentState.EXECUTING:
+                await self.ws.send_message("graph_node_status", {"node": "PLAN", "status": "done"})
+        elif new_state in (AgentState.ERROR, AgentState.IDLE):
+            await self.ws.send_message("graph_node_status", {"node": "EXECUTE", "status": "done"})
 
     def _parse_response(self, raw_output: Any) -> tuple[Optional[Plan], Optional[str]]:
         if isinstance(raw_output, Plan):

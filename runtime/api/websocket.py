@@ -83,9 +83,14 @@ class Session:
         if not tid:
             return
         try:
-            request_tokens = getattr(usage, "request_tokens", getattr(usage, "input_tokens", 0)) or 0
-            response_tokens = getattr(usage, "response_tokens", getattr(usage, "output_tokens", 0)) or 0
-            total_tokens = getattr(usage, "total_tokens", 0) or (request_tokens + response_tokens)
+            if isinstance(usage, dict):
+                request_tokens = usage.get("request_tokens", usage.get("input_tokens", usage.get("req", 0))) or 0
+                response_tokens = usage.get("response_tokens", usage.get("output_tokens", usage.get("res", 0))) or 0
+                total_tokens = usage.get("total_tokens", usage.get("tot", 0)) or (request_tokens + response_tokens)
+            else:
+                request_tokens = getattr(usage, "request_tokens", getattr(usage, "input_tokens", 0)) or 0
+                response_tokens = getattr(usage, "response_tokens", getattr(usage, "output_tokens", 0)) or 0
+                total_tokens = getattr(usage, "total_tokens", 0) or (request_tokens + response_tokens)
         except Exception:
             request_tokens = 0
             response_tokens = 0
@@ -456,6 +461,7 @@ class Session:
                             thread_id=tid,
                             message_history=message_history,
                             summarized_context=summarized_context,
+                            classification=classification,
                         )
                         final_output = res_dict.get("final_response", "Task completed.")
                         plan_steps = res_dict.get("cumulative_steps", [])
@@ -546,6 +552,7 @@ class Session:
                         assistant_response=final_output,
                         model=active_model,
                         thread_id=tid,
+                        ws_handler=self,
                     )
                 )
             except Exception:
@@ -669,6 +676,28 @@ class Session:
             import db
             threads = db.get_all_threads()
             await self.send_message("history_response", {"threads": threads})
+        elif msg_type == "get_memories":
+            import sqlite3
+            from db import DB_PATH
+            memories = []
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT content, source, timestamp, importance FROM long_term_memories ORDER BY timestamp DESC"
+                )
+                rows = cursor.fetchall()
+                conn.close()
+                for row in rows:
+                    memories.append({
+                        "content": row[0],
+                        "source": row[1],
+                        "timestamp": row[2],
+                        "importance": row[3],
+                    })
+            except Exception as e:
+                logger.error("Failed to fetch long term memories", error=str(e))
+            await self.send_message("memories_response", {"memories": memories})
         elif msg_type == "delete_thread":
             import db
             tid = payload.get("thread_id")
