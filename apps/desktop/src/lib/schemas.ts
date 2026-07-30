@@ -48,6 +48,9 @@ export const WSMessageTypeSchema = z.enum([
   "stream_end",
   "agent_state",
   "window_control",
+  "get_memories",
+  "memories_response",
+  "graph_node_status",
 ]);
 export type WSMessageType = z.infer<typeof WSMessageTypeSchema>;
 

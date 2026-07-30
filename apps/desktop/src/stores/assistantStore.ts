@@ -123,6 +123,8 @@ interface AssistantState {
   wakeWordEnabled: boolean;
   wakeWordThreshold: number;
   longTermMemoryEnabled: boolean;
+  longTermMemories: any[];
+  nodeStatuses: Record<string, "idle" | "running" | "done">;
 
   // Token tracking (Legacy mapping to active tab)
   tokenUsage: TokenUsage;
@@ -138,6 +140,8 @@ interface AssistantState {
   setVoiceState: (state: VoiceState) => void;
   setConnected: (connected: boolean) => void;
   setLongTermMemoryEnabled: (enabled: boolean) => void;
+  setLongTermMemories: (memories: any[]) => void;
+  setNodeStatus: (node: string, status: "idle" | "running" | "done", thread_id?: string) => void;
   setTranscript: (text: string | null) => void;
   
   // Tab control actions
@@ -244,11 +248,17 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     ? parseInt(localStorage.getItem("opensarthi_sound_volume") || "60", 10)
     : 60,
   longTermMemoryEnabled: true,
+  longTermMemories: [],
+  nodeStatuses: {},
   planReasonings: {},
 
   setVoiceState: (voiceState) => set({ voiceState }),
   setConnected: (isConnected) => set({ isConnected }),
   setLongTermMemoryEnabled: (longTermMemoryEnabled) => set({ longTermMemoryEnabled }),
+  setLongTermMemories: (longTermMemories) => set({ longTermMemories }),
+  setNodeStatus: (node, status, _thread_id) => set((s) => ({
+    nodeStatuses: { ...s.nodeStatuses, [node]: status }
+  })),
   setTranscript: (currentTranscript) => set({ currentTranscript }),
 
   setActiveThreadId: (id) => set((s) => {

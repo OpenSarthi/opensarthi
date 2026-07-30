@@ -256,6 +256,11 @@ export function useWebSocket(port: number | null) {
         useAssistantStore.getState().setThreads(threads);
       }),
 
+      wsClient.on("memories_response", (msg) => {
+        const { memories } = msg.payload as any;
+        useAssistantStore.getState().setLongTermMemories(memories);
+      }),
+
       wsClient.on("thread_loaded", (msg) => {
         const { thread_id, messages, token_totals } = msg.payload as any;
         const store = useAssistantStore.getState();
@@ -313,6 +318,11 @@ export function useWebSocket(port: number | null) {
       wsClient.on("intent_classified", (msg) => {
         const { classification } = msg.payload as { classification: string };
         useAssistantStore.getState().setLastClassification(classification);
+      }),
+
+      wsClient.on("graph_node_status", (msg) => {
+        const { node, status, thread_id } = msg.payload as { node: string; status: "idle" | "running" | "done"; thread_id?: string };
+        useAssistantStore.getState().setNodeStatus(node, status, thread_id);
       }),
 
       wsClient.on("token_update", (msg) => {

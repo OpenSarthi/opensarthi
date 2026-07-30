@@ -31,6 +31,7 @@ class HealerAgent:
     def __init__(self, model, deps):
         self.model = model
         self.deps = deps
+        self.last_usage = None
         # Create the pydantic-ai agent once — re-used on every diagnosis call
         try:
             from pydantic_ai import Agent as PydanticAgent
@@ -104,6 +105,7 @@ RESPONSE FORMAT (JSON object or null — nothing else):
                 self._agent.run(prompt),
                 timeout=20.0
             )
+            self.last_usage = getattr(result, "usage", None)
             raw = result.output.strip()
 
             if raw.lower() in ("null", "none", ""):

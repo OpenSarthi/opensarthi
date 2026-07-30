@@ -192,6 +192,19 @@ Load a specific past thread into the current session.
 }
 ```
 
+### `get_memories`
+
+Request the list of long-term memories / passive facts from the database.
+
+```json
+{
+  "type": "get_memories",
+  "payload": {
+    "thread_id": "8558d1f1-..."
+  }
+}
+```
+
 ---
 
 ## Server → Client Messages
@@ -549,6 +562,41 @@ Live STT transcription update.
   "payload": {
     "text": "open firefox and",
     "is_final": false
+  }
+}
+```
+
+### `memories_response`
+
+Returns the list of long-term memories retrieved from the database.
+
+```json
+{
+  "type": "memories_response",
+  "payload": {
+    "memories": [
+      {
+        "content": "User prefers using Chrome over Firefox.",
+        "source": "self_review",
+        "timestamp": 1785331365,
+        "importance": 0.8
+      }
+    ]
+  }
+}
+```
+
+### `graph_node_status`
+
+Sent when a LangGraph node transitions (runs or completes).
+
+```json
+{
+  "type": "graph_node_status",
+  "payload": {
+    "node": "PLAN",
+    "status": "running",
+    "thread_id": "8558d1f1-..."
   }
 }
 ```
