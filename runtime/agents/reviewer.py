@@ -32,6 +32,9 @@ class ReviewerAgent:
         execution_log: list,
         outcome: str,
         memory_manager,
+        ws_handler=None,
+        thread_id: str = None,
+        dev_logger=None,
     ) -> None:
         """
         Async fire-and-forget — call with asyncio.create_task().
@@ -87,11 +90,39 @@ Examples of good lessons:
 - "YouTube volume slider: use keyboard (up/down arrow keys) — mouse drag unreliable"
 - "Leafpad text editor app name on Garuda Linux is 'mousepad', not 'leafpad'"
 """
+            if dev_logger:
+                dev_logger.log("ReviewerAgent self-review lessons extraction started...")
+                dev_logger.log(f"ReviewerAgent Prompt:\n{prompt}\n")
+                try:
+                    import os
+                    filepath_prompt = os.path.join(dev_logger.run_dir, "reviewer_lessons_prompt.txt")
+                    with open(filepath_prompt, "w", encoding="utf-8") as f:
+                        f.write(prompt)
+                except Exception as e:
+                    dev_logger.log(f"Failed to log self-review prompt: {e}")
+
             result = await asyncio.wait_for(
                 reviewer.run(prompt),
                 timeout=25.0
             )
             raw = result.output.strip()
+
+            if dev_logger:
+                dev_logger.log(f"ReviewerAgent Raw Response:\n{raw}\n")
+                try:
+                    import os
+                    filepath_res = os.path.join(dev_logger.run_dir, "reviewer_lessons_response.txt")
+                    with open(filepath_res, "w", encoding="utf-8") as f:
+                        f.write(raw)
+                    dev_logger.log(f"Logged ReviewerAgent self-review lessons response. Extracted lessons: {raw}")
+                except Exception as e:
+                    dev_logger.log(f"Failed to log self-review response: {e}")
+
+            if ws_handler:
+                try:
+                    await ws_handler.accumulate_and_update_tokens(result.usage, thread_id=thread_id)
+                except Exception as e:
+                    logger.debug("Failed to accumulate reviewer tokens", error=str(e))
 
             lessons = None
             try:
