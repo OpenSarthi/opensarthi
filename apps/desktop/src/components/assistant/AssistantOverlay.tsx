@@ -4,6 +4,7 @@ import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
+import { MatrixRainBackground } from "./MatrixRainBackground";
 import { TranscriptView } from "./TranscriptView";
 import { MessageList } from "./ResponseBubble";
 import { ActionLog } from "../execution/ActionLog";
@@ -934,133 +935,142 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           {/* LEFT PANEL */}
           <div data-panel="left" style={{ width: `${leftWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
             <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>// AGENT TASKS</span>
-                <button
-                  id="json-import-btn"
-                  title="Import JSON Task Plan"
-                  onClick={onOpenJsonImport}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    width: 20, height: 20, borderRadius: 4,
-                    background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
-                    color: "rgba(255,255,255,0.5)", cursor: "pointer",
-                    padding: 0, transition: "all 0.15s",
-                  }}
-                  onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.14)"; e.currentTarget.style.color = "white"; }}
-                  onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.07)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                </button>
-              </div>
-              <div style={{ padding: "10px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                <TaskList
-                  messages={messages}
-                  voiceState={voiceState}
-                  hasActivePlan={!!currentPlan}
-                  currentPlan={currentPlan}
-                  selectedTaskId={selectedTaskId}
-                  setSelectedTaskId={setSelectedTaskId}
-                  taskRefsMap={taskRefsMap}
-                  onScrollToMessage={(msgId) => {
-                    const el = messageRefsMap.current[msgId];
-                    if (el) {
-                      el.scrollIntoView({ behavior: "smooth", block: "start" });
-                      el.style.outline = "1px solid var(--accent)";
-                      setTimeout(() => { el.style.outline = "none"; }, 1500);
-                    }
-                  }}
-                />
+              <MatrixRainBackground voiceState={voiceState} />
+              <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>// AGENT TASKS</span>
+                  <button
+                    id="json-import-btn"
+                    title="Import JSON Task Plan"
+                    onClick={onOpenJsonImport}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      width: 20, height: 20, borderRadius: 4,
+                      background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
+                      color: "rgba(255,255,255,0.5)", cursor: "pointer",
+                      padding: 0, transition: "all 0.15s",
+                    }}
+                    onMouseOver={e => { e.currentTarget.style.background = "rgba(255,255,255,0.14)"; e.currentTarget.style.color = "white"; }}
+                    onMouseOut={e => { e.currentTarget.style.background = "rgba(255,255,255,0.07)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                  </button>
+                </div>
+                <div style={{ padding: "10px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                  <TaskList
+                    messages={messages}
+                    voiceState={voiceState}
+                    hasActivePlan={!!currentPlan}
+                    currentPlan={currentPlan}
+                    selectedTaskId={selectedTaskId}
+                    setSelectedTaskId={setSelectedTaskId}
+                    taskRefsMap={taskRefsMap}
+                    onScrollToMessage={(msgId) => {
+                      const el = messageRefsMap.current[msgId];
+                      if (el) {
+                        el.scrollIntoView({ behavior: "smooth", block: "start" });
+                        el.style.outline = "1px solid var(--accent)";
+                        setTimeout(() => { el.style.outline = "none"; }, 1500);
+                      }
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
             {/* QUICK ACTIONS PANEL */}
-            <div className="hud-panel" style={{ flexShrink: 0, display: "flex", flexDirection: "column" }}>
-              <div className="hud-panel-title">// QUICK ACTIONS</div>
-              <div style={{ padding: "8px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px" }}>
-                {[
-                  { icon: "🌤️", label: "Weather", cmd: "What's the current weather like?" },
-                  { icon: "🔋", label: "Battery", cmd: "Check my battery status" },
-                  { icon: "🔍", label: "Web Search", cmd: "Search the web for: " },
-                  { icon: "📸", label: "Screenshot", cmd: "Take a screenshot and describe what's on my screen" },
-                  { icon: "⏱️", label: "5min Timer", cmd: "Set a 5 minute timer" },
-                  { icon: "💻", label: "System Info", cmd: "Show me my system information (CPU, RAM, disk usage)" },
-                  { icon: "📁", label: "Downloads", cmd: "List files in my Downloads folder" },
-                  { icon: "🌐", label: "IP Address", cmd: "What is my current IP address and network info?" },
-                ].map(({ icon, label, cmd }) => (
-                  <button
-                    key={label}
-                    title={cmd}
-                    onClick={() => {
-                      if (!isConnected) return;
-                      const text = cmd.endsWith(": ") ? cmd : cmd;
-                      if (cmd.endsWith(": ")) {
-                        // Focus the text input with the prefix
-                        setTextInput(cmd);
-                        const inputEl = document.getElementById("sarthi-text-input");
-                        if (inputEl) { (inputEl as HTMLInputElement).focus(); }
-                        return;
-                      }
-                      addMessage({ id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now() });
-                      wsClient.send("user_message", { text, source: "text", thread_id: activeThreadId });
-                      setVoiceState("processing");
-                    }}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: "3px",
-                      padding: "7px 4px",
-                      borderRadius: "var(--radius-sm)",
-                      background: "rgba(255,255,255,0.03)",
-                      border: "1px solid var(--border)",
-                      color: "var(--text-secondary)",
-                      fontSize: "9px",
-                      fontFamily: "var(--font-mono)",
-                      fontWeight: "bold",
-                      letterSpacing: "0.04em",
-                      cursor: isConnected ? "pointer" : "not-allowed",
-                      opacity: isConnected ? 1 : 0.5,
-                      transition: "all 0.15s",
-                    }}
-                    onMouseOver={e => {
-                      if (isConnected) {
-                        e.currentTarget.style.background = "rgba(var(--accent-rgb, 255,80,80), 0.1)";
-                        e.currentTarget.style.borderColor = "var(--border-accent)";
-                        e.currentTarget.style.color = "var(--accent)";
-                      }
-                    }}
-                    onMouseOut={e => {
-                      e.currentTarget.style.background = "rgba(255,255,255,0.03)";
-                      e.currentTarget.style.borderColor = "var(--border)";
-                      e.currentTarget.style.color = "var(--text-secondary)";
-                    }}
-                  >
-                    <span style={{ fontSize: "15px", lineHeight: 1 }}>{icon}</span>
-                    <span>{label.toUpperCase()}</span>
-                  </button>
-                ))}
+            <div className="hud-panel" style={{ flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <MatrixRainBackground voiceState={voiceState} />
+              <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1 }}>
+                <div className="hud-panel-title">// QUICK ACTIONS</div>
+                <div style={{ padding: "8px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px" }}>
+                  {[
+                    { icon: "🌤️", label: "Weather", cmd: "What's the current weather like?" },
+                    { icon: "🔋", label: "Battery", cmd: "Check my battery status" },
+                    { icon: "🔍", label: "Web Search", cmd: "Search the web for: " },
+                    { icon: "📸", label: "Screenshot", cmd: "Take a screenshot and describe what's on my screen" },
+                    { icon: "⏱️", label: "5min Timer", cmd: "Set a 5 minute timer" },
+                    { icon: "💻", label: "System Info", cmd: "Show me my system information (CPU, RAM, disk usage)" },
+                    { icon: "📁", label: "Downloads", cmd: "List files in my Downloads folder" },
+                    { icon: "🌐", label: "IP Address", cmd: "What is my current IP address and network info?" },
+                  ].map(({ icon, label, cmd }) => (
+                    <button
+                      key={label}
+                      title={cmd}
+                      onClick={() => {
+                        if (!isConnected) return;
+                        const text = cmd.endsWith(": ") ? cmd : cmd;
+                        if (cmd.endsWith(": ")) {
+                          // Focus the text input with the prefix
+                          setTextInput(cmd);
+                          const inputEl = document.getElementById("sarthi-text-input");
+                          if (inputEl) { (inputEl as HTMLInputElement).focus(); }
+                          return;
+                        }
+                        addMessage({ id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now() });
+                        wsClient.send("user_message", { text, source: "text", thread_id: activeThreadId });
+                        setVoiceState("processing");
+                      }}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: "3px",
+                        padding: "7px 4px",
+                        borderRadius: "var(--radius-sm)",
+                        background: "rgba(255,255,255,0.03)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text-secondary)",
+                        fontSize: "9px",
+                        fontFamily: "var(--font-mono)",
+                        fontWeight: "bold",
+                        letterSpacing: "0.04em",
+                        cursor: isConnected ? "pointer" : "not-allowed",
+                        opacity: isConnected ? 1 : 0.5,
+                        transition: "all 0.15s",
+                      }}
+                      onMouseOver={e => {
+                        if (isConnected) {
+                          e.currentTarget.style.background = "rgba(var(--accent-rgb, 255,80,80), 0.1)";
+                          e.currentTarget.style.borderColor = "var(--border-accent)";
+                          e.currentTarget.style.color = "var(--accent)";
+                        }
+                      }}
+                      onMouseOut={e => {
+                        e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                        e.currentTarget.style.borderColor = "var(--border)";
+                        e.currentTarget.style.color = "var(--text-secondary)";
+                      }}
+                    >
+                      <span style={{ fontSize: "15px", lineHeight: 1 }}>{icon}</span>
+                      <span>{label.toUpperCase()}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="hud-panel" style={{ height: "180px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
-              <div className="hud-panel-title">// AGENT STATUS & SYSTEMS</div>
-              <div style={{ padding: "12px", fontSize: "12px", color: "var(--text-secondary)", flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
-                <div>PROVIDER: <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{activeProvider}</span></div>
-                <div>LLM: <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{activeProvider === "ollama" ? activeLocalModel : activeCloudModel}</span></div>
-                <div style={{ borderTop: "1px dashed rgba(255,255,255,0.08)", marginTop: "4px", paddingTop: "4px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>TOKEN USAGE:</span>
-                    <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{tokenUsage.sessionTotalTokens}</span>
+            <div className="hud-panel" style={{ height: "180px", display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
+              <MatrixRainBackground voiceState={voiceState} />
+              <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1 }}>
+                <div className="hud-panel-title">// AGENT STATUS & SYSTEMS</div>
+                <div style={{ padding: "12px", fontSize: "12px", color: "var(--text-secondary)", flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <div>PROVIDER: <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{activeProvider}</span></div>
+                  <div>LLM: <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{activeProvider === "ollama" ? activeLocalModel : activeCloudModel}</span></div>
+                  <div style={{ borderTop: "1px dashed rgba(255,255,255,0.08)", marginTop: "4px", paddingTop: "4px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>TOKEN USAGE:</span>
+                      <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{tokenUsage.sessionTotalTokens}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
+                      <span>SESSION TOTAL:</span>
+                      <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{globalSessionCount}</span>
+                    </div>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
-                    <span>SESSION TOTAL:</span>
-                    <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{globalSessionCount}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "auto", borderTop: "1px solid var(--border)", paddingTop: "6px", marginBottom: "10px" }}>
+                    <span>VOICE INPUT:</span>
+                    <span style={{ color: voiceState !== "idle" ? "var(--accent)" : "var(--text-secondary)" }}>{voiceState.toUpperCase()}</span>
                   </div>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "auto", borderTop: "1px solid var(--border)", paddingTop: "6px", marginBottom: "10px" }}>
-                  <span>VOICE INPUT:</span>
-                  <span style={{ color: voiceState !== "idle" ? "var(--accent)" : "var(--text-secondary)" }}>{voiceState.toUpperCase()}</span>
                 </div>
               </div>
             </div>
@@ -1622,34 +1632,40 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           {/* RIGHT PANEL */}
           <div data-panel="right" style={{ width: `${rightWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
             <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <div className="hud-panel-title">// LIVE PLAN & ACTIVITY</div>
-              <div style={{ padding: "12px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
-                <TranscriptView transcript={currentTranscript} />
-                <ActionLog plan={currentPlan} selectedTaskId={selectedTaskId} messages={messages} />
+              <MatrixRainBackground voiceState={voiceState} />
+              <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+                <div className="hud-panel-title">// LIVE PLAN & ACTIVITY</div>
+                <div style={{ padding: "12px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <TranscriptView transcript={currentTranscript} />
+                  <ActionLog plan={currentPlan} selectedTaskId={selectedTaskId} messages={messages} />
+                </div>
               </div>
             </div>
-            <div className="hud-panel" style={{ padding: "12px", display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                  <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-                    {getBuildTarget()}
+            <div className="hud-panel" style={{ padding: "12px", display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0, overflow: "hidden" }}>
+              <MatrixRainBackground voiceState={voiceState} />
+              <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: "8px", flex: 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                      {getBuildTarget()}
+                    </div>
+                    <div style={{ color: "var(--accent)", fontWeight: "bold", fontSize: "14px" }}>
+                      OPENSARTHI V{pkg.version}
+                    </div>
                   </div>
-                  <div style={{ color: "var(--accent)", fontWeight: "bold", fontSize: "14px" }}>
-                    OPENSARTHI V{pkg.version}
+                  {/* Orbital loader animation in the empty space */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: "40px", minHeight: "14px", paddingRight: "4px" }}>
+                    <div className="os-orbital-loader" style={{ width: "40px", height: "14px" }} />
                   </div>
                 </div>
-                {/* Orbital loader animation in the empty space */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: "40px", minHeight: "14px", paddingRight: "4px" }}>
-                  <div className="os-orbital-loader" style={{ width: "40px", height: "14px" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border)", paddingTop: "8px", marginTop: "4px" }}>
+                  <span style={{ fontSize: "12px", fontWeight: "bold", color: isConnected ? "var(--accent)" : "var(--text-secondary)" }}>
+                    {isConnected ? "ONLINE" : "OFFLINE"}
+                  </span>
+                  <span style={{ fontSize: "14px", color: "var(--text-primary)", fontWeight: "bold", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
+                    {getFormattedTime()}
+                  </span>
                 </div>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border)", paddingTop: "8px", marginTop: "4px" }}>
-                <span style={{ fontSize: "12px", fontWeight: "bold", color: isConnected ? "var(--accent)" : "var(--text-secondary)" }}>
-                  {isConnected ? "ONLINE" : "OFFLINE"}
-                </span>
-                <span style={{ fontSize: "14px", color: "var(--text-primary)", fontWeight: "bold", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
-                  {getFormattedTime()}
-                </span>
               </div>
             </div>
           </div>

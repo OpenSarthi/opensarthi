@@ -214,6 +214,107 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
       const cx = W / 2, cy = H / 2;
       const FL = 800;
 
+      // 3D holographic wobble tilt angles (Yaw, Pitch, Roll)
+      const wobbleY = Math.sin(time * 0.95) * 0.58;  // dynamic yaw
+      const wobbleX = Math.cos(time * 0.78) * 0.44;  // dynamic pitch
+      const wobbleZ = Math.sin(time * 0.48) * 0.38;  // dynamic roll
+
+      const rotateZ = (v: Vec3, a: number): Vec3 => {
+        return {
+          x: v.x * Math.cos(a) - v.y * Math.sin(a),
+          y: v.x * Math.sin(a) + v.y * Math.cos(a),
+          z: v.z
+        };
+      };
+
+      const draw3DCircle = (
+        radius: number,
+        color: string,
+        lineWidth: number,
+        segments?: { start: number; end: number }[],
+        rotZ: number = 0
+      ) => {
+        const steps = 96;
+        const drawArc = (startAng: number, endAng: number) => {
+          ctx.beginPath();
+          let first = true;
+          const arcSteps = Math.ceil(steps * (endAng - startAng) / (Math.PI * 2));
+          for (let i = 0; i <= arcSteps; i++) {
+            const t = startAng + (i / arcSteps) * (endAng - startAng) + rotZ;
+            const pt: Vec3 = {
+              x: Math.cos(t) * radius,
+              y: Math.sin(t) * radius,
+              z: 0
+            };
+            let v = rotateZ(pt, wobbleZ);
+            v = rotateY(v, wobbleY);
+            v = rotateX(v, wobbleX);
+            const { px, py } = project(v, cx, cy, FL);
+            if (!valid(px, py)) continue;
+            if (first) {
+              ctx.moveTo(px, py);
+              first = false;
+            } else {
+              ctx.lineTo(px, py);
+            }
+          }
+          ctx.strokeStyle = color;
+          ctx.lineWidth = lineWidth;
+          ctx.stroke();
+        };
+
+        if (segments) {
+          for (const seg of segments) {
+            drawArc(seg.start, seg.end);
+          }
+        } else {
+          drawArc(0, Math.PI * 2);
+        }
+      };
+
+      const draw3DLine = (
+        p1: Vec3,
+        p2: Vec3,
+        color: string,
+        lineWidth: number
+      ) => {
+        let v1 = rotateZ(p1, wobbleZ);
+        v1 = rotateY(v1, wobbleY);
+        v1 = rotateX(v1, wobbleX);
+        let v2 = rotateZ(p2, wobbleZ);
+        v2 = rotateY(v2, wobbleY);
+        v2 = rotateX(v2, wobbleX);
+        const proj1 = project(v1, cx, cy, FL);
+        const proj2 = project(v2, cx, cy, FL);
+        if (!valid(proj1.px, proj1.py, proj2.px, proj2.py)) return;
+
+        ctx.beginPath();
+        ctx.moveTo(proj1.px, proj1.py);
+        ctx.lineTo(proj2.px, proj2.py);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
+      };
+
+      const draw3DText = (
+        textVal: string,
+        pt: Vec3,
+        color: string,
+        fontSize: number
+      ) => {
+        let v = rotateZ(pt, wobbleZ);
+        v = rotateY(v, wobbleY);
+        v = rotateX(v, wobbleX);
+        const { px, py, sc } = project(v, cx, cy, FL);
+        if (!valid(px, py)) return;
+
+        ctx.fillStyle = color;
+        ctx.font = `${Math.max(4, fontSize * sc)}px monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(textVal, px, py);
+      };
+
       /* ─── clear ─────────────────────────────────────────────────────────── */
       ctx.clearRect(0, 0, W, H);
 
@@ -278,48 +379,117 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
       if (intensity > 0.2) {
         const crossA = (intensity - 0.2) * 0.08;
         const crossR = BASE_R * 0.14 * (1 + Math.sin(time * 2.5) * 0.05);
-        ctx.strokeStyle = `rgba(${r},${g},${b},${crossA})`;
-        ctx.lineWidth = 0.7;
-        // Four arc corners + crosshair lines at center
+        const crossColor = `rgba(${r},${g},${b},${crossA})`;
+        
+        // Four arc corners in 3D
         for (let i = 0; i < 4; i++) {
           const ca = (Math.PI / 2) * i;
-          ctx.beginPath();
-          ctx.arc(cx, cy, crossR, ca + 0.2, ca + Math.PI / 2 - 0.2);
-          ctx.stroke();
+          const segments = [{ start: ca + 0.2, end: ca + Math.PI / 2 - 0.2 }];
+          draw3DCircle(crossR, crossColor, 0.7, segments);
         }
-        ctx.beginPath();
-        ctx.moveTo(cx - crossR * 0.35, cy);
-        ctx.lineTo(cx + crossR * 0.35, cy);
-        ctx.moveTo(cx, cy - crossR * 0.35);
-        ctx.lineTo(cx, cy + crossR * 0.35);
-        ctx.stroke();
+        
+        // Crosshair lines in 3D
+        const pLeft: Vec3 = { x: -crossR * 0.35, y: 0, z: 0 };
+        const pRight: Vec3 = { x: crossR * 0.35, y: 0, z: 0 };
+        const pTop: Vec3 = { x: 0, y: -crossR * 0.35, z: 0 };
+        const pBottom: Vec3 = { x: 0, y: crossR * 0.35, z: 0 };
+        
+        draw3DLine(pLeft, pRight, crossColor, 0.7);
+        draw3DLine(pTop, pBottom, crossColor, 0.7);
       }
 
       /* ─── central core glow ──────────────────────────────────────────────── */
-      const corePulse = 1 + Math.sin(time * (3 + intensity * 8)) * (0.08 + intensity * 0.18);
-      const coreR = Math.max(1, BASE_R * 0.06 * corePulse);
 
-      // Outer ambient fog — cheap single arc fill, zero gradient allocation
-      ctx.fillStyle = `rgba(${r},${g},${b},${(visualIntensity * 0.045).toFixed(4)})`;
+      // Keep outer ambient fog for depth
+      ctx.fillStyle = `rgba(${r},${g},${b},${(visualIntensity * 0.035).toFixed(4)})`;
       ctx.beginPath();
       ctx.arc(cx, cy, BASE_R * (0.52 + intensity * 0.28), 0, Math.PI * 2);
       ctx.fill();
 
-      // Mid + nucleus — shadowBlur is GPU-side, no JS object allocation per frame
-      ctx.shadowColor = `rgba(${r},${g},${b},${(visualIntensity * 0.6).toFixed(4)})`;
-      ctx.shadowBlur = coreR * 5;
-      ctx.fillStyle = `rgba(${r},${g},${b},${(visualIntensity * 0.16).toFixed(4)})`;
-      ctx.beginPath();
-      ctx.arc(cx, cy, coreR * 2.5, 0, Math.PI * 2);
-      ctx.fill();
+      // ─── 3D Rotating Hacking Disk Animation (Replaces Simple Dot/Sphere Nucleus) ───
+      const BASE_SIZE = BASE_R * 0.38;
 
-      ctx.shadowBlur = coreR * 1.5;
-      ctx.fillStyle = `rgba(${r},${g},${b},${(visualIntensity * 0.75).toFixed(4)})`;
-      ctx.beginPath();
-      ctx.arc(cx, cy, Math.max(0.5, coreR * 0.7), 0, Math.PI * 2);
-      ctx.fill();
+      // 1. Outer Jittering Ticks Ring (f2 equivalent)
+      const numTicks = 36;
+      const tickRot = time * 0.45;
+      for (let i = 0; i < numTicks; i++) {
+        const t = (i / numTicks) * Math.PI * 2 + tickRot;
+        const isMajor = i % 3 === 0;
+        const len = isMajor ? BASE_SIZE * 0.05 : BASE_SIZE * 0.025;
+        const p1: Vec3 = { x: Math.cos(t) * (BASE_SIZE * 0.55 - len), y: Math.sin(t) * (BASE_SIZE * 0.55 - len), z: 0 };
+        const p2: Vec3 = { x: Math.cos(t) * (BASE_SIZE * 0.55), y: Math.sin(t) * (BASE_SIZE * 0.55), z: 0 };
+        draw3DLine(p1, p2, `rgba(${r},${g},${b},${0.25 * visualIntensity})`, isMajor ? 1.5 : 1);
+      }
+
+      // 2. Dotted Inner Ticks (f1 equivalent)
+      const numMajorTicks = 12;
+      const jitterRot = time * 1.1 + Math.sin(time * 3.0) * 0.5;
+      for (let i = 0; i < numMajorTicks; i++) {
+        const t = (i / numMajorTicks) * Math.PI * 2 + jitterRot;
+        const p1: Vec3 = { x: Math.cos(t) * (BASE_SIZE * 0.50 - BASE_SIZE * 0.06), y: Math.sin(t) * (BASE_SIZE * 0.50 - BASE_SIZE * 0.06), z: 0 };
+        const p2: Vec3 = { x: Math.cos(t) * (BASE_SIZE * 0.50), y: Math.sin(t) * (BASE_SIZE * 0.50), z: 0 };
+        draw3DLine(p1, p2, `rgba(${r},${g},${b},${0.45 * visualIntensity})`, 2);
+      }
+
+      // 3. Thick Segmented Blue Ring (f3 equivalent)
+      const f3Segments = [
+        { start: 0.1, end: Math.PI / 2 - 0.1 },
+        { start: Math.PI / 2 + 0.1, end: Math.PI - 0.1 },
+        { start: Math.PI + 0.1, end: 3 * Math.PI / 2 - 0.1 },
+        { start: 3 * Math.PI / 2 + 0.1, end: 2 * Math.PI - 0.1 }
+      ];
+      draw3DCircle(BASE_SIZE * 0.40, `rgba(${r},${g},${b},${0.35 * visualIntensity})`, 6, f3Segments, time * -0.95);
+
+      // 4. Thin Segmented Ring (f4 equivalent)
+      const f4Segments = [
+        { start: 0.2, end: Math.PI / 2 - 0.2 },
+        { start: Math.PI / 2 + 0.2, end: Math.PI - 0.2 },
+        { start: Math.PI + 0.2, end: 3 * Math.PI / 2 - 0.2 },
+        { start: 3 * Math.PI / 2 + 0.2, end: 2 * Math.PI - 0.2 }
+      ];
+      draw3DCircle(BASE_SIZE * 0.32, `rgba(${r},${g},${b},${0.65 * visualIntensity})`, 1.5, f4Segments, time * 1.35);
+
+      // 5. Rotating Numbers Ring (f5 equivalent)
+      const numCount = 12;
+      const numRot = time * -0.55;
+      for (let i = 0; i < numCount; i++) {
+        const t = (i / numCount) * Math.PI * 2 + numRot;
+        const pt: Vec3 = { x: Math.cos(t) * (BASE_SIZE * 0.24), y: Math.sin(t) * (BASE_SIZE * 0.24), z: 0 };
+        const val = Math.floor(((time * 2 + i) % 1) * 99).toString();
+        draw3DText(val, pt, `rgba(${r},${g},${b},${0.4 * visualIntensity})`, 7);
+      }
+
+      // 6. Inner Thin Circles (f6 equivalent)
+      draw3DCircle(BASE_SIZE * 0.16, `rgba(${r},${g},${b},${0.45 * visualIntensity})`, 1);
+      draw3DCircle(BASE_SIZE * 0.13, `rgba(${r},${g},${b},${0.25 * visualIntensity})`, 1);
+
+      // 7. Rotating Thin Crosslines (f7 equivalent)
+      const crossRot = time * 1.75;
+      draw3DCircle(BASE_SIZE * 0.09, `rgba(${r},${g},${b},${0.5 * visualIntensity})`, 1.5);
+      const pX1: Vec3 = { x: Math.cos(crossRot) * (BASE_SIZE * 0.14), y: Math.sin(crossRot) * (BASE_SIZE * 0.14), z: 0 };
+      const pX2: Vec3 = { x: -Math.cos(crossRot) * (BASE_SIZE * 0.14), y: -Math.sin(crossRot) * (BASE_SIZE * 0.14), z: 0 };
+      const pY1: Vec3 = { x: Math.cos(crossRot + Math.PI/2) * (BASE_SIZE * 0.14), y: Math.sin(crossRot + Math.PI/2) * (BASE_SIZE * 0.14), z: 0 };
+      const pY2: Vec3 = { x: -Math.cos(crossRot + Math.PI/2) * (BASE_SIZE * 0.14), y: -Math.sin(crossRot + Math.PI/2) * (BASE_SIZE * 0.14), z: 0 };
+      draw3DLine(pX1, pX2, `rgba(${r},${g},${b},${0.6 * visualIntensity})`, 1);
+      draw3DLine(pY1, pY2, `rgba(${r},${g},${b},${0.6 * visualIntensity})`, 1);
+
+      // 8. Thick Pill rotating Crossbars (f8 equivalent)
+      const thickRot = time * -2.4;
+      const p1a: Vec3 = { x: Math.cos(thickRot) * (BASE_SIZE * 0.05), y: Math.sin(thickRot) * (BASE_SIZE * 0.05), z: 0 };
+      const p1b: Vec3 = { x: -Math.cos(thickRot) * (BASE_SIZE * 0.05), y: -Math.sin(thickRot) * (BASE_SIZE * 0.05), z: 0 };
+      const p2a: Vec3 = { x: Math.cos(thickRot + Math.PI/2) * (BASE_SIZE * 0.05), y: Math.sin(thickRot + Math.PI/2) * (BASE_SIZE * 0.05), z: 0 };
+      const p2b: Vec3 = { x: -Math.cos(thickRot + Math.PI/2) * (BASE_SIZE * 0.05), y: -Math.sin(thickRot + Math.PI/2) * (BASE_SIZE * 0.05), z: 0 };
+      
+      // Draw glow under the thick crossbars
+      ctx.shadowColor = `rgba(${r},${g},${b},${(visualIntensity * 0.65).toFixed(4)})`;
+      ctx.shadowBlur = 10;
+      draw3DLine(p1a, p1b, `rgba(${r},${g},${b},${0.8 * visualIntensity})`, 5);
+      draw3DLine(p2a, p2b, `rgba(${r},${g},${b},${0.8 * visualIntensity})`, 5);
       ctx.shadowBlur = 0;
       ctx.shadowColor = "transparent";
+
+      // 9. Core dot (f9 equivalent)
+      draw3DCircle(BASE_SIZE * 0.015, `rgba(${r},${g},${b},${0.9 * visualIntensity})`, 2);
 
       /* ─── rings + particles ──────────────────────────────────────────────── */
       for (let ri = 0; ri < RINGS.length; ri++) {
