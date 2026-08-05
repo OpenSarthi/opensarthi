@@ -1070,3 +1070,23 @@ button:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--border)
   transform: scale(0.99);
   pointer-events: none;
 }
+
+/* Prevent background scrollbars from overlapping/bleeding through overlays/popups */
+#app-container.blurred-layout * {
+  scrollbar-width: none !important;
+}
+#app-container.blurred-layout *::-webkit-scrollbar {
+  display: none !important;
+}
+
+/* Hide background panel scrollbars when the bottom console overlay is open to avoid WebKitGTK native scrollbar overlay bleeding bugs */
+body.console-open .tasks-scroll-container,
+body.console-open .chat-scroll-container,
+body.console-open .activity-scroll-container {
+  scrollbar-width: none !important;
+}
+body.console-open .tasks-scroll-container::-webkit-scrollbar,
+body.console-open .chat-scroll-container::-webkit-scrollbar,
+body.console-open .activity-scroll-container::-webkit-scrollbar {
+  display: none !important;
+}

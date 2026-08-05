@@ -61,6 +61,7 @@ App.tsx  (Root: modal state, tab management, onboarding gate)
 │   ├── ActionLog            (right panel: tool log + cumulative plan + token stats)
 │   ├── VoiceButton          (mic toggle + Waveform animation)
 │   ├── TranscriptView       (live STT overlay)
+│   ├── RuntimeConsole.tsx   (Sidecar log terminal)
 │   └── OverlayIdleView      (compact 280×560 strip in overlay mode)
 │
 ├── PermissionDialog         (tool approval popup with permanent grant option)
@@ -551,13 +552,36 @@ apps/desktop/
 
 ---
 
-## 15. UI Backlog
+## 15. Live Sidecar Log Terminal & Modular Console Overlay
+
+To expose real-time backend startup and execution sequences to developers (especially during Python virtualenv creation and pip installations), stdout/stderr outputs from the Python runtime are piped and displayed inside a full-width bottom logcat.
+
+### Log Piping Flow
+1. **Rust Sidecar (`sidecar.rs`)**: Emits native Tauri events `runtime:stdout` and `runtime:stderr` as chunks are read from the spawned child process.
+2. **App Entry (`App.tsx`)**: Listens to Tauri events and accumulates incoming lines in a `useRef` queue buffer.
+3. **Throttled Batching**: To prevent React rendering queues from freezing during high-throughput console output (such as `pip` installations), log lines are flushed in a single batch to the Zustand store every **120ms**.
+4. **Zustand Store (`assistantStore.ts`)**: Clips the logs array to the last **150 lines** to maintain a lightweight DOM footprint.
+
+### Component Design (`RuntimeConsole.tsx`)
+- **Visual Presentation**: Slide-up cyberpunk dashboard positioned absolutely at the bottom edge. Styled with an opaque background (`#08080a`) and aligned to `left: -12px, right: -12px, bottom: -12px` to offset layout padding.
+- **Draggable Height**: A thin neon handle at the top edge allows row-resize adjustments (bounds constrained between `120px` and `65%` of screen height).
+- **Auto-Toggle Transition**: Automatically slides open during startup (`!isConnected`) to show bootstrap logs, and auto-collapses upon successful connection. It can be manually toggled via the `[LOGS]` button in the top bar.
+- **Onboarding Guard**: Completely hidden when onboarding is active (`!onboardingCompleted`) to avoid overlaying onboarding cards.
+- **Copy logs**: Header bar includes a `[ COPY LOGS ]` button providing instant clipboard access.
+
+### WebKitGTK Stacking Fixes
+To resolve native scrollbar overlay clipping bugs in WebKitGTK under Linux (where scrollbars bleed on top of overlays):
+- **Popup/Modal Blur**: Adding `.blurred-layout` hides scrollbars on all underlying elements inside the app container.
+- **Console Open Class**: Toggles `.console-open` on the document body when the bottom console is open. Associated CSS hides the scrollbars of background layout panels while keeping them fully scrollable via mouse wheel.
+
+---
+
+## 16. UI Backlog
 
 Backend features with no frontend UI yet:
 
 | Feature | Backend Event | Status |
 |---------|--------------|--------|
 | Intent badge in UI | `intent_classified` | Store captured; no badge shown |
-| Live shell console | `shell_output` | Lines captured in store; no console UI |
 | Pause/Resume buttons | `pause_execution`/`resume_execution` | Backend works; no UI buttons |
 | Read Aloud on past messages | `speak_text` manual flag | TTS works on new responses; no button on history |

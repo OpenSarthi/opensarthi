@@ -13,6 +13,8 @@ export const APP_VERSION = "0.1.0";
 export const TAURI_EVENTS = {
   RUNTIME_PORT_READY: "runtime:port-ready",
   RUNTIME_CRASHED:    "runtime:crashed",
+  RUNTIME_STDOUT:     "runtime:stdout",
+  RUNTIME_STDERR:     "runtime:stderr",
   AUDIO_STATE:        "audio:state",
   HOTKEY_TRIGGER:     "hotkey:trigger",
 } as const;

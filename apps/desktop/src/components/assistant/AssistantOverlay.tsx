@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal } from "lucide-react";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
@@ -10,9 +10,11 @@ import { MessageList } from "./ResponseBubble";
 import { ActionLog } from "../execution/ActionLog";
 import { TaskList } from "./TaskList";
 import { OverlayIdleView } from "./OverlayIdleView";
+import { RuntimeConsole } from "./RuntimeConsole";
 import { useAssistantStore } from "../../stores/assistantStore";
 import { wsClient } from "../../lib/ws";
 import pkg from "../../../package.json";
+
 
 const getBuildTarget = (): string => {
   const userAgent = window.navigator.userAgent.toLowerCase();
@@ -41,6 +43,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const [textInput, setTextInput] = useState("");
   const [statusIdx, setStatusIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [showLogsPanel, setShowLogsPanel] = useState(false);
 
   const {
     voiceState, isConnected, currentTranscript,
@@ -51,6 +54,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     tabs, activeThreadId, addTab, removeTab, setActiveThreadId,
     userOverrodeMinimize, setUserOverrodeMinimize,
     streamingResponse,
+    onboardingCompleted,
   } = useAssistantStore();
 
   const modelKey = activeProvider === "ollama" || activeProvider === "local" ? activeLocalModel : activeCloudModel;
@@ -103,6 +107,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   // Leetcode-style Draggable Panel Resizing State
   const [leftWidth, setLeftWidth] = useState(260); // Default Left panel width in px
   const [rightWidth, setRightWidth] = useState(240); // Default Right panel width in px
+  const [consoleHeight, setConsoleHeight] = useState(220); // Default Console panel height in px
+  const isDraggingConsole = useRef(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const lastContainerWidth = useRef<number | null>(null);
@@ -155,6 +161,28 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     document.addEventListener("mousemove", resizeRight);
     document.addEventListener("mouseup", stopResizeRight);
   }, [resizeRight, stopResizeRight]);
+
+  const resizeConsole = useCallback((e: MouseEvent) => {
+    if (!isDraggingConsole.current) return;
+    if (!containerRef.current) return;
+    const containerHeight = containerRef.current.clientHeight;
+    const maxAllowed = Math.floor(containerHeight * 0.65);
+    const newHeight = Math.max(120, Math.min(maxAllowed, containerHeight - e.clientY));
+    setConsoleHeight(newHeight);
+  }, []);
+
+  const stopResizeConsole = useCallback(() => {
+    isDraggingConsole.current = false;
+    document.removeEventListener("mousemove", resizeConsole);
+    document.removeEventListener("mouseup", stopResizeConsole);
+  }, [resizeConsole]);
+
+  const startResizeConsole = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingConsole.current = true;
+    document.addEventListener("mousemove", resizeConsole);
+    document.addEventListener("mouseup", stopResizeConsole);
+  }, [resizeConsole, stopResizeConsole]);
 
   // Handle window resizing to dynamically constrain sidepanels
   useEffect(() => {
@@ -216,8 +244,10 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
       document.removeEventListener("mouseup", stopResizeLeft);
       document.removeEventListener("mousemove", resizeRight);
       document.removeEventListener("mouseup", stopResizeRight);
+      document.removeEventListener("mousemove", resizeConsole);
+      document.removeEventListener("mouseup", stopResizeConsole);
     };
-  }, [resizeLeft, stopResizeLeft, resizeRight, stopResizeRight]);
+  }, [resizeLeft, stopResizeLeft, resizeRight, stopResizeRight, resizeConsole, stopResizeConsole]);
 
 
   const lastSentSourceRef = useRef<"text" | "voice">("text");
@@ -393,6 +423,27 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, currentTranscript, voiceState, isTaskRunning, streamingResponse]);
 
+  // Auto-collapse console when connected, auto-expand during startup connection
+  useEffect(() => {
+    if (!onboardingCompleted) {
+      setShowLogsPanel(false);
+      return;
+    }
+    if (!isConnected) {
+      setShowLogsPanel(true);
+    } else {
+      setShowLogsPanel(false);
+    }
+  }, [isConnected, onboardingCompleted]);
+
+  // Toggle console-open body class for WebKitGTK native scrollbar clipping fixes
+  useEffect(() => {
+    document.body.classList.toggle("console-open", showLogsPanel);
+    return () => {
+      document.body.classList.remove("console-open");
+    };
+  }, [showLogsPanel]);
+
   // Handle stop task action (replaces send button when task is running)
   const handleStopTask = useCallback(() => {
     wsClient.send("cancel_execution", { thread_id: activeThreadId });
@@ -406,13 +457,16 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   }, [isTaskRunning]);
 
   const STATUS_LINES = [
-    "SYSTEM READY",
-    "NEURAL CORE ONLINE",
-    "ALL SYSTEMS NOMINAL",
-    "AWAITING YOUR COMMAND",
-    "AGENT PROTOCOLS ACTIVE",
-    "VOICE INTERFACE STANDBY",
-    "AI ENGINE INITIALIZED",
+    "AWAITING INSTRUCTION STREAM",
+    "NEURAL CORE PROTOCOLS ONLINE",
+    "SEMANTIC ENGINE ACTIVE",
+    "VOICE PROCESSING PIPELINE STANDBY",
+    "CONTEXT VECTOR LAYER READY",
+    "AGENT ORCHESTRATOR NOMINAL",
+    "SYSTEM OK // AWAITING COMMAND",
+    "MCP PLUGIN REGISTRY SYNCHRONIZED",
+    "KNOWLEDGE GRAPH STABLE",
+    "COGNITIVE STACK ACTIVE",
   ];
 
   useEffect(() => {
@@ -710,6 +764,15 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             <span style={{ color: "var(--text-secondary)" }}>{getFormattedTime()}</span>
           </div>
         </div>
+        {/* Collapsible Absolute Bottom Console Overlay (Full Width of App) */}
+        {onboardingCompleted && (
+          <RuntimeConsole 
+            isOpen={showLogsPanel} 
+            onClose={() => setShowLogsPanel(false)} 
+            height={consoleHeight}
+            onResizeStart={startResizeConsole}
+          />
+        )}
       </div>
     );
   }
@@ -722,6 +785,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         background: "var(--bg-primary)",
         padding: "12px",
         gap: "12px",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
       {/* ─── Top Bar ─── */}
@@ -780,6 +845,34 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             </motion.div>
             {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>New Thread</span>}
           </motion.button>
+
+          {/* Toggle Console Logs Button */}
+          <motion.button
+            onClick={() => setShowLogsPanel(!showLogsPanel)}
+            title="System Console Logs"
+            whileHover={{ scale: 1.05, color: showLogsPanel ? "var(--accent)" : "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              height: "32px",
+              width: isMaximized ? "auto" : "32px",
+              padding: isMaximized ? "0 12px" : "0",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: isMaximized ? "6px" : "0",
+              borderRadius: "4px",
+              background: showLogsPanel ? "var(--accent-glow)" : "rgba(0,0,0,0.3)",
+              border: `1px solid ${showLogsPanel ? "var(--border-accent)" : "var(--border)"}`,
+              color: showLogsPanel ? "var(--accent)" : "var(--text-secondary)",
+              transition: "all 0.2s"
+            }}
+          >
+            <motion.div whileHover={{ scale: 1.15 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Terminal size={14} />
+            </motion.div>
+            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Logs</span>}
+          </motion.button>
+
 
           {/* History Button */}
           <motion.button
@@ -956,7 +1049,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                   </button>
                 </div>
-                <div style={{ padding: "10px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                <div className="tasks-scroll-container" style={{ padding: "10px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                   <TaskList
                     messages={messages}
                     voiceState={voiceState}
@@ -1270,7 +1363,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             {/* Slow scan line sweep across the panel */}
             <div className="os-scan-line" />
 
-            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 16px 40px", zIndex: 1 }} ref={chatScrollRef}>
+            <div className="chat-scroll-container" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 16px 40px", zIndex: 1 }} ref={chatScrollRef}>
               {messages.length === 0 && (
                 <div style={{
                   height: "100%", display: "flex", flexDirection: "column",
@@ -1308,7 +1401,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                         // {STATUS_LINES[statusIdx]}
                       </span>
                     ) : (
-                      <span className="os-proc-dots">// INITIALIZING PROTOCOL</span>
+                      <span className="os-proc-dots">// CONNECTING TO RUNTIME, HOLD ON...</span>
                     )}
                   </div>
 
@@ -1649,7 +1742,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               <MatrixRainBackground voiceState={voiceState} />
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
                 <div className="hud-panel-title">// LIVE PLAN & ACTIVITY</div>
-                <div style={{ padding: "12px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div className="activity-scroll-container" style={{ padding: "12px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
                   <TranscriptView transcript={currentTranscript} />
                   <ActionLog plan={currentPlan} selectedTaskId={selectedTaskId} messages={messages} />
                 </div>
@@ -1685,6 +1778,15 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           </div>
         </motion.div>
       </AnimatePresence>
+      {/* Collapsible Absolute Bottom Console Overlay (Full Width of App) */}
+      {onboardingCompleted && (
+        <RuntimeConsole 
+          isOpen={showLogsPanel} 
+          onClose={() => setShowLogsPanel(false)} 
+          height={consoleHeight}
+          onResizeStart={startResizeConsole}
+        />
+      )}
     </div>
   );
 }

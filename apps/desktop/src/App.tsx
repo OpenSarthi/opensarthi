@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { AssistantOverlay } from "./components/assistant/AssistantOverlay";
 import { PermissionDialog } from "./components/permissions/PermissionDialog";
 import { InputDialog } from "./components/permissions/InputDialog";
@@ -20,6 +20,7 @@ import { AnimatePresence } from "framer-motion";
 export default function App() {
   const [runtimePort, setRuntimePort] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const logQueue = useRef<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [showMcpSettings, setShowMcpSettings] = useState(false);
@@ -76,6 +77,27 @@ export default function App() {
   useTauriEvent<number>(TAURI_EVENTS.RUNTIME_PORT_READY, useCallback((port) => {
     setRuntimePort(port);
   }, []));
+
+  // Listen for live stdout/stderr logs from the sidecar and queue them
+  useTauriEvent<string>(TAURI_EVENTS.RUNTIME_STDOUT, useCallback((line) => {
+    logQueue.current.push(`[OUT] ${line}`);
+  }, []));
+
+  useTauriEvent<string>(TAURI_EVENTS.RUNTIME_STDERR, useCallback((line) => {
+    logQueue.current.push(`[ERR] ${line}`);
+  }, []));
+
+  // Batch flush logs to Zustand store every 120ms to prevent main thread blocking
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (logQueue.current.length > 0) {
+        const batch = [...logQueue.current];
+        logQueue.current = [];
+        useAssistantStore.getState().addSidecarLogs(batch);
+      }
+    }, 120);
+    return () => clearInterval(interval);
+  }, []);
 
   // Connect WebSocket once port is known
   useWebSocket(runtimePort);

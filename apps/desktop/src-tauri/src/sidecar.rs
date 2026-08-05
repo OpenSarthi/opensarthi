@@ -34,6 +34,7 @@ pub fn spawn(app: &AppHandle) {
                     let line = String::from_utf8_lossy(&line);
                     let line = line.trim();
                     info!("Sidecar [stdout]: {}", line);
+                    let _ = app_clone.emit("runtime:stdout", line.to_string());
                     
                     // Look for the port announcement from the FastAPI server
                     if line.starts_with("PORT:") {
@@ -46,7 +47,9 @@ pub fn spawn(app: &AppHandle) {
                 }
                 CommandEvent::Stderr(line) => {
                     let line = String::from_utf8_lossy(&line);
-                    warn!("Sidecar [stderr]: {}", line.trim());
+                    let line = line.trim();
+                    warn!("Sidecar [stderr]: {}", line);
+                    let _ = app_clone.emit("runtime:stderr", line.to_string());
                 }
                 CommandEvent::Terminated(payload) => {
                     error!("Sidecar terminated with payload: {:?}", payload);

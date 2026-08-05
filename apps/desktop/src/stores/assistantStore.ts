@@ -198,6 +198,10 @@ interface AssistantState {
   planReasonings: Record<string, PlanReasoning[]>; // threadId → list of reasoning objects
   addPlanReasoning: (reasoning: PlanReasoning) => void;
   clearPlanReasonings: (thread_id: string) => void;
+  // Sidecar runtime logs
+  sidecarLogs: string[];
+  addSidecarLogs: (lines: string[]) => void;
+  clearSidecarLogs: () => void;
 }
 
 export const useAssistantStore = create<AssistantState>((set) => ({
@@ -758,4 +762,14 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     delete updated[thread_id];
     return { planReasonings: updated };
   }),
+  sidecarLogs: [],
+  addSidecarLogs: (lines) => set((state) => {
+    const time = new Date().toLocaleTimeString([], { hour12: false });
+    const formattedLines = lines.map(line => `[${time}] ${line}`);
+    const merged = [...state.sidecarLogs, ...formattedLines];
+    return {
+      sidecarLogs: merged.slice(-150)
+    };
+  }),
+  clearSidecarLogs: () => set({ sidecarLogs: [] }),
 }));
