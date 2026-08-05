@@ -677,6 +677,11 @@ button:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--border)
   0%, 100% { box-shadow: 0 0 12px var(--accent-glow); border-color: var(--accent-dim); }
   50%       { box-shadow: 0 0 28px var(--accent-glow), 0 0 48px var(--accent-glow-lg); border-color: var(--accent); }
 }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 @keyframes waveform-bar {
   0%, 100% { transform: scaleY(0.2); }
   50%       { transform: scaleY(1);   }

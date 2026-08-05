@@ -2,6 +2,11 @@ import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronRight, Sparkles, User, MessageSquare, X, Wrench } from "lucide-react";
 import { useAssistantStore } from "../../stores/assistantStore";
+import {
+  PROVIDER_MODELS,
+  OLLAMA_ALL_SUGGESTIONS,
+  formatModelLabel,
+} from "../../lib/models";
 
 const SKILLS = [
   { id: "general",           icon: "🤖", label: "General Assistant",    desc: "Balanced chat & everyday help" },
@@ -20,45 +25,6 @@ const SKILLS = [
 
 const ALL_SKILL_IDS = SKILLS.map(s => s.id);
 
-const PROVIDER_MODELS: Record<string, { value: string; label: string }[]> = {
-  google: [
-    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Fast)" },
-    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Smart)" },
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-    { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
-  ],
-  openai: [
-    { value: "gpt-4o", label: "GPT-4o (Latest)" },
-    { value: "gpt-4o-mini", label: "GPT-4o Mini (Fast)" },
-    { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
-    { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
-  ],
-  anthropic: [
-    { value: "claude-opus-4-5", label: "Claude Opus 4.5" },
-    { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5 (Balanced)" },
-    { value: "claude-haiku-3-5", label: "Claude Haiku 3.5 (Fast)" },
-    { value: "claude-3-opus-20240229", label: "Claude 3 Opus" },
-  ],
-  groq: [
-    { value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (Versatile)" },
-    { value: "llama-3.1-8b-instant", label: "Llama 3.1 8B (Instant)" },
-    { value: "groq/compound", label: "Groq Compound" },
-    { value: "groq/compound-mini", label: "Groq Compound Mini" },
-    { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout 17B" },
-  ],
-  openrouter: [
-    { value: "meta-llama/llama-3.3-70b-instruct:free", label: "Llama 3.3 70B (Free)" },
-    { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-    { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-    { value: "deepseek/deepseek-chat", label: "DeepSeek V3" },
-  ],
-  ollama: [
-    { value: "llama3", label: "Llama 3 (Local)" },
-    { value: "phi3", label: "Phi 3 (Local)" },
-    { value: "mistral", label: "Mistral (Local)" },
-    { value: "custom", label: "Custom (Type below...)" },
-  ]
-};
 
 const selectStyle: React.CSSProperties = {
   width: "100%",
@@ -115,8 +81,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
   // Agent Settings local states
   const [provider, setProvider] = useState("google");
   const [cloudModel, setCloudModel] = useState("gemini-2.5-flash");
-  const [localModel, setLocalModel] = useState("llama3");
-  const [customLocalModel, setCustomLocalModel] = useState("");
+  const [localModel, setLocalModel] = useState(OLLAMA_ALL_SUGGESTIONS[0]?.value || "llama3.1:8b");
   const [apiKey, setApiKey] = useState("");
 
   const toggle = useCallback((id: string) => {
@@ -146,7 +111,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
 
   const handleFinish = () => {
     const skills = selected.size > 0 ? Array.from(selected) : ALL_SKILL_IDS;
-    const finalLocalModel = localModel === "custom" ? customLocalModel.trim() : localModel;
+    const finalLocalModel = localModel.trim() || "llama3.1:8b";
     onComplete({
       skills,
       userName: userName.trim(),
@@ -630,12 +595,10 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                           whileTap={{ scale: 0.98 }}
                           onClick={() => {
                             setProvider(p.id);
-                            // Auto select first model
+                            // Auto select first model from shared registry
                             const models = PROVIDER_MODELS[p.id] || [];
-                            if (models.length > 0) {
-                              if (p.id === "ollama") setLocalModel(models[0].value);
-                              else setCloudModel(models[0].value);
-                            }
+                            if (p.id === "ollama") setLocalModel(OLLAMA_ALL_SUGGESTIONS[0]?.value || "llama3.1:8b");
+                            else if (models.length > 0) setCloudModel(models[0].value);
                           }}
                           style={{
                             display: "flex",
@@ -674,31 +637,30 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                   {provider === "ollama" ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                       <select
-                        value={localModel}
-                        onChange={(e) => setLocalModel(e.target.value)}
+                        value={OLLAMA_ALL_SUGGESTIONS.some(m => m.value === localModel) ? localModel : "__custom__"}
+                        onChange={(e) => { if (e.target.value !== "__custom__") setLocalModel(e.target.value); }}
                         style={selectStyle}
                       >
-                        {PROVIDER_MODELS.ollama.map((m) => (
+                        {OLLAMA_ALL_SUGGESTIONS.map((m) => (
                           <option key={m.value} value={m.value} style={{ background: "#0a0a12", color: "#fff" }}>
-                            {m.label}
+                            {formatModelLabel(m)}
                           </option>
                         ))}
+                        <option value="__custom__" style={{ background: "#0a0a12", color: "rgba(255,255,255,0.5)" }}>── Custom (type below) ──</option>
                       </select>
-                      {localModel === "custom" && (
-                        <input
-                          placeholder="ENTER LOCAL MODEL IDENTIFIER (e.g. llama3.1:8b)"
-                          value={customLocalModel}
-                          onChange={(e) => setCustomLocalModel(e.target.value)}
-                          style={{
-                            width: "100%", padding: "12px 16px",
-                            background: "rgba(255,255,255,0.05)",
-                            border: "1px solid rgba(255,255,255,0.12)",
-                            borderRadius: 10, color: "white", fontSize: 13,
-                            outline: "none", boxSizing: "border-box",
-                            fontFamily: "inherit",
-                          }}
-                        />
-                      )}
+                      <input
+                        placeholder="CUSTOM MODEL (e.g. llama3.1:8b, qwen2.5-coder:7b)"
+                        value={localModel}
+                        onChange={(e) => setLocalModel(e.target.value)}
+                        style={{
+                          width: "100%", padding: "12px 16px",
+                          background: "rgba(255,255,255,0.05)",
+                          border: "1px solid rgba(255,255,255,0.12)",
+                          borderRadius: 10, color: "white", fontSize: 13,
+                          outline: "none", boxSizing: "border-box",
+                          fontFamily: "inherit",
+                        }}
+                      />
                     </div>
                   ) : (
                     <select
@@ -708,7 +670,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                     >
                       {(PROVIDER_MODELS[provider] || []).map((m) => (
                         <option key={m.value} value={m.value} style={{ background: "#0a0a12", color: "#fff" }}>
-                          {m.label}
+                          {formatModelLabel(m)}
                         </option>
                       ))}
                     </select>

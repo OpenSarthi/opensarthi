@@ -209,20 +209,23 @@ Settings organized in four tabs. Opening settings always reflects the currently 
 ### Tab 1 — AI Settings
 
 - **Provider** dropdown: Ollama · Google · OpenAI · Anthropic · Groq · OpenRouter
-- **Model** dropdown: pre-populated curated models per provider; currently selected model is always shown
+- **Model** selection: Pre-populated curated models with capability tags (⚡ fast, 🧠 reasoning, 💻 coding, 🛠 tools, 👁 vision, 💰 budget, 🦙 local). If a provider supports dynamic model fetching (Ollama, OpenAI, OpenRouter), a ↻ **Refresh** button is shown to dynamically fetch live models through the `/models` backend proxy.
 - **API Key** field: masked; left blank = key unchanged on backend
 - **"Save AI Details"** button: saves only provider/model/key, emits `settings_sync`
 
-**Curated Model Lists:**
+**Curated Model Lists & Dynamic Fetching:**
 
-| Provider | Models |
-|----------|--------|
-| Google | gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash, gemini-1.5-pro |
-| OpenAI | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo |
-| Anthropic | claude-opus-4-5, claude-sonnet-4-5, claude-haiku-3-5 |
-| Groq | llama-3.3-70b-versatile, llama-3.1-8b-instant, qwen/qwen3-32b, llama-4-scout |
-| OpenRouter | gpt-4o, claude-opus-4, gemini-2.5-pro, deepseek-chat, mistral-large |
-| Ollama | Free-form text input |
+| Provider | Curated Models (Static Fallback) | Dynamic Discovery |
+|----------|---------------------------------|-------------------|
+| Google | gemini-2.5-flash, gemini-2.5-pro, gemini-2.5-flash-lite, gemini-2.0-flash, gemini-1.5-pro | No |
+| OpenAI | gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.4-mini, gpt-5.4-nano, gpt-oss-120b/20b | Yes (Chat models) |
+| Anthropic | claude-opus-4-1, claude-sonnet-4, claude-haiku-4, sonnet-latest, opus-latest | No |
+| Groq | llama-3.3-70b-versatile, llama-3.1-8b-instant, llama-4-scout, qwen-27b, deepseek-r1-distill, gpt-oss-120b/20b, compound, compound-mini | No |
+| OpenRouter | claude-sonnet-4, claude-opus-4.1, gpt-5.6-terra/luna, gemini-2.5-pro/flash, deepseek-v3, deepseek-r1, qwen3-coder, grok-4, kimi-k2, glm-5.2 | Yes (Full list) |
+| Ollama | 12 Curated Suggestions (Gemma 3, Phi-4, Llama 3.2, Qwen 2.5, DeepSeek R1, Mistral, Qwen3, Llama 3.3) | Yes (Local tags) |
+
+*Note: For Ollama, users can select from fetched local models, size suggestions, or type a custom model identifier using the free-form text input.*
+
 
 ### Tab 2 — Voice & Wake Word
 

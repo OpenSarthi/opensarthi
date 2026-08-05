@@ -265,8 +265,10 @@ export default function App() {
             currentSoundEnabled={soundEnabled}
             currentSoundVolume={soundVolume}
             currentLongTermMemoryEnabled={longTermMemoryEnabled}
+            runtimePort={runtimePort}
             onSave={handleSaveSettings}
           />
+
         )}
         {showHistory && (
           <HistoryView

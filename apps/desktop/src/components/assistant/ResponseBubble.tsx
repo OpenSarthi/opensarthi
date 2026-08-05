@@ -833,18 +833,36 @@ const EMPTY_REASONINGS: any[] = [];
 export function ResponseBubble({ message }: ResponseBubbleProps) {
   const isUser = message.role === "user";
   const planReasonings = useAssistantStore((s) => s.planReasonings[s.activeThreadId] || EMPTY_REASONINGS);
+  const lastStreamedMessageId = useAssistantStore((s) => s.lastStreamedMessageId);
   const [displayedContent, setDisplayedContent] = useState("");
   const [copied, setCopied] = useState(false);
+  const hasAnimated = React.useRef(false);
 
   useEffect(() => {
     if (isUser) {
       setDisplayedContent(message.content);
+      hasAnimated.current = true;
+      return;
+    }
+
+    if (hasAnimated.current) {
+      setDisplayedContent(message.content);
+      return;
+    }
+
+    // If this message was just received from a streaming session, the user
+    // already watched it appear token-by-token in the streaming bubble.
+    // Skip the typewriter entirely and show the final formatted content now.
+    if (message.id === lastStreamedMessageId) {
+      setDisplayedContent(message.content);
+      hasAnimated.current = true;
       return;
     }
 
     const ageMs = Date.now() - message.timestamp;
     if (ageMs > 5000) {
       setDisplayedContent(message.content);
+      hasAnimated.current = true;
       return;
     }
 
@@ -866,6 +884,7 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
       if (currentIdx >= totalTokens) {
         clearInterval(timer);
         setDisplayedContent(message.content);
+        hasAnimated.current = true;
       } else {
         const remainingTokens = totalTokens - currentIdx;
         const remainingTicks = Math.max(1, maxTicks - tick);
@@ -885,7 +904,9 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
     }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [message.content, message.timestamp, isUser]);
+  }, [message.content, message.timestamp, isUser, message.id, lastStreamedMessageId]);
+
+
 
   const { thinking, response, isComplete } = parseThinking(displayedContent);
 

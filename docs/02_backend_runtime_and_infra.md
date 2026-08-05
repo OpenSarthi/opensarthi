@@ -9,7 +9,7 @@
 ```
 FastAPI (main.py)
 ├── WebSocket endpoint: /ws          (api/websocket.py)
-├── HTTP endpoints: /health, /port   (main.py)
+├── HTTP endpoints: /health, /port, /models (main.py)
 └── CORS: all origins (localhost only in production)
                 │
      ┌──────────┴───────────────┐
@@ -51,6 +51,7 @@ AgentRuntime              LangGraph Graph
 | `/` | GET | Health check |
 | `/health` | GET | Returns `{status: "ok"}` |
 | `/port` | GET | Returns `{port: <n>}` |
+| `/models` | GET | Proxies model discovery for Ollama, OpenAI, and OpenRouter |
 
 ### CORS Policy
 

@@ -1428,42 +1428,56 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 </div>
               )}
 
-              {/* Live streaming bubble — shown while AI is generating a response */}
-              {streamingResponse && (
-                <div style={{
-                  display: "flex",
-                  justifyContent: "flex-start",
-                  marginBottom: "8px",
-                  padding: "0 4px",
-                }}>
-                  <div style={{
-                    maxWidth: "85%",
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(var(--accent-rgb, 0,200,120), 0.25)",
-                    borderRadius: "12px 12px 12px 3px",
-                    padding: "10px 14px",
-                    fontSize: "13px",
-                    color: "var(--text-primary)",
-                    lineHeight: "1.55",
-                    position: "relative",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}>
+              {/* Live streaming bubble — shown while AI is generating a response.
+                  When stream_end fires, ResponseBubble takes over seamlessly
+                  (without re-running its own typewriter animation). */}
+              <AnimatePresence>
+                {streamingResponse && (
+                  <motion.div
+                    key="streaming-bubble"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                    transition={{ duration: 0.2 }}
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-start",
+                      marginBottom: "8px",
+                      padding: "0 4px",
+                    }}
+                  >
                     <div style={{
-                      position: "absolute",
-                      top: "8px",
-                      right: "10px",
-                      width: "6px",
-                      height: "6px",
-                      borderRadius: "50%",
-                      background: "var(--accent)",
-                      boxShadow: "0 0 6px var(--accent)",
-                      animation: "pulse 1s ease-in-out infinite",
-                    }} />
-                    {streamingResponse}
-                  </div>
-                </div>
-              )}
+                      maxWidth: "85%",
+                      background: "rgba(0,0,0,0.12)",
+                      border: "1px solid var(--border-accent)",
+                      borderRadius: "var(--radius-sm) var(--radius-lg) var(--radius-lg) var(--radius-lg)",
+                      padding: "10px 14px",
+                      fontSize: "13.5px",
+                      color: "var(--text-primary)",
+                      lineHeight: "1.6",
+                      position: "relative",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      backdropFilter: "blur(3px)",
+                      WebkitBackdropFilter: "blur(3px)",
+                      boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
+                    }}>
+                      <div style={{
+                        position: "absolute",
+                        top: "8px",
+                        right: "10px",
+                        width: "6px",
+                        height: "6px",
+                        borderRadius: "50%",
+                        background: "var(--accent)",
+                        boxShadow: "0 0 6px var(--accent)",
+                        animation: "pulse 1s ease-in-out infinite",
+                      }} />
+                      {streamingResponse}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               <div ref={bottomRef} />
             </div>

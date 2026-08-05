@@ -185,6 +185,11 @@ interface AssistantState {
   streamingResponse: string | null;
   appendStreamChunk: (chunk: string) => void;
   clearStreamingResponse: () => void;
+  // Track the ID of the most recently streamed message so the bubble
+  // component can skip its typewriter animation (user already saw it stream)
+  lastStreamedMessageId: string | null;
+  markStreamedMessage: (id: string) => void;
+  clearStreamedMessage: () => void;
   // Sound cue settings
   soundEnabled: boolean;
   soundVolume: number; // 0–100
@@ -726,6 +731,9 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     streamingResponse: (s.streamingResponse || "") + chunk,
   })),
   clearStreamingResponse: () => set({ streamingResponse: null }),
+  lastStreamedMessageId: null,
+  markStreamedMessage: (id) => set({ lastStreamedMessageId: id }),
+  clearStreamedMessage: () => set({ lastStreamedMessageId: null }),
   setSoundSettings: (enabled, volume) => {
     if (typeof window !== "undefined") {
       localStorage.setItem("opensarthi_sound_enabled", String(enabled));

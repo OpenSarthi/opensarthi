@@ -159,6 +159,16 @@ export function useWebSocket(port: number | null) {
       wsClient.on("assistant_response", (msg) => {
         const message = MessageSchema.parse(msg.payload);
         const { thread_id } = msg.payload as { thread_id?: string };
+        const store = useAssistantStore.getState();
+
+        // If a streaming session just ended (indicated by PENDING),
+        // link the final message ID to skip ResponseBubble typewriter.
+        if (store.lastStreamedMessageId === "PENDING") {
+          store.markStreamedMessage(message.id);
+          // Auto-clear the flag after 1 second
+          setTimeout(() => useAssistantStore.getState().clearStreamedMessage(), 1000);
+        }
+
         addMessage(message, thread_id);
         setTranscript(null);
         
@@ -179,6 +189,8 @@ export function useWebSocket(port: number | null) {
         setPlan(null, thread_id);
         setExecutingStep(null, thread_id);
       }),
+
+
 
       wsClient.on("speech_started", () => {
         setVoiceState("speaking");
@@ -372,8 +384,11 @@ export function useWebSocket(port: number | null) {
         if ((store as any)._streamBuffer) {
           delete (store as any)._streamBuffer[tid];
         }
+        // Mark that a streaming session just completed and is pending response message ID
+        store.markStreamedMessage("PENDING");
         store.clearStreamingResponse();
       }),
+
     ];
 
     return () => {

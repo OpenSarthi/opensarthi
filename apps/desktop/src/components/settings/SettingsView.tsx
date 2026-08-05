@@ -1,57 +1,14 @@
-import { useState, useEffect } from "react";
-import { X, Save, Volume2, Bell, Palette, Cpu, ChevronRight, CheckCircle2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { X, Save, Volume2, Bell, Palette, Cpu, ChevronRight, CheckCircle2, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { playCue } from "../../hooks/useAudioCues";
-
-// Provider → models mapping
-const PROVIDER_MODELS: Record<string, { value: string; label: string }[]> = {
-  google: [
-    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (Fast)" },
-    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro (Smart)" },
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-    { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
-  ],
-  openai: [
-    { value: "gpt-4o", label: "GPT-4o (Latest)" },
-    { value: "gpt-4o-mini", label: "GPT-4o Mini (Fast)" },
-    { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
-    { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
-  ],
-  anthropic: [
-    { value: "claude-opus-4-5", label: "Claude Opus 4.5" },
-    { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5 (Balanced)" },
-    { value: "claude-haiku-3-5", label: "Claude Haiku 3.5 (Fast)" },
-    { value: "claude-3-opus-20240229", label: "Claude 3 Opus" },
-  ],
-  groq: [
-    { value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (Versatile)" },
-    { value: "llama-3.1-8b-instant", label: "Llama 3.1 8B (Instant)" },
-    { value: "groq/compound", label: "Groq Compound" },
-    { value: "groq/compound-mini", label: "Groq Compound Mini" },
-    { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout 17B" },
-    { value: "qwen/qwen3-32b", label: "Qwen3 32B" },
-    { value: "openai/gpt-oss-120b", label: "GPT OSS 120B" },
-    { value: "openai/gpt-oss-20b", label: "GPT OSS 20B" },
-  ],
-  openrouter: [
-    { value: "openai/gpt-4o", label: "OpenAI GPT-4o (via OR)" },
-    { value: "anthropic/claude-opus-4", label: "Claude Opus 4 (via OR)" },
-    { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro (via OR)" },
-    { value: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B (via OR)" },
-    { value: "deepseek/deepseek-chat", label: "DeepSeek Chat (via OR)" },
-    { value: "mistralai/mistral-large", label: "Mistral Large (via OR)" },
-  ],
-  ollama: [],
-};
-
-const PROVIDER_LABELS: Record<string, { label: string; icon: string; apiKeyLabel: string; apiKeyPlaceholder: string; docsUrl: string }> = {
-  ollama:    { label: "Ollama (Local)", icon: "🦙", apiKeyLabel: "", apiKeyPlaceholder: "", docsUrl: "" },
-  google:    { label: "Google Gemini", icon: "✨", apiKeyLabel: "GOOGLE AI API KEY", apiKeyPlaceholder: "AIza...", docsUrl: "https://aistudio.google.com/apikey" },
-  openai:    { label: "OpenAI", icon: "🤖", apiKeyLabel: "OPENAI API KEY", apiKeyPlaceholder: "sk-...", docsUrl: "https://platform.openai.com/api-keys" },
-  anthropic: { label: "Anthropic Claude", icon: "🧠", apiKeyLabel: "ANTHROPIC API KEY", apiKeyPlaceholder: "sk-ant-...", docsUrl: "https://console.anthropic.com/settings/keys" },
-  groq:      { label: "Groq (Ultra-Fast)", icon: "⚡", apiKeyLabel: "GROQ API KEY", apiKeyPlaceholder: "gsk_...", docsUrl: "https://console.groq.com/keys" },
-  openrouter:{ label: "OpenRouter", icon: "🔀", apiKeyLabel: "OPENROUTER API KEY", apiKeyPlaceholder: "sk-or-...", docsUrl: "https://openrouter.ai/settings/keys" },
-};
+import {
+  PROVIDER_MODELS,
+  PROVIDER_LABELS,
+  OLLAMA_ALL_SUGGESTIONS,
+  formatModelLabel,
+  type FetchedModel,
+} from "../../lib/models";
 
 interface SettingsViewProps {
   onClose: () => void;
@@ -73,6 +30,7 @@ interface SettingsViewProps {
   currentSoundEnabled: boolean;
   currentSoundVolume: number;
   currentLongTermMemoryEnabled: boolean;
+  runtimePort: number | null;
   onSave: (settings: {
     localModel: string;
     cloudModel: string;
@@ -94,6 +52,7 @@ interface SettingsViewProps {
     longTermMemoryEnabled: boolean;
   }) => void;
 }
+
 
 const selectStyle: React.CSSProperties = {
   background: "rgba(0,0,0,0.5)",
@@ -214,8 +173,10 @@ export function SettingsView({
   currentSoundEnabled,
   currentSoundVolume,
   currentLongTermMemoryEnabled,
+  runtimePort,
   onSave,
 }: SettingsViewProps) {
+
   const [provider, setProvider] = useState(currentProvider || "google");
   const [cloudModel, setCloudModel] = useState(currentCloudModel);
   const [localModel, setLocalModel] = useState(currentLocalModel);
@@ -226,6 +187,10 @@ export function SettingsView({
   const [anthropicKey, setAnthropicKey] = useState("");
   const [groqKey, setGroqKey] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
+
+  // Dynamic model discovery
+  const [dynamicModels, setDynamicModels] = useState<FetchedModel[]>([]);
+  const [modelFetchState, setModelFetchState] = useState<"idle" | "loading" | "live" | "offline" | "error">("idle");
 
   const [voiceAccent, setVoiceAccent] = useState(currentVoiceAccent);
   const [voiceSpeed, setVoiceSpeed] = useState(currentVoiceSpeed);
@@ -242,12 +207,48 @@ export function SettingsView({
   const providerInfo = PROVIDER_LABELS[provider] || PROVIDER_LABELS.google;
   const isLocal = provider === "ollama";
 
-  // When provider changes, only reset the model to default if the current model is not part of the new provider's list.
+  // When provider changes, reset model and trigger dynamic discovery
   useEffect(() => {
-    const models = PROVIDER_MODELS[provider] || [];
-    const modelExists = models.some((m) => m.value === cloudModel);
-    if (!modelExists && models.length > 0) {
-      setCloudModel(models[0].value);
+    const staticModels = PROVIDER_MODELS[provider] || [];
+    const modelExists = staticModels.some((m) => m.value === cloudModel);
+    if (!modelExists && staticModels.length > 0) {
+      setCloudModel(staticModels[0].value);
+    }
+    setDynamicModels([]);
+    setModelFetchState("idle");
+  }, [provider]);
+
+  // Fetch dynamic models from backend proxy
+  const fetchDynamicModels = useCallback(async () => {
+    if (!runtimePort || !PROVIDER_LABELS[provider]?.supportsModelFetch) return;
+    const apiKey = provider === "openai" ? (openaiKey || currentOpenaiKey)
+                 : provider === "openrouter" ? (openrouterKey || currentOpenrouterKey)
+                 : undefined;
+    setModelFetchState("loading");
+    try {
+      const params = new URLSearchParams({ provider });
+      if (apiKey) params.set("api_key", apiKey);
+      const res = await fetch(`http://127.0.0.1:${runtimePort}/models?${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: { models: FetchedModel[]; source: string } = await res.json();
+      setDynamicModels(data.models);
+      setModelFetchState(data.source === "offline" ? "offline" : data.models.length > 0 ? "live" : "offline");
+      if (data.models.length > 0) {
+        const modelExists = data.models.some(m => m.value === (isLocal ? localModel : cloudModel));
+        if (!modelExists) {
+          if (isLocal) setLocalModel(data.models[0].value);
+          else setCloudModel(data.models[0].value);
+        }
+      }
+    } catch {
+      setModelFetchState("error");
+    }
+  }, [provider, runtimePort, openaiKey, openrouterKey, currentOpenaiKey, currentOpenrouterKey, isLocal, cloudModel, localModel]);
+
+  // Auto-fetch on provider change if supported
+  useEffect(() => {
+    if (PROVIDER_LABELS[provider]?.supportsModelFetch) {
+      fetchDynamicModels();
     }
   }, [provider]);
 
@@ -451,34 +452,74 @@ export function SettingsView({
                 >
                   {isLocal ? (
                     <>
-                      <label style={labelStyle}>
-                        <ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />
-                        2. LOCAL MODEL NAME (Ollama)
+                      <label style={{ ...labelStyle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span><ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />2. LOCAL MODEL (Ollama)</span>
+                        <button
+                          onClick={fetchDynamicModels}
+                          title="Refresh local Ollama models"
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4, fontSize: 10 }}
+                        >
+                          <RefreshCw size={11} style={{ animation: modelFetchState === "loading" ? "spin 1s linear infinite" : "none" }} />
+                          {modelFetchState === "live" ? "LIVE" : modelFetchState === "offline" ? "OFFLINE" : modelFetchState === "loading" ? "FETCHING…" : "REFRESH"}
+                        </button>
                       </label>
+                      {dynamicModels.length > 0 ? (
+                        <select
+                          value={localModel}
+                          onChange={(e) => setLocalModel(e.target.value)}
+                          style={selectStyle}
+                        >
+                          {dynamicModels.map((m) => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                          ))}
+                          <option value="__custom__" disabled style={{ color: "rgba(255,255,255,0.4)" }}>── Custom ──</option>
+                        </select>
+                      ) : (
+                        <select
+                          value={OLLAMA_ALL_SUGGESTIONS.some(m => m.value === localModel) ? localModel : "__custom__"}
+                          onChange={(e) => { if (e.target.value !== "__custom__") setLocalModel(e.target.value); }}
+                          style={selectStyle}
+                        >
+                          <option value="__custom__" disabled>── Suggestions (Ollama offline) ──</option>
+                          {OLLAMA_ALL_SUGGESTIONS.map((m) => (
+                            <option key={m.value} value={m.value}>{formatModelLabel(m)}</option>
+                          ))}
+                        </select>
+                      )}
                       <input
                         value={localModel}
                         onChange={(e) => setLocalModel(e.target.value)}
-                        placeholder="e.g. qwen2.5-coder:3b, llama3.2:3b"
-                        style={inputStyle}
+                        placeholder="Custom: e.g. qwen2.5-coder:3b, llama3.2:3b"
+                        style={{ ...inputStyle, marginTop: 4, fontSize: 12 }}
                       />
                     </>
                   ) : (
                     <>
-                      <label style={labelStyle}>
-                        <ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />
-                        2. SELECT MODEL
+                      <label style={{ ...labelStyle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span><ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />2. SELECT MODEL</span>
+                        {PROVIDER_LABELS[provider]?.supportsModelFetch && (
+                          <button
+                            onClick={fetchDynamicModels}
+                            title="Fetch live model list"
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4, fontSize: 10 }}
+                          >
+                            <RefreshCw size={11} style={{ animation: modelFetchState === "loading" ? "spin 1s linear infinite" : "none" }} />
+                            {modelFetchState === "live" ? "LIVE" : modelFetchState === "loading" ? "FETCHING…" : "FETCH LIVE"}
+                          </button>
+                        )}
                       </label>
                       <select
                         value={cloudModel}
                         onChange={(e) => setCloudModel(e.target.value)}
                         style={selectStyle}
                       >
-                        {PROVIDER_MODELS[provider]?.map((m) => (
-                          <option key={m.value} value={m.value}>
-                            {m.label}
-                          </option>
+                        {(dynamicModels.length > 0 ? dynamicModels : (PROVIDER_MODELS[provider] || []).map(m => ({ value: m.value, label: formatModelLabel(m) }))).map((m) => (
+                          <option key={m.value} value={m.value}>{m.label}</option>
                         ))}
                       </select>
+                      {dynamicModels.length > 0 && (
+                        <span style={{ fontSize: 10, color: "var(--accent)", opacity: 0.7 }}>✓ Live model list from {provider}</span>
+                      )}
                     </>
                   )}
                 </motion.div>
