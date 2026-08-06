@@ -42,7 +42,7 @@ export function MatrixRainBackground({ voiceState }: MatrixRainBackgroundProps) 
     let W = (canvas.width = parent?.clientWidth ?? 200);
     let H = (canvas.height = parent?.clientHeight ?? 300);
 
-    const charList = "日ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍｦｲｸｺｿﾁﾄﾉﾌﾔﾖﾙﾚﾛﾝ0123456789$+-*/=<>!@#%&?^|~()[]{}☠☢☣⚡⚙".split("");
+    const charList = [..."⚡ABCDEFG🔥HIJKLM🎇NOPQR⚡STUV💥WXYZ🔥abcdefg🔥hijklmn⚡opqr🎇stuvwxyz💥0123456789🎇!@#$%⚡^&*()_🔥+-={}[]|💥"];
     const fontSize = 10;
     let cols = Math.ceil(W / fontSize);
     let drops = Array.from({ length: cols }, () => (Math.random() * (H / fontSize) * -1.5));
