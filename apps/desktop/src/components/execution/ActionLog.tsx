@@ -400,6 +400,12 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   // Derive agentic tasks to locate the selected task's tool actions
+  // Find the index of the latest user message (same robust check as TaskList.tsx)
+  let lastUserMsgIdx = -1;
+  for (let k = messages.length - 1; k >= 0; k--) {
+    if (messages[k].role === "user") { lastUserMsgIdx = k; break; }
+  }
+
   const agenticTasks: any[] = [];
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
@@ -407,7 +413,8 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
 
     const nextAssistant = messages.slice(i + 1).find(m => m.role === "assistant");
     if (!nextAssistant) {
-      if (hasActivePlan && i === messages.length - 1) {
+      // Use lastUserMsgIdx instead of messages.length-1 to handle any trailing non-user messages
+      if (hasActivePlan && i === lastUserMsgIdx) {
         agenticTasks.push({
           id: msg.id,
           status: "running",

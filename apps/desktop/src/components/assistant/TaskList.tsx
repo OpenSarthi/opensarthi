@@ -155,11 +155,12 @@ export function TaskList({
     });
   }
 
-  // Auto-select latest running task
+  // Auto-select latest running task whenever plan changes (using plan reference not bool so it fires on mount too)
   useEffect(() => {
     const running = agenticTasks.find(t => t.status === "running");
     if (running) setSelectedTaskId(running.id);
-  }, [hasActivePlan]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPlan]);
 
   const reversedTasks = [...agenticTasks].reverse();
 

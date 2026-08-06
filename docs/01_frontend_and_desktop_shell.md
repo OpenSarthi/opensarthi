@@ -1,6 +1,6 @@
 # OpenSarthi — Frontend & Desktop Shell
 
-> **Updated:** July 2026 — Multi-tab threads, smart overlay mode + edge snapping, OverlayIdleView, audio cues engine, full markdown rendering + URL links, ResponseBubble modal with eye animations, STOP button, separate AI/all settings save, Long-Term Memory toggle, 10 themes, persistent panel widths.
+> **Updated:** August 2026 — Multi-tab threads, smart overlay mode + edge snapping, OverlayIdleView, audio cues engine, full markdown rendering + URL links, ResponseBubble modal with eye animations, STOP button, separate AI/all settings save, Long-Term Memory toggle, 10 themes, persistent panel widths; real-time task panel sync fix, robust task derivation logic.
 
 ---
 
@@ -579,6 +579,15 @@ To mimic a production-grade native application and ensure the webview remains co
 - **Default Browser Menu Prevention**: Disables the default webview right-click context menu (which exposes browser-like reload, back, and forward controls) globally.
 - **State Preservation Across Reload**: On mount, the frontend queries `get_runtime_port` via Tauri IPC. If the Python sidecar is already active (e.g., after a webview reload), the frontend retrieves the port and connects immediately, rather than waiting for the startup `runtime:port-ready` event.
 - **Onboarding Race Condition Mitigation**: Stores completed onboarding configurations inside a `pendingOnboarding` cache in the Zustand store. When the first `settings_sync` packet is received from the server, these cached settings are automatically merged and synchronized with the backend, preventing startup synchronization race conditions from wiping newly typed API keys and preferences.
+
+### Real-Time Task Panel Sync
+
+The **Agent Tasks** (left panel) and **Live Plan & Activity** (right panel) display live step updates during task execution. Two robustness fixes ensure correct real-time behavior:
+
+- **Robust running-task identification (`ActionLog.tsx`)**: The running user message is found using a backward scan (`lastUserMsgIdx`) — identical to the approach in `TaskList.tsx` — instead of the fragile `messages.length - 1` index which breaks when non-user messages (e.g. voice errors) exist after the latest user prompt.
+- **Auto-select on mount (`TaskList.tsx`)**: The `useEffect` that auto-selects the in-progress task depends on `currentPlan` (the plan object reference) rather than the `hasActivePlan` boolean. This ensures it fires when the full-screen layout mounts mid-task (e.g. user expands from overlay mode), correctly selecting the active task and rendering live step status immediately.
+
+In **overlay mode**, the compact strip shows the ActionLog directly with `currentPlan` as its plan prop, so step status changes are reflected in the progress bar and tool log in real time via reactive Zustand subscriptions.
 
 ---
 
