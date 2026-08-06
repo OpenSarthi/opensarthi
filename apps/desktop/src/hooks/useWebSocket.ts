@@ -233,6 +233,25 @@ export function useWebSocket(port: number | null) {
         const p = msg.payload as any;
         const store = useAssistantStore.getState();
 
+        // Check if there is a pending onboarding configuration that needs to override the startup defaults from the server
+        const pending = store.pendingOnboarding;
+        if (pending) {
+          p.ai_provider = pending.provider || p.ai_provider;
+          if (pending.localModel) p.local_model = pending.localModel;
+          if (pending.cloudModel) p.cloud_model = pending.cloudModel;
+          if (pending.userName) p.user_name = pending.userName;
+          if (pending.skills) p.user_skills = pending.skills;
+          if (pending.customPrompt) p.custom_prompt = pending.customPrompt;
+          
+          if (pending.apiKey) {
+            if (pending.provider === "google") p.gemini_api_key = pending.apiKey;
+            else if (pending.provider === "openai") p.openai_api_key = pending.apiKey;
+            else if (pending.provider === "anthropic") p.anthropic_api_key = pending.apiKey;
+            else if (pending.provider === "groq") p.groq_api_key = pending.apiKey;
+            else if (pending.provider === "openrouter") p.openrouter_api_key = pending.apiKey;
+          }
+        }
+
         if (p.local_model && p.cloud_model) store.setActiveModels(p.local_model, p.cloud_model);
         if (p.ai_provider) store.setActiveProvider(p.ai_provider);
         if (p.voice_accent !== undefined && p.voice_speed !== undefined && p.continuous_listening !== undefined) {
@@ -260,6 +279,24 @@ export function useWebSocket(port: number | null) {
             p.user_skills || store.userSkills,
             p.custom_prompt || store.customPrompt,
           );
+        }
+
+        // If we merged pending onboarding data, broadcast it back to synchronize the backend env store
+        if (pending) {
+          store.setPendingOnboarding(null);
+          wsClient.send("update_settings", {
+            user_name: p.user_name || "",
+            user_skills: p.user_skills || [],
+            custom_prompt: p.custom_prompt || "",
+            ai_provider: p.ai_provider,
+            local_model: p.local_model,
+            cloud_model: p.cloud_model,
+            gemini_api_key: p.gemini_api_key || "",
+            openai_api_key: p.openai_api_key || "",
+            anthropic_api_key: p.anthropic_api_key || "",
+            groq_api_key: p.groq_api_key || "",
+            openrouter_api_key: p.openrouter_api_key || "",
+          });
         }
       }),
 

@@ -574,6 +574,12 @@ To resolve native scrollbar overlay clipping bugs in WebKitGTK under Linux (wher
 - **Popup/Modal Blur**: Adding `.blurred-layout` hides scrollbars on all underlying elements inside the app container.
 - **Console Open Class**: Toggles `.console-open` on the document body when the bottom console is open. Associated CSS hides the scrollbars of background layout panels while keeping them fully scrollable via mouse wheel.
 
+### Desktop Native Integration & Webview Reload Resilience
+To mimic a production-grade native application and ensure the webview remains connected across page refreshes:
+- **Default Browser Menu Prevention**: Disables the default webview right-click context menu (which exposes browser-like reload, back, and forward controls) globally.
+- **State Preservation Across Reload**: On mount, the frontend queries `get_runtime_port` via Tauri IPC. If the Python sidecar is already active (e.g., after a webview reload), the frontend retrieves the port and connects immediately, rather than waiting for the startup `runtime:port-ready` event.
+- **Onboarding Race Condition Mitigation**: Stores completed onboarding configurations inside a `pendingOnboarding` cache in the Zustand store. When the first `settings_sync` packet is received from the server, these cached settings are automatically merged and synchronized with the backend, preventing startup synchronization race conditions from wiping newly typed API keys and preferences.
+
 ---
 
 ## 16. UI Backlog

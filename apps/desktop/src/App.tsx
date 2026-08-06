@@ -15,6 +15,7 @@ import { useAssistantStore } from "./stores/assistantStore";
 import { usePermissionStore } from "./stores/permissionStore";
 import { TAURI_EVENTS } from "./lib/constants";
 import { wsClient } from "./lib/ws";
+import { getRuntimePort } from "./lib/ipc";
 import { AnimatePresence } from "framer-motion";
 
 export default function App() {
@@ -62,6 +63,7 @@ export default function App() {
     soundEnabled,
     soundVolume,
     setSoundSettings,
+    setPendingOnboarding,
   } = useAssistantStore();
 
   // Dynamic Theme application to document.body
@@ -72,6 +74,30 @@ export default function App() {
       .join(" ");
     document.body.classList.add(activeTheme);
   }, [activeTheme]);
+
+  // Disable default browser context menu globally to feel like a native desktop app
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+    document.addEventListener("contextmenu", handleContextMenu);
+    return () => {
+      document.removeEventListener("contextmenu", handleContextMenu);
+    };
+  }, []);
+
+  // Fetch runtime port on mount if sidecar is already running (e.g. page reload)
+  useEffect(() => {
+    getRuntimePort()
+      .then((port) => {
+        if (port > 0) {
+          setRuntimePort(port);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to query runtime port on mount:", err);
+      });
+  }, []);
 
   // Listen for the runtime sidecar to announce its port
   useTauriEvent<number>(TAURI_EVENTS.RUNTIME_PORT_READY, useCallback((port) => {
@@ -166,6 +192,9 @@ export default function App() {
     localModel?: string;
     apiKey?: string;
   }) => {
+    // Cache pending onboarding details locally so they are not wiped by initial connection sync
+    setPendingOnboarding(data);
+
     setPersonalization(data.userName, data.skills, data.customPrompt);
 
     if (data.provider) {

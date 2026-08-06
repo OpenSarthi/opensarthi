@@ -202,6 +202,9 @@ interface AssistantState {
   sidecarLogs: string[];
   addSidecarLogs: (lines: string[]) => void;
   clearSidecarLogs: () => void;
+  // Temporary storage for onboarding settings before connection handshake completes
+  pendingOnboarding: any | null;
+  setPendingOnboarding: (data: any | null) => void;
 }
 
 export const useAssistantStore = create<AssistantState>((set) => ({
@@ -772,4 +775,6 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     };
   }),
   clearSidecarLogs: () => set({ sidecarLogs: [] }),
+  pendingOnboarding: null,
+  setPendingOnboarding: (data) => set({ pendingOnboarding: data }),
 }));
