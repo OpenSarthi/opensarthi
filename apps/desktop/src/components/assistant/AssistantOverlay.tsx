@@ -1754,7 +1754,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                     <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-                      {getBuildTarget()}
+                      // {getBuildTarget()}
                     </div>
                     <div style={{ color: "var(--accent)", fontWeight: "bold", fontSize: "14px" }}>
                       OPENSARTHI V{pkg.version}
