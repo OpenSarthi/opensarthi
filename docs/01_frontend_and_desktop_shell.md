@@ -579,6 +579,7 @@ To mimic a production-grade native application and ensure the webview remains co
 - **Default Browser Menu Prevention**: Disables the default webview right-click context menu (which exposes browser-like reload, back, and forward controls) globally.
 - **State Preservation Across Reload**: On mount, the frontend queries `get_runtime_port` via Tauri IPC. If the Python sidecar is already active (e.g., after a webview reload), the frontend retrieves the port and connects immediately, rather than waiting for the startup `runtime:port-ready` event.
 - **Onboarding Race Condition Mitigation**: Stores completed onboarding configurations inside a `pendingOnboarding` cache in the Zustand store. When the first `settings_sync` packet is received from the server, these cached settings are automatically merged and synchronized with the backend, preventing startup synchronization race conditions from wiping newly typed API keys and preferences.
+- **Window Close to Tray**: Intercepts `tauri::WindowEvent::CloseRequested` in Rust (`lib.rs`). Calls `api.prevent_close()` and `window.hide()` to keep the application active in the system tray when clicking the close button. The application is only fully terminated when the user selects 'Quit' from the tray menu.
 
 ### Real-Time Task Panel Sync
 

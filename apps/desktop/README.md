@@ -467,11 +467,9 @@ apps/desktop/
 
 ## 🔧 Rust Core (`src-tauri/src/`)
 
-| File | Responsibility |
-|------|---------------|
-| `lib.rs` | App bootstrap, window setup, sidecar spawn, system tray init |
+| `lib.rs` | App bootstrap, window setup, sidecar spawn, system tray init, and window close-to-tray interception (`CloseRequested` event) |
 | `sidecar.rs` | Spawn bootstrap script, read `PORT:xxxx` from stdout, relay stderr |
-| `tray.rs` | System tray icon, right-click menu (Show/Hide, Quit) |
+| `tray.rs` | System tray icon, menu (Show, Hide, Quit). Terminating the app completely is only performed via the 'Quit' menu item. |
 | `ipc.rs` | `invoke()` commands exposed to frontend |
 
 ### Tauri Capabilities (`src-tauri/capabilities/main.json`)
