@@ -260,6 +260,35 @@ class YdotoolProvider:
         return False
 
     async def click(self, x: int, y: int, button: str = "left", window_id: Optional[str] = None) -> bool:
+        # 1. Try ydotool (native Wayland mouse control)
+        if shutil.which("ydotool"):
+            try:
+                # Move to absolute coordinates
+                move_proc = await asyncio.create_subprocess_exec(
+                    "ydotool", "mousemove", "--absolute", str(x), str(y),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await move_proc.communicate()
+                
+                # Small delay to ensure pointer has registered the position change
+                await asyncio.sleep(0.05)
+                
+                # Click the appropriate button code
+                btn_map = {"left": "0xC0", "right": "0xC1", "middle": "0xC2"}
+                btn_code = btn_map.get(button, "0xC0")
+                click_proc = await asyncio.create_subprocess_exec(
+                    "ydotool", "click", btn_code,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await click_proc.communicate()
+                if click_proc.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+        # 2. Fallback: try xdotool
         if shutil.which("xdotool"):
             try:
                 proc = await asyncio.create_subprocess_exec(

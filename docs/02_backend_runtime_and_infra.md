@@ -398,7 +398,7 @@ class DesktopSnapshot:
 
 ### Screenshot
 
-Uses `mss` (multi-screen screenshot library) — no Xorg display server dependency.
+Uses `mss` to capture the entire virtual desktop space (union of all displays via monitor 0) to support multi-monitor setups, ensuring complete screenshot context for OCR and vision models.
 
 ---
 

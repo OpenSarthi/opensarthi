@@ -35,28 +35,65 @@ def _is_step_already_done(tool: str, args: dict, description: str, completed_act
     """
     Returns True if this step appears to duplicate an already-completed action.
     Matching strategy (in order):
-      1. Exact tool+args signature match against completed_actions entries that
-         were stored in the format "<description>" (plain text) — we check if
-         the description substring appears in any completed entry.
-      2. We additionally check the normalised signature for structural matches.
+      1. Structural signature match: if the step tool and normalised arguments match.
+      2. Description substring check: only if the description is custom/detailed (not generic).
     This is the hard programmatic guard — it works even when the LLM ignores
     the REPLANNING prompt instruction to skip completed steps.
     """
     if not completed_actions:
         return False
-    desc_lower = (description or tool).lower().strip()
+    
     sig = _normalise_step_sig(tool, args, description)
+    desc_lower = (description or tool).lower().strip()
+    
+    # Generic descriptions we should NEVER duplicate-check based on description text alone
+    GENERIC_DESCRIPTIONS = {
+        "click", "type_text", "press_key", "click_element", "focus_window",
+        "observe_desktop", "wait_for_window", "wait_for_text", "open_app",
+        "scroll", "drag", "right_click", "double_click", "screenshot",
+        "shell", "read_file", "write_file", "append_file", "delete_file",
+        "list_dir", "web_search", "open_url", "python_eval",
+        "executed: click", "executed: type_text", "executed: press_key",
+        "executed: click_element", "executed: focus_window", "executed: observe_desktop",
+        "executed: wait_for_window", "executed: wait_for_text", "executed: open_app",
+        "executed: shell", "executed: read_file", "executed: write_file"
+    }
+
     for done in completed_actions:
         done_lower = done.lower().strip()
-        # Short-circuit: description substring check
-        if desc_lower and len(desc_lower) > 8 and desc_lower in done_lower:
+        
+        # If stored in format "sig:::description", extract parts
+        if ":::" in done_lower:
+            parts = done_lower.split(":::", 1)
+            done_sig = parts[0]
+            done_desc = parts[1]
+        else:
+            done_sig = ""
+            done_desc = done_lower
+
+        # 1. Structural check: exact tool + arguments signature match
+        if done_sig and done_sig == sig.lower():
             return True
-        if done_lower and len(done_lower) > 8 and done_lower in desc_lower:
+        if done_lower.startswith(f"{tool.lower()}::") and (done_lower == sig.lower() or done_sig == sig.lower()):
             return True
-        # Structural: if the done entry was stored in "tool::args" format (future)
-        if done_lower.startswith(f"{tool}::") and done_lower == sig.lower():
-            return True
+
+        # 2. Description substring check (only if description is NOT generic/short)
+        if desc_lower and desc_lower not in GENERIC_DESCRIPTIONS and len(desc_lower) > 8:
+            if desc_lower in done_desc or done_desc in desc_lower:
+                return True
+                
     return False
+
+
+def _clean_completed_actions(completed: list[str]) -> list[str]:
+    """Extract clean, human-readable descriptions from signatures."""
+    cleaned = []
+    for item in (completed or []):
+        if ":::" in item:
+            cleaned.append(item.split(":::", 1)[1])
+        else:
+            cleaned.append(item)
+    return cleaned
 
 
 # ── classify_node ───────────────────────────────────────────────────────────────
@@ -176,7 +213,7 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         history=[],
         current_step=len(state.completed_actions),
         total_steps=len(state.completed_actions) + 1,
-        previous_actions=state.completed_actions,
+        previous_actions=_clean_completed_actions(state.completed_actions),
         failed_actions=state.failed_actions,
         retry_count=state.retry_count,
         skills=getattr(deps, "skills", None),
@@ -490,7 +527,8 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
     new_failed = list(state.failed_actions)
 
     if res.success:
-        new_completed.append(step.description or f"Executed: {step.tool}")
+        sig = _normalise_step_sig(step.tool, step.args or {}, step.description or step.tool)
+        new_completed.append(f"{sig}:::{step.description or step.tool}")
         # Handle wait_after
         if step.wait_after:
             await asyncio.sleep(step.wait_after)
@@ -661,6 +699,7 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     memory_manager = config["configurable"].get("memory_manager")
 
     completed = state.completed_actions or []
+    cleaned_completed = _clean_completed_actions(completed)
     failed = state.failed_actions or []
     max_retries_reached = state.retry_count >= state.max_retries
     has_successes = bool(completed)
@@ -697,14 +736,14 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         if completed and not max_retries_reached:
             # Store successful execution summary in memory
             asyncio.create_task(memory_manager.store(
-                content=f"Goal: {state.goal}\nOutcome: Completed successfully.\nActions: {completed}",
+                content=f"Goal: {state.goal}\nOutcome: Completed successfully.\nActions: {cleaned_completed}",
                 source="agent",
                 importance=0.9,
             ))
         else:
             # Store failed execution summary in memory
             asyncio.create_task(memory_manager.store(
-                content=f"Goal: {state.goal}\nOutcome (Failed): {outcome}\nCompleted: {completed}\nFailed: {failed}",
+                content=f"Goal: {state.goal}\nOutcome (Failed): {outcome}\nCompleted: {cleaned_completed}\nFailed: {failed}",
                 source="agent",
                 importance=0.7,
             ))
@@ -724,7 +763,7 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     if not final or final in ("Task completed successfully.", "Task completed."):
         goal = state.goal or ""
         steps = state.cumulative_steps or []
-        action_count = len(completed)
+        action_count = len(cleaned_completed)
         plural = "step" if action_count == 1 else "steps"
 
         # Determine if execution ended in failure

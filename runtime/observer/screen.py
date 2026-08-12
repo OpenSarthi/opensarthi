@@ -16,7 +16,8 @@ async def capture_screenshot() -> Optional[bytes]:
         import mss
         import mss.tools
         with mss.mss() as sct:
-            monitor = sct.monitors[1]  # Primary monitor
+            # Capture all monitors combined (virtual monitor 0) to support multi-monitor setups
+            monitor = sct.monitors[0]
             img = sct.grab(monitor)
             return mss.tools.to_png(img.rgb, img.size)
     except Exception:
