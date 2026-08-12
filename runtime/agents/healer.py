@@ -94,7 +94,7 @@ HEALING RULES:
 - If click fails with coordinate issues → use click_element with accessible role/name
 - If type_text fails without focus → prepend a click/focus step (return the FOCUS step only)
 - If open_app fails → try alternate app name (e.g. "google-chrome-stable" instead of "chrome")
-- If wait_for_window times out → return with increased timeout (add 3000ms)
+- If a wait/timeout tool (e.g. wait_for_window, wait_for_text) times out → return with a slightly increased timeout (e.g. add 3 seconds. Note: all timeouts in our tools are strictly in seconds, so do NOT use milliseconds like 3000).
 - If the tool is fundamentally wrong → suggest a better tool
 - If you cannot fix it → respond with exactly: null
 

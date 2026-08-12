@@ -121,7 +121,8 @@ async def wait_for_window(
                         import psutil
                         for proc_item in psutil.process_iter(['name']):
                             pname = (proc_item.info['name'] or "").lower()
-                            if target_norm in normalize(pname) or title_contains.lower() in pname:
+                            pname_norm = normalize(pname)
+                            if (pname_norm in target_norm) or (target_norm in pname_norm) or (pname in title_contains.lower()) or (title_contains.lower() in pname):
                                 found = True
                                 break
                     except Exception:
