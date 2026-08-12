@@ -72,7 +72,7 @@ App.tsx  (Root: modal state, tab management, onboarding gate)
 
 ### 3.2 HUD Layout
 
-Three-panel grid with draggable resize handles. Panel widths persist to `localStorage`.
+Three-panel grid with draggable resize handles. To provide a consistent user experience, panel widths do not scale or change automatically when resizing, maximizing, or minimizing the main window, ensuring user-defined widths are strictly preserved.
 
 ```
 ┌────────────────┬───────────────────────────┬────────────────┐

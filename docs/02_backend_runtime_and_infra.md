@@ -398,7 +398,7 @@ class DesktopSnapshot:
 
 ### Screenshot
 
-Uses `mss` to capture the entire virtual desktop space (union of all displays via monitor 0) to support multi-monitor setups, ensuring complete screenshot context for OCR and vision models.
+Uses `mss` to capture the entire virtual desktop space (union of all displays via monitor 0) to support multi-monitor setups, ensuring complete screenshot context for OCR and vision models. To assist the AI's visual understanding, Sarthi programmatically draws a red target indicator showing the current/last mouse pointer coordinate. Under Wayland (where global mouse position querying is blocked by security boundaries), Sarthi retrieves the pointer position from the active window session context to maintain reliable cross-platform cursor visualization.
 
 ---
 
