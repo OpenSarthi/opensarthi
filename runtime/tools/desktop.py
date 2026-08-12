@@ -8,6 +8,9 @@ from typing import Protocol, Optional
 from tools.base import BaseTool, RiskLevel
 from planner.schemas import ToolResult, ToolResultConfidence
 
+SMOOTH_MOUSE = True
+MOUSE_GLIDE_DURATION = 0.25
+
 class DesktopProvider(Protocol):
     async def capture_screen(self) -> str: ...
     async def type_text(self, text: str) -> bool: ...
@@ -86,6 +89,24 @@ class XdotoolProvider:
                 stderr=asyncio.subprocess.PIPE
             )
             await proc.communicate()
+            
+        if SMOOTH_MOUSE:
+            try:
+                import pyautogui
+                import structlog
+                structlog.get_logger().info("Smooth mouse glide (X11/pyautogui)", x=x, y=y, duration=MOUSE_GLIDE_DURATION)
+                pyautogui.moveTo(x, y, duration=MOUSE_GLIDE_DURATION)
+            except Exception as e:
+                import structlog
+                structlog.get_logger().warn("Smooth mouse glide failed", error=str(e))
+
+        # Update last mouse position in window session
+        try:
+            from window_session import get_session
+            get_session().update_mouse(x, y)
+        except Exception:
+            pass
+
         proc = await asyncio.create_subprocess_exec(
             "xdotool", "mousemove", str(x), str(y), "click", btn_map.get(button, "1"),
             stdout=asyncio.subprocess.PIPE,
@@ -264,19 +285,66 @@ class YdotoolProvider:
         if shutil.which("ydotool"):
             try:
                 # Move to absolute coordinates
-                move_proc = await asyncio.create_subprocess_exec(
-                    "ydotool", "mousemove", "--absolute", str(x), str(y),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                await move_proc.communicate()
+                try:
+                    import structlog
+                    structlog.get_logger().info("Wayland absolute mouse move (ydotool)", x=x, y=y)
+                except Exception:
+                    pass
+
+                from window_session import get_session
+                session = get_session()
+                
+                start_x, start_y = x, y
+                if session.last_mouse_x is not None and session.last_mouse_y is not None:
+                    start_x = session.last_mouse_x
+                    start_y = session.last_mouse_y
+                else:
+                    try:
+                        import pyautogui
+                        sw, sh = pyautogui.size()
+                        start_x, start_y = sw // 2, sh // 2
+                    except Exception:
+                        start_x, start_y = 960, 540
+                
+                if SMOOTH_MOUSE and (start_x != x or start_y != y):
+                    steps = 5
+                    for i in range(1, steps + 1):
+                        t = i / steps
+                        curr_x = int(start_x + (x - start_x) * t)
+                        curr_y = int(start_y + (y - start_y) * t)
+                        move_proc = await asyncio.create_subprocess_exec(
+                            "ydotool", "mousemove", "--absolute", str(curr_x), str(curr_y),
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        await move_proc.communicate()
+                        await asyncio.sleep(0.01)
+                else:
+                    move_proc = await asyncio.create_subprocess_exec(
+                        "ydotool", "mousemove", "--absolute", str(x), str(y),
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    await move_proc.communicate()
                 
                 # Small delay to ensure pointer has registered the position change
                 await asyncio.sleep(0.05)
                 
+                # Update last mouse position in window session
+                try:
+                    from window_session import get_session
+                    get_session().update_mouse(x, y)
+                except Exception:
+                    pass
+
                 # Click the appropriate button code
                 btn_map = {"left": "0xC0", "right": "0xC1", "middle": "0xC2"}
                 btn_code = btn_map.get(button, "0xC0")
+                try:
+                    import structlog
+                    structlog.get_logger().info("Wayland click (ydotool)", button=button, btn_code=btn_code)
+                except Exception:
+                    pass
                 click_proc = await asyncio.create_subprocess_exec(
                     "ydotool", "click", btn_code,
                     stdout=asyncio.subprocess.PIPE,
@@ -373,6 +441,22 @@ class PyAutoGUIProvider:
 
     async def click(self, x: int, y: int, button: str = "left", window_id: Optional[str] = None) -> bool:
         import pyautogui
+        if SMOOTH_MOUSE:
+            try:
+                import structlog
+                structlog.get_logger().info("Smooth mouse glide (pyautogui)", x=x, y=y, duration=MOUSE_GLIDE_DURATION)
+                pyautogui.moveTo(x, y, duration=MOUSE_GLIDE_DURATION)
+            except Exception as e:
+                import structlog
+                structlog.get_logger().warn("Smooth mouse glide failed", error=str(e))
+        
+        # Update last mouse position in window session
+        try:
+            from window_session import get_session
+            get_session().update_mouse(x, y)
+        except Exception:
+            pass
+
         pyautogui.click(x, y, button=button)
         return True
 
@@ -449,7 +533,7 @@ class ClickTool(BaseTool):
         "required": ["x", "y"],
     }
 
-    async def execute(self, args: dict) -> ToolResult:
+    async def execute(self, args: dict, permission_manager=None) -> ToolResult:
         x = args.get("x")
         y = args.get("y")
         button = args.get("button", "left")
@@ -461,6 +545,13 @@ class ClickTool(BaseTool):
             window_id = _get_pinned_window_id()
             if window_id:
                 await _ensure_window_focus(window_id)
+                
+            if permission_manager:
+                try:
+                    await permission_manager.send_message("click_event", {"x": int(x), "y": int(y), "button": button})
+                except Exception:
+                    pass
+
             success = await _provider.click(int(x), int(y), button, window_id=window_id)
             if not success:
                 return ToolResult.fail("Provider click failed", retryable=True)
@@ -565,9 +656,9 @@ class OpenAppTool(BaseTool):
         # Common app name aliases — LLMs often use display names, not binary names
         ALIASES = {
             # Browsers
-            "google-chrome": ["google-chrome-stable", "google-chrome", "chromium", "chromium-browser"],
-            "chrome": ["google-chrome-stable", "google-chrome", "chromium"],
-            "chromium": ["chromium", "chromium-browser", "google-chrome-stable"],
+            "google-chrome": ["google-chrome-stable --force-renderer-accessibility", "google-chrome --force-renderer-accessibility", "chromium --force-renderer-accessibility", "chromium-browser --force-renderer-accessibility"],
+            "chrome": ["google-chrome-stable --force-renderer-accessibility", "google-chrome --force-renderer-accessibility", "chromium --force-renderer-accessibility"],
+            "chromium": ["chromium --force-renderer-accessibility", "chromium-browser --force-renderer-accessibility", "google-chrome-stable --force-renderer-accessibility"],
             "firefox": ["firefox", "firefox-esr", "firefox-beta"],
             "brave": ["brave", "brave-browser", "brave-browser-stable"],
             "brave browser": ["brave", "brave-browser", "brave-browser-stable"],
@@ -875,7 +966,7 @@ class ClickElementTool(BaseTool):
         "required": ["name"],
     }
 
-    async def execute(self, args: dict) -> ToolResult:
+    async def execute(self, args: dict, permission_manager=None) -> ToolResult:
         from providers.linux.accessibility import AccessibilityProvider
         role = args.get("role", "")
         name = args.get("name", "")
@@ -960,6 +1051,13 @@ class ClickElementTool(BaseTool):
                         window_id = _get_pinned_window_id()
                         if window_id:
                             await _ensure_window_focus(window_id)
+                            
+                        if permission_manager:
+                            try:
+                                await permission_manager.send_message("click_event", {"x": int(x), "y": int(y), "button": "left"})
+                            except Exception:
+                                pass
+
                         success = await _provider.click(x, y, button="left")
                         if success:
                             return ToolResult.ok(
@@ -983,7 +1081,15 @@ class ClickElementTool(BaseTool):
             )
 
         target = elements[0]
-        success = provider.click_element(target)
+        cx, cy = target.center
+        
+        if permission_manager:
+            try:
+                await permission_manager.send_message("click_event", {"x": int(cx), "y": int(cy), "button": "left"})
+            except Exception:
+                pass
+
+        success = await _provider.click(cx, cy, button="left")
 
         if success:
             return ToolResult.ok(
@@ -992,7 +1098,7 @@ class ClickElementTool(BaseTool):
                 ui_changed=True
             )
         else:
-            return ToolResult.fail("xdotool click failed", retryable=True)
+            return ToolResult.fail("Provider click failed", retryable=True)
 
 
 class ObserveDesktopTool(BaseTool):

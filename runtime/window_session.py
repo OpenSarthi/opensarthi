@@ -16,14 +16,27 @@ class WindowSession:
     """
     pinned_window_id: Optional[str] = None
     pinned_window_title: Optional[str] = None
+    last_mouse_x: Optional[int] = None
+    last_mouse_y: Optional[int] = None
 
     def pin(self, window_id: str, title: str = ""):
         self.pinned_window_id = window_id
         self.pinned_window_title = title
 
+    def update_mouse(self, x: int, y: int):
+        self.last_mouse_x = x
+        self.last_mouse_y = y
+        try:
+            import structlog
+            structlog.get_logger().info("Mouse position updated in session", x=x, y=y)
+        except Exception:
+            pass
+
     def clear(self):
         self.pinned_window_id = None
         self.pinned_window_title = None
+        self.last_mouse_x = None
+        self.last_mouse_y = None
 
     @property
     def is_pinned(self) -> bool:

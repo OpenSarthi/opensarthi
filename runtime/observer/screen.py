@@ -15,11 +15,57 @@ async def capture_screenshot() -> Optional[bytes]:
     try:
         import mss
         import mss.tools
+        import pyautogui
+        from PIL import Image, ImageDraw
+        import io
+
         with mss.mss() as sct:
             # Capture all monitors combined (virtual monitor 0) to support multi-monitor setups
             monitor = sct.monitors[0]
             img = sct.grab(monitor)
-            return mss.tools.to_png(img.rgb, img.size)
+            
+            # Convert raw RGB to PIL Image
+            pil_img = Image.frombytes("RGB", img.size, img.rgb)
+            
+            try:
+                # Retrieve the last mouse coordinates from the agent window session
+                from window_session import get_session
+                session = get_session()
+                source = "session"
+                if session.last_mouse_x is not None and session.last_mouse_y is not None:
+                    mx, my = session.last_mouse_x, session.last_mouse_y
+                else:
+                    # Fallback to pyautogui for X11/Windows/Mac
+                    mx, my = pyautogui.position()
+                    source = "pyautogui"
+                    
+                width, height = img.size
+                if 0 <= mx < width and 0 <= my < height:
+                    try:
+                        import structlog
+                        structlog.get_logger().info("Drawing cursor target highlight on screenshot", x=mx, y=my, source=source)
+                    except Exception:
+                        pass
+                    draw = ImageDraw.Draw(pil_img)
+                    r = 12
+                    # Draw a bright red target ring
+                    draw.ellipse([mx - r, my - r, mx + r, my + r], outline=(255, 0, 0), width=3)
+                    # Draw inner dot
+                    draw.ellipse([mx - 2, my - 2, mx + 2, my + 2], fill=(255, 0, 0))
+                    # Draw crosshair lines extending slightly beyond the ring
+                    draw.line([mx - r - 4, my, mx + r + 4, my], fill=(255, 0, 0), width=2)
+                    draw.line([mx, my - r - 4, mx, my + r + 4], fill=(255, 0, 0), width=2)
+            except Exception as e:
+                try:
+                    import structlog
+                    structlog.get_logger().warning("Failed to draw cursor target on screenshot", error=str(e))
+                except Exception:
+                    pass
+                
+            # Convert back to PNG bytes
+            output = io.BytesIO()
+            pil_img.save(output, format="PNG")
+            return output.getvalue()
     except Exception:
         return None
 
