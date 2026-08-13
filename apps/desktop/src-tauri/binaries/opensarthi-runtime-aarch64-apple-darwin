@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# OpenSarthi runtime sidecar launcher — macOS (Apple Silicon / aarch64)
+# Handles first-boot venv bootstrapping and subsequent launches.
+
+set -euo pipefail
+
+# Get the absolute path to this script's directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# ── 1. Resolve the runtime directory ──────────────────────────────────────────
+if [ -d "$SCRIPT_DIR/../../../../runtime" ]; then
+    # Monorepo development structure
+    RUNTIME_DIR="$SCRIPT_DIR/../../../../runtime"
+elif [ -d "$SCRIPT_DIR/../Resources/runtime" ]; then
+    # macOS .app bundle: Contents/Resources/runtime
+    RUNTIME_DIR="$SCRIPT_DIR/../Resources/runtime"
+elif [ -d "$SCRIPT_DIR/../resources/runtime" ]; then
+    RUNTIME_DIR="$SCRIPT_DIR/../resources/runtime"
+elif [ -d "$SCRIPT_DIR/resources/runtime" ]; then
+    RUNTIME_DIR="$SCRIPT_DIR/resources/runtime"
+elif [ -d "$SCRIPT_DIR/../../../../../runtime" ]; then
+    RUNTIME_DIR="$SCRIPT_DIR/../../../../../runtime"
+else
+    RUNTIME_DIR="$SCRIPT_DIR/../../../../runtime"
+fi
+
+# Resolve to absolute path
+RUNTIME_DIR="$(cd "$RUNTIME_DIR" 2>/dev/null && pwd || echo "$RUNTIME_DIR")"
+
+# ── 2. Venv paths (macOS uses ~/Library/Application Support) ──────────────────
+USER_VENV_DIR="$HOME/Library/Application Support/opensarthi"
+USER_VENV="$USER_VENV_DIR/.venv"
+
+# ── 3. Check if a venv has all required packages ──────────────────────────────
+_check_venv() {
+    local venv_python="$1/bin/python3"
+    if [ ! -f "$venv_python" ]; then
+        return 1
+    fi
+    "$venv_python" \
+        -c "import uvicorn, fastapi, speech_recognition, groq, anthropic, google.generativeai, sentence_transformers" 2>/dev/null
+}
+
+# ── 4. Select or bootstrap the active venv ────────────────────────────────────
+if _check_venv "$RUNTIME_DIR/.venv"; then
+    # Dev venv (monorepo)
+    ACTIVE_VENV="$RUNTIME_DIR/.venv"
+
+elif _check_venv "$USER_VENV"; then
+    # Previously bootstrapped user venv
+    ACTIVE_VENV="$USER_VENV"
+
+else
+    # ── First-boot bootstrap ──────────────────────────────────────────────────
+    echo "[OpenSarthi] First launch: setting up Python runtime in $USER_VENV_DIR"
+    echo "[OpenSarthi] This may take a few minutes — please wait..."
+    mkdir -p "$USER_VENV_DIR"
+
+    # Find a working Python 3.10+ on the system
+    PORTABLE_PYTHON_BIN="$USER_VENV_DIR/portable_python/bin/python3"
+    PYTHON_BIN=""
+
+    if [ -f "$PORTABLE_PYTHON_BIN" ]; then
+        PYTHON_BIN="$PORTABLE_PYTHON_BIN"
+    fi
+
+    if [ -z "$PYTHON_BIN" ]; then
+        for py in python3.13 python3.12 python3.11 python3.10 python3 \
+                  /usr/bin/python3 /usr/local/bin/python3 \
+                  /opt/homebrew/bin/python3 /opt/homebrew/bin/python3.12 \
+                  /opt/homebrew/bin/python3.11 /opt/homebrew/bin/python3.10; do
+            if "$py" -c \
+                "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" 2>/dev/null; then
+                PYTHON_BIN="$py"
+                break
+            fi
+        done
+    fi
+
+    # Download standalone Python if nothing found
+    if [ -z "$PYTHON_BIN" ]; then
+        echo "[OpenSarthi] No Python 3.10+ found. Downloading standalone runtime..."
+        # python-build-standalone for macOS aarch64
+        PYTHON_TAR_URL="https://github.com/indygreg/python-build-standalone/releases/download/20240107/cpython-3.12.1%2B20240107-aarch64-apple-darwin-install_only.tar.gz"
+        TAR_PATH="$USER_VENV_DIR/python.tar.gz"
+        PORTABLE_PYTHON_DIR="$USER_VENV_DIR/portable_python"
+
+        if command -v curl >/dev/null 2>&1; then
+            curl -L "$PYTHON_TAR_URL" -o "$TAR_PATH" || { echo "ERROR: Download failed."; exit 1; }
+        elif command -v wget >/dev/null 2>&1; then
+            wget -O "$TAR_PATH" "$PYTHON_TAR_URL" || { echo "ERROR: Download failed."; exit 1; }
+        else
+            echo "ERROR: Neither curl nor wget found. Cannot download standalone Python."
+            exit 1
+        fi
+
+        echo "[OpenSarthi] Extracting standalone Python..."
+        mkdir -p "$PORTABLE_PYTHON_DIR"
+        tar -xzf "$TAR_PATH" -C "$PORTABLE_PYTHON_DIR" --strip-components=1
+        rm -f "$TAR_PATH"
+
+        if [ -f "$PORTABLE_PYTHON_BIN" ]; then
+            PYTHON_BIN="$PORTABLE_PYTHON_BIN"
+            echo "[OpenSarthi] Standalone Python installed."
+        else
+            echo "ERROR: Python extraction failed."
+            exit 1
+        fi
+    fi
+
+    # Create venv
+    echo "[OpenSarthi] Creating virtual environment..."
+    "$PYTHON_BIN" -m venv "$USER_VENV"
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to create Python virtual environment."
+        exit 1
+    fi
+
+    # Install dependencies
+    echo "[OpenSarthi] Installing dependencies (this only happens once)..."
+    source "$USER_VENV/bin/activate"
+    pip install --upgrade pip --quiet
+
+    if [ -f "$RUNTIME_DIR/requirements.txt" ]; then
+        pip install -r "$RUNTIME_DIR/requirements.txt"
+        if [ $? -ne 0 ]; then
+            echo "ERROR: Dependency installation failed. Check your internet connection."
+            exit 1
+        fi
+        echo "[OpenSarthi] Dependencies installed successfully."
+    else
+        echo "WARNING: requirements.txt not found at $RUNTIME_DIR/requirements.txt"
+    fi
+
+    # Install macOS-specific extras (pyobjc for Accessibility API)
+    echo "[OpenSarthi] Installing macOS accessibility extensions..."
+    pip install pyobjc-framework-ApplicationServices pyobjc-framework-Cocoa --quiet || true
+    deactivate
+
+    # Verify the newly bootstrapped venv actually works
+    if ! _check_venv "$USER_VENV"; then
+        echo "ERROR: Bootstrap completed but runtime check failed. Try deleting '$USER_VENV' and restarting."
+        exit 1
+    fi
+
+    ACTIVE_VENV="$USER_VENV"
+    echo "[OpenSarthi] Setup complete. Starting runtime..."
+fi
+
+# ── 5. Activate and launch ────────────────────────────────────────────────────
+source "$ACTIVE_VENV/bin/activate"
+cd "$RUNTIME_DIR"
+exec python main.py "$@"

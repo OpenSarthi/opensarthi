@@ -467,8 +467,219 @@ class PyAutoGUIProvider:
         return True
 
 
+class MacOSProvider:
+    """macOS desktop automation using osascript (AppleScript) + pyautogui."""
+
+    # Map X11/xdotool key names to AppleScript key names / codes
+    _KEY_MAP = {
+        "Return": "return", "Enter": "return",
+        "Tab": "tab", "Escape": "escape", "escape": "escape",
+        "BackSpace": "delete", "Delete": "forwarddelete",
+        "space": "space",
+        "Up": "up arrow", "Down": "down arrow",
+        "Left": "left arrow", "Right": "right arrow",
+        "F1": "f1", "F2": "f2", "F3": "f3", "F4": "f4",
+        "F5": "f5", "F6": "f6", "F7": "f7", "F8": "f8",
+        "F9": "f9", "F10": "f10", "F11": "f11", "F12": "f12",
+        "super": "command", "Super_L": "command", "Super_R": "command",
+    }
+
+    async def capture_screen(self) -> str:
+        path = os.path.join(tempfile.gettempdir(), "opensarthi_screen.png")
+        try:
+            import pyautogui
+            screenshot = pyautogui.screenshot()
+            screenshot.save(path)
+        except Exception:
+            proc = await asyncio.create_subprocess_exec(
+                "screencapture", "-x", path,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await proc.communicate()
+        return path
+
+    async def type_text(self, text: str, window_id: Optional[str] = None) -> bool:
+        await asyncio.sleep(0.2)
+        # For long text, use clipboard paste (cmd+v) — faster and handles unicode
+        if len(text) > 20:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "pbcopy",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await proc.communicate(input=text.encode("utf-8"))
+                # Paste with Cmd+V
+                paste_script = 'tell application "System Events" to keystroke "v" using command down'
+                paste_proc = await asyncio.create_subprocess_exec(
+                    "osascript", "-e", paste_script,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await paste_proc.communicate()
+                return paste_proc.returncode == 0
+            except Exception:
+                pass
+        # Short text: keystroke via osascript
+        try:
+            # Escape double-quotes and backslashes for AppleScript
+            escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+            script = f'tell application "System Events" to keystroke "{escaped}"'
+            proc = await asyncio.create_subprocess_exec(
+                "osascript", "-e", script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            if proc.returncode == 0:
+                return True
+        except Exception:
+            pass
+        # Fallback: pyautogui typewrite
+        try:
+            import pyautogui
+            pyautogui.typewrite(text, interval=0.05) if text.isascii() else None
+            return True
+        except Exception:
+            return False
+
+    async def press_key(self, key: str, window_id: Optional[str] = None) -> bool:
+        # Handle combos like ctrl+c -> command+c on macOS
+        parts = [p.strip() for p in key.split("+")]
+        modifiers = []
+        main_key = parts[-1]
+        mod_map = {
+            "ctrl": "command", "control": "command",
+            "cmd": "command", "command": "command",
+            "alt": "option", "option": "option",
+            "shift": "shift",
+            "super": "command",
+        }
+        for p in parts[:-1]:
+            if p.lower() in mod_map:
+                modifiers.append(f"{mod_map[p.lower()]} down")
+        mapped_key = self._KEY_MAP.get(main_key, main_key.lower())
+        try:
+            if modifiers:
+                using_clause = " using {" + ", ".join(modifiers) + "}"
+                script = f'tell application "System Events" to keystroke "{mapped_key}"{using_clause}'
+            else:
+                # Use key code for special keys without quotes
+                special_keys = {"up arrow", "down arrow", "left arrow", "right arrow",
+                                "return", "tab", "escape", "delete", "forwarddelete",
+                                "space", "f1","f2","f3","f4","f5","f6",
+                                "f7","f8","f9","f10","f11","f12"}
+                if mapped_key in special_keys:
+                    script = f'tell application "System Events" to key code (key code of key "{mapped_key}")'
+                    # Simpler: use keystroke for non-arrows, key code for arrows
+                    script = f'tell application "System Events" to keystroke (ASCII character {ord(mapped_key[0])})' if len(mapped_key) == 1 else f'tell application "System Events" to key code 36'  # return
+                    # Use the pyautogui fallback for special keys
+                    raise ValueError("use pyautogui fallback")
+                else:
+                    script = f'tell application "System Events" to keystroke "{mapped_key}"'
+            proc = await asyncio.create_subprocess_exec(
+                "osascript", "-e", script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            if proc.returncode == 0:
+                return True
+        except Exception:
+            pass
+        # Fallback: pyautogui
+        try:
+            import pyautogui
+            pyautogui_key_map = {
+                "return": "enter", "tab": "tab", "escape": "escape",
+                "delete": "backspace", "forwarddelete": "delete",
+                "up arrow": "up", "down arrow": "down",
+                "left arrow": "left", "right arrow": "right",
+                "space": "space",
+                **{f"f{i}": f"f{i}" for i in range(1, 13)},
+            }
+            pg_key = pyautogui_key_map.get(mapped_key, mapped_key)
+            pg_mods = [mod_map.get(p.lower(), p.lower()) for p in parts[:-1]]
+            # pyautogui uses 'command', 'option', 'shift'
+            pg_mod_map = {"command": "command", "option": "option", "shift": "shift"}
+            pg_mods_final = [pg_mod_map.get(m, m) for m in pg_mods]
+            if pg_mods_final:
+                pyautogui.hotkey(*pg_mods_final, pg_key)
+            else:
+                pyautogui.press(pg_key)
+            return True
+        except Exception:
+            return False
+
+    async def click(self, x: int, y: int, button: str = "left", window_id: Optional[str] = None) -> bool:
+        try:
+            from window_session import get_session
+            get_session().update_mouse(x, y)
+        except Exception:
+            pass
+        try:
+            import pyautogui
+            if SMOOTH_MOUSE:
+                pyautogui.moveTo(x, y, duration=MOUSE_GLIDE_DURATION)
+            pyautogui.click(x, y, button=button)
+            return True
+        except Exception:
+            pass
+        # Fallback: osascript click
+        try:
+            script = f'tell application "System Events" to click at {{{x}, {y}}}'
+            proc = await asyncio.create_subprocess_exec(
+                "osascript", "-e", script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            return proc.returncode == 0
+        except Exception:
+            return False
+
+    async def get_window_id(self, title: str) -> Optional[str]:
+        """On macOS we don't use numeric window IDs; return app name as identifier."""
+        try:
+            script = 'tell application "System Events" to get name of every process whose visible is true'
+            proc = await asyncio.create_subprocess_exec(
+                "osascript", "-e", script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await proc.communicate()
+            apps = stdout.decode().strip().split(", ")
+            title_lower = title.lower()
+            for app in apps:
+                if title_lower in app.lower():
+                    return app.strip()
+        except Exception:
+            pass
+        return None
+
+    async def refocus_window(self, window_id: str) -> bool:
+        """Activate application by name."""
+        if not window_id:
+            return True
+        try:
+            script = f'tell application "{window_id}" to activate'
+            proc = await asyncio.create_subprocess_exec(
+                "osascript", "-e", script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            return proc.returncode == 0
+        except Exception:
+            return False
+
+
 # Helper to check display environment and select provider
 def get_desktop_provider():
+    if platform.system() == "Darwin":
+        return MacOSProvider()
     if platform.system() == "Windows":
         return PyAutoGUIProvider()
     wayland_display = os.environ.get("WAYLAND_DISPLAY")
@@ -782,6 +993,167 @@ class OpenAppTool(BaseTool):
         ):
             reset_session()
 
+        # ── macOS: launch .app bundles with `open -a` ──────────────────────────
+        if platform.system() == "Darwin":
+            # Map common names → exact macOS .app bundle names
+            MAC_APP_NAMES = {
+                # Browsers
+                "safari": "Safari",
+                "chrome": "Google Chrome",
+                "google chrome": "Google Chrome",
+                "google-chrome": "Google Chrome",
+                "firefox": "Firefox",
+                "brave": "Brave Browser",
+                "brave browser": "Brave Browser",
+                "edge": "Microsoft Edge",
+                "microsoft edge": "Microsoft Edge",
+                "arc": "Arc",
+                "opera": "Opera",
+                # Editors / IDEs
+                "vscode": "Visual Studio Code",
+                "vs code": "Visual Studio Code",
+                "visual studio code": "Visual Studio Code",
+                "code": "Visual Studio Code",
+                "cursor": "Cursor",
+                "zed": "Zed",
+                "xcode": "Xcode",
+                "sublime": "Sublime Text",
+                "sublime text": "Sublime Text",
+                "nova": "Nova",
+                "bbedit": "BBEdit",
+                "textmate": "TextMate",
+                # Terminals
+                "terminal": "Terminal",
+                "iterm": "iTerm",
+                "iterm2": "iTerm",
+                "wezterm": "WezTerm",
+                "kitty": "kitty",
+                "alacritty": "Alacritty",
+                "ghostty": "Ghostty",
+                # File manager
+                "finder": "Finder",
+                "file manager": "Finder",
+                # Productivity
+                "notes": "Notes",
+                "pages": "Pages",
+                "numbers": "Numbers",
+                "keynote": "Keynote",
+                "calendar": "Calendar",
+                "reminders": "Reminders",
+                "mail": "Mail",
+                "messages": "Messages",
+                "facetime": "FaceTime",
+                "maps": "Maps",
+                "photos": "Photos",
+                "preview": "Preview",
+                "quicktime": "QuickTime Player",
+                "quicktime player": "QuickTime Player",
+                "music": "Music",
+                "podcasts": "Podcasts",
+                "tv": "TV",
+                "books": "Books",
+                "app store": "App Store",
+                "system preferences": "System Preferences",
+                "system settings": "System Settings",
+                "activity monitor": "Activity Monitor",
+                "task manager": "Activity Monitor",
+                "system monitor": "Activity Monitor",
+                "disk utility": "Disk Utility",
+                "terminal": "Terminal",
+                "calculator": "Calculator",
+                "textedit": "TextEdit",
+                "automator": "Automator",
+                "script editor": "Script Editor",
+                # Communication
+                "slack": "Slack",
+                "discord": "Discord",
+                "zoom": "Zoom",
+                "teams": "Microsoft Teams",
+                "microsoft teams": "Microsoft Teams",
+                "telegram": "Telegram",
+                "signal": "Signal",
+                "whatsapp": "WhatsApp",
+                "skype": "Skype",
+                # Media / Creative
+                "vlc": "VLC",
+                "vlc media player": "VLC",
+                "spotify": "Spotify",
+                "obs": "OBS",
+                "obs studio": "OBS",
+                "final cut": "Final Cut Pro",
+                "final cut pro": "Final Cut Pro",
+                "logic pro": "Logic Pro",
+                "garageband": "GarageBand",
+                "garage band": "GarageBand",
+                "gimp": "GIMP",
+                "inkscape": "Inkscape",
+                "blender": "Blender",
+                "figma": "Figma",
+                "sketch": "Sketch",
+                "affinity designer": "Affinity Designer",
+                "affinity photo": "Affinity Photo",
+                "affinity publisher": "Affinity Publisher",
+                "pixelmator": "Pixelmator Pro",
+                # Dev tools
+                "docker": "Docker",
+                "tableplus": "TablePlus",
+                "sequel pro": "Sequel Pro",
+                "postman": "Postman",
+                "insomnia": "Insomnia",
+                "proxyman": "Proxyman",
+                "simulator": "Simulator",
+                # Notes
+                "obsidian": "Obsidian",
+                "notion": "Notion",
+                "logseq": "Logseq",
+                "bear": "Bear",
+                "craft": "Craft",
+                "ulysses": "Ulysses",
+                "devonthink": "DEVONthink 3",
+                # Other
+                "1password": "1Password 7 - Password Manager",
+                "bitwarden": "Bitwarden",
+                "raycast": "Raycast",
+                "alfred": "Alfred",
+                "bartender": "Bartender 4",
+                "cleanmymac": "CleanMyMac X",
+            }
+            mac_app_name = MAC_APP_NAMES.get(app_lower, app)
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "open", "-a", mac_app_name,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr_bytes = await proc.communicate()
+                if proc.returncode == 0:
+                    return ToolResult.ok(
+                        observation=f"Launched '{mac_app_name}' on macOS",
+                        confidence=ToolResultConfidence.MEDIUM,
+                        suggested_next="Use wait_for_window to confirm it opened"
+                    )
+            except Exception:
+                pass
+            # Also try with the original user-supplied name (may already be exact bundle name)
+            if mac_app_name != app:
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "open", "-a", app,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    _, _ = await proc.communicate()
+                    if proc.returncode == 0:
+                        return ToolResult.ok(
+                            observation=f"Launched '{app}' on macOS",
+                            confidence=ToolResultConfidence.MEDIUM,
+                            suggested_next="Use wait_for_window to confirm it opened"
+                        )
+                except Exception:
+                    pass
+            # Fallback: try as CLI binary (Homebrew tools) — fall through to binary search below
+
+
         tried = []
         for binary in candidates:
             # Handle binaries with args (e.g. "libreoffice --writer")
@@ -967,7 +1339,10 @@ class ClickElementTool(BaseTool):
     }
 
     async def execute(self, args: dict, permission_manager=None) -> ToolResult:
-        from providers.linux.accessibility import AccessibilityProvider
+        if platform.system() == "Darwin":
+            from providers.macos.accessibility import AccessibilityProvider
+        else:
+            from providers.linux.accessibility import AccessibilityProvider
         role = args.get("role", "")
         name = args.get("name", "")
 
@@ -1161,9 +1536,12 @@ class ObserveDesktopTool(BaseTool):
             except Exception:
                 pass
 
-        # Get AT-SPI focused element
+        # Get focused element via platform accessibility provider
         try:
-            from providers.linux.accessibility import AccessibilityProvider
+            if platform.system() == "Darwin":
+                from providers.macos.accessibility import AccessibilityProvider
+            else:
+                from providers.linux.accessibility import AccessibilityProvider
             a11y = AccessibilityProvider()
             if a11y.available:
                 focused = a11y.get_focused_element()

@@ -10,22 +10,23 @@ use tracing_subscriber::EnvFilter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Suppress Qt/WebKitGTK font format warnings from AppImage bundled libraries.
-    // The "QFont::fromString: Invalid description" noise is harmless but clutters output.
-    std::env::set_var("QT_LOGGING_RULES", "qt.qpa.fonts.warning=false");
-    // Ensure consistent DPI handling in AppImage environments
-    if std::env::var("QT_FONT_DPI").is_err() {
-        std::env::set_var("QT_FONT_DPI", "96");
-    }
-    // Suppress GStreamer audio device enumeration errors on Linux/AppImage.
-    // All voice capture is handled by the Python sidecar (PyAudio) — WebKit
-    // does not need audio device access. Disabling GStreamer's appsrc/appsink
-    // pipeline prevents "element not found" and "no audio device" spam.
-    std::env::set_var("GST_GL_XINITTHREADS", "1");
-    std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-    // Suppress additional WebKit media device probing logs
-    if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
-        std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+    // Linux-specific: suppress Qt/WebKitGTK font format warnings and
+    // disable GPU compositing/DMA-BUF paths that cause crashes in AppImage.
+    #[cfg(target_os = "linux")]
+    {
+        // Suppress Qt font-format warnings from AppImage bundled libraries
+        std::env::set_var("QT_LOGGING_RULES", "qt.qpa.fonts.warning=false");
+        // Ensure consistent DPI handling in AppImage environments
+        if std::env::var("QT_FONT_DPI").is_err() {
+            std::env::set_var("QT_FONT_DPI", "96");
+        }
+        // Suppress GStreamer audio device enumeration errors on Linux/AppImage.
+        // All voice capture is handled by the Python sidecar (PyAudio).
+        std::env::set_var("GST_GL_XINITTHREADS", "1");
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
     }
 
     tracing_subscriber::fmt()
