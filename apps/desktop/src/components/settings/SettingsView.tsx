@@ -11,6 +11,7 @@ import {
 } from "../../lib/models";
 
 interface SettingsViewProps {
+  viewMode?: "agent" | "interaction" | "all";
   onClose: () => void;
   currentLocalModel: string;
   currentCloudModel: string;
@@ -154,6 +155,7 @@ function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }
 }
 
 export function SettingsView({
+  viewMode = "all",
   onClose,
   currentLocalModel,
   currentCloudModel,
@@ -368,43 +370,54 @@ export function SettingsView({
         alignItems: "center",
         justifyContent: "center",
         zIndex: 50,
+        perspective: "1200px",
       }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <motion.div
         className="hud-panel"
-        initial={{ scale: 0.93, y: 15, opacity: 0 }}
-        animate={{ scale: 1, y: 0, opacity: 1 }}
-        exit={{ scale: 0.93, y: 15, opacity: 0 }}
-        transition={{ type: "spring", damping: 25, stiffness: 350 }}
+        initial={{ scale: 0.9, rotateX: 12, y: -10, opacity: 0 }}
+        animate={{ scale: 1, rotateX: 0, y: 0, opacity: 1 }}
+        exit={{ scale: 0.9, rotateX: -8, y: 10, opacity: 0 }}
+        transition={{ type: "spring", damping: 26, stiffness: 280 }}
         style={{
-          width: "840px",
+          width: viewMode === "agent" || viewMode === "interaction" ? "440px" : "840px",
           maxHeight: "85vh",
           display: "flex",
           flexDirection: "column",
           gap: "0",
           overflow: "hidden",
-          background: "rgba(0, 0, 0, 0.4)",
-          backdropFilter: "blur(24px)",
-          WebkitBackdropFilter: "blur(24px)",
-          boxShadow: "0 10px 40px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(255,255,255,0.02)"
+          background: "rgba(10, 10, 10, 0.97)",
+          border: "1px solid var(--border)",
+          boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)"
         }}
       >
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px", borderBottom: "1px solid var(--border)" }}>
           <h2 style={{ fontSize: "14px", color: "var(--accent)", letterSpacing: "0.1em", fontWeight: "bold", margin: 0 }}>
-            // SYSTEM CONFIGURATION
+            {viewMode === "agent"
+              ? "// AGENT CONFIGURATION"
+              : viewMode === "interaction"
+              ? "// VOICE & AUDIO CONFIGURATION"
+              : "// SYSTEM CONFIGURATION"}
           </h2>
           <button onClick={onClose} style={{ color: "var(--text-secondary)", cursor: "pointer", background: "none", border: "none", display: "flex", alignItems: "center" }}>
             <X size={18} />
           </button>
         </div>
 
-        {/* Scrollable content in 2 Columns */}
-        <div style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: "20px 24px 48px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px" }}>
+        {/* Scrollable content in Columns */}
+        <div style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: "20px 24px 48px", display: "grid", gridTemplateColumns: viewMode === "agent" || viewMode === "interaction" ? "1fr" : "1fr 1fr", gap: "28px" }}>
           
           {/* Column 1: AI Provider & Model Config */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "20px", borderRight: "1px solid rgba(255,255,255,0.06)", paddingRight: "24px" }}>
+          {(viewMode === "agent" || viewMode === "all") && (
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "20px",
+              borderRight: viewMode === "all" ? "1px solid rgba(255,255,255,0.06)" : "none",
+              paddingRight: viewMode === "all" ? "24px" : "0"
+            }}>
             <div style={sectionStyle}>
               <SectionHeader icon={<Cpu size={12} color="var(--accent)" />} title="[ AI PROVIDER & MODEL ]" />
 
@@ -572,194 +585,200 @@ export function SettingsView({
               </div>
 
               {/* Save AI Settings */}
-              <button
-                onClick={handleSaveAI}
-                style={{
-                  background: saved ? "var(--success)" : "var(--accent)",
-                  color: "#000",
-                  border: "none",
-                  padding: "9px 16px",
-                  fontWeight: "bold",
-                  fontSize: "12px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "8px",
-                  cursor: "pointer",
-                  borderRadius: "4px",
-                  letterSpacing: "0.05em",
-                  transition: "background 0.3s",
-                  alignSelf: "flex-start",
-                  marginTop: "8px"
-                }}
-              >
-                {saved ? <><CheckCircle2 size={14} /> SAVED!</> : <><Save size={14} /> SAVE AI SETTINGS</>}
-              </button>
+              {viewMode === "all" && (
+                <button
+                  onClick={handleSaveAI}
+                  style={{
+                    background: saved ? "var(--success)" : "var(--accent)",
+                    color: "#000",
+                    border: "none",
+                    padding: "9px 16px",
+                    fontWeight: "bold",
+                    fontSize: "12px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    cursor: "pointer",
+                    borderRadius: "4px",
+                    letterSpacing: "0.05em",
+                    transition: "background 0.3s",
+                    alignSelf: "flex-start",
+                    marginTop: "8px"
+                  }}
+                >
+                  {saved ? <><CheckCircle2 size={14} /> SAVED!</> : <><Save size={14} /> SAVE AI SETTINGS</>}
+                </button>
+              )}
             </div>
-          </div>
+            </div>
+          )}
 
           {/* Column 2: Theme & Interaction settings */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            {/* ── THEME SECTION ── */}
-            <div style={sectionStyle}>
-              <SectionHeader icon={<Palette size={12} color="var(--accent)" />} title="[ INTERFACE THEME ]" />
-              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                <label style={labelStyle}>ACTIVE STYLING MATRIX</label>
-                <select value={theme} onChange={(e) => setTheme(e.target.value)} style={selectStyle}>
-                  <option value="theme-green-black">🟢 Matrix Green (Default)</option>
-                  <option value="theme-red-black">🔴 Dark Crimson (HUD)</option>
-                  <option value="theme-mono-dark">⚫ Mono Dark (Black &amp; White)</option>
-                  <option value="theme-purple-black">🟣 Dark Nebula (Cyberpunk Purple)</option>
-                  <option value="theme-blue-black">🌊 Dark Ocean (Neon Cyan)</option>
-                  <option value="theme-light-sakura">🌸 Light Sakura (Pink &amp; White)</option>
-                  <option value="theme-light-slate">🏙️ Light Slate (Sky Blue &amp; Gray)</option>
-                  <option value="theme-light-clean">⬜ Light Clean (Pure White)</option>
-                  <option value="theme-multicolor-dark">🌌 Cyberpunk Neon (Multicolor Dark)</option>
-                  <option value="theme-multicolor-light">🌈 Vivid Rainbow (Multicolor Light)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* ── VOICE SECTION ── */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <SectionHeader icon={<Volume2 size={12} color="var(--accent)" />} title="[ VOICE & INTERACTION ]" />
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                <label style={labelStyle}>VOICE CHARACTER / ACCENT</label>
-                <select value={voiceAccent} onChange={(e) => setVoiceAccent(e.target.value)} style={selectStyle}>
-                  <optgroup label="English Accents">
-                    <option value="ie">🍀 F.R.I.D.A.Y. Accent (Irish Female)</option>
-                    <option value="com">🇺🇸 Google Accent (US Female)</option>
-                    <option value="co.uk">🇬🇧 British Accent (UK Female)</option>
-                    <option value="co.in">🇮🇳 Indian Accent (IN Female)</option>
-                    <option value="com.au">🇦🇺 Australian Accent (AU Female)</option>
-                    <option value="ca">🇨🇦 Canadian Accent (CA Female)</option>
-                  </optgroup>
-                  <optgroup label="International Languages">
-                    <option value="fr">🇫🇷 French / Français</option>
-                    <option value="es">🇪🇸 Spanish / Español</option>
-                    <option value="de">🇩🇪 German / Deutsch</option>
-                    <option value="hi">🇮🇳 Hindi / हिन्दी</option>
-                    <option value="ja">🇯🇵 Japanese / 日本語</option>
-                    <option value="pt">🇧🇷 Portuguese / Português</option>
-                  </optgroup>
-                </select>
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                <label style={labelStyle}>PLAYBACK SPEECH SPEED ({voiceSpeed.toFixed(2)}x)</label>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <input
-                    type="range"
-                    min="0.8" max="2.0" step="0.05"
-                    value={voiceSpeed}
-                    onChange={(e) => setVoiceSpeed(parseFloat(e.target.value))}
-                    style={{ flex: 1, accentColor: "var(--accent)", cursor: "pointer" }}
-                  />
-                  <span style={{ fontSize: "13px", fontFamily: "var(--font-mono)", color: "var(--accent)", minWidth: "42px", textAlign: "right" }}>
-                    {voiceSpeed.toFixed(2)}x
-                  </span>
+          {(viewMode === "interaction" || viewMode === "all") && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* ── THEME SECTION ── */}
+              {viewMode === "all" && (
+                <div style={sectionStyle}>
+                  <SectionHeader icon={<Palette size={12} color="var(--accent)" />} title="[ INTERFACE THEME ]" />
+                  <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                    <label style={labelStyle}>ACTIVE STYLING MATRIX</label>
+                    <select value={theme} onChange={(e) => setTheme(e.target.value)} style={selectStyle}>
+                      <option value="theme-green-black">🟢 Matrix Green (Default)</option>
+                      <option value="theme-red-black">🔴 Dark Crimson (HUD)</option>
+                      <option value="theme-mono-dark">⚫ Mono Dark (Black &amp; White)</option>
+                      <option value="theme-purple-black">🟣 Dark Nebula (Cyberpunk Purple)</option>
+                      <option value="theme-blue-black">🌊 Dark Ocean (Neon Cyan)</option>
+                      <option value="theme-light-sakura">🌸 Light Sakura (Pink &amp; White)</option>
+                      <option value="theme-light-slate">🏙️ Light Slate (Sky Blue &amp; Gray)</option>
+                      <option value="theme-light-clean">⬜ Light Clean (Pure White)</option>
+                      <option value="theme-multicolor-dark">🌌 Cyberpunk Neon (Multicolor Dark)</option>
+                      <option value="theme-multicolor-light">🌈 Vivid Rainbow (Multicolor Light)</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <Toggle
-                id="continuous-listening"
-                checked={continuousListening}
-                onChange={setContinuousListening}
-                label="CONTINUOUS BACKGROUND LISTENING"
-                sublabel="Listens continuously after wake word — no gaps"
-              />
+              {/* ── VOICE SECTION ── */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <SectionHeader icon={<Volume2 size={12} color="var(--accent)" />} title="[ VOICE & INTERACTION ]" />
 
-              {/* Wake Word Detection Options */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "4px", paddingTop: "12px", borderTop: "1px dashed rgba(255,255,255,0.07)" }}>
-                <Toggle
-                    id="wake-word-enabled"
-                    checked={wakeWordEnabled}
-                    onChange={setWakeWordEnabled}
-                    label="ENABLE WAKE WORD DETECTION"
-                    sublabel='Say "hey sarthi" to activate'
-                  />
+                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                  <label style={labelStyle}>VOICE CHARACTER / ACCENT</label>
+                  <select value={voiceAccent} onChange={(e) => setVoiceAccent(e.target.value)} style={selectStyle}>
+                    <optgroup label="English Accents">
+                      <option value="ie">🍀 F.R.I.D.A.Y. Accent (Irish Female)</option>
+                      <option value="com">🇺🇸 Google Accent (US Female)</option>
+                      <option value="co.uk">🇬🇧 British Accent (UK Female)</option>
+                      <option value="co.in">🇮🇳 Indian Accent (IN Female)</option>
+                      <option value="com.au">🇦🇺 Australian Accent (AU Female)</option>
+                      <option value="ca">🇨🇦 Canadian Accent (CA Female)</option>
+                    </optgroup>
+                    <optgroup label="International Languages">
+                      <option value="fr">🇫🇷 French / Français</option>
+                      <option value="es">🇪🇸 Spanish / Español</option>
+                      <option value="de">🇩🇪 German / Deutsch</option>
+                      <option value="hi">🇮🇳 Hindi / हिन्दी</option>
+                      <option value="ja">🇯🇵 Japanese / 日本語</option>
+                      <option value="pt">🇧🇷 Portuguese / Português</option>
+                    </optgroup>
+                  </select>
+                </div>
 
-                {wakeWordEnabled && (
-                  <>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                      <label style={labelStyle}>CUSTOM WAKE WORDS (COMMA SEPARATED)</label>
-                      <input
-                        value={wakeWordsInput}
-                        onChange={(e) => setWakeWordsInput(e.target.value)}
-                        placeholder="e.g. hey sarthi, hello sarthi"
-                        style={inputStyle}
-                      />
-                    </div>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                      <label style={labelStyle}>DETECTION THRESHOLD / SENSITIVITY ({wakeWordThreshold.toFixed(2)})</label>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <input
-                          type="range"
-                          min="0.1" max="0.9" step="0.05"
-                          value={wakeWordThreshold}
-                          onChange={(e) => setWakeWordThreshold(parseFloat(e.target.value))}
-                          style={{ flex: 1, accentColor: "var(--accent)", cursor: "pointer" }}
-                        />
-                        <span style={{ fontSize: "13px", fontFamily: "var(--font-mono)", color: "var(--accent)", minWidth: "42px", textAlign: "right" }}>
-                          {wakeWordThreshold.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* ── SOUND & AUDIO SECTION ── */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px", paddingTop: "4px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
-              <SectionHeader icon={<Bell size={12} color="var(--accent)" />} title="[ SOUND & AUDIO CUES ]" />
-
-              <Toggle
-                id="sound-enabled"
-                checked={soundEnabled}
-                onChange={(val) => {
-                  setSoundEnabledLocal(val);
-                  if (val) {
-                    // Preview the listen_start cue when turning sounds on
-                    setTimeout(() => playCue("listen_start"), 80);
-                  }
-                }}
-                label="ENABLE SOUND CUES"
-                sublabel="Beeps & tones on wake, listen, reply, errors, etc."
-              />
-
-              {soundEnabled && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.15 }}
-                  style={{ display: "flex", flexDirection: "column", gap: "5px" }}
-                >
-                  <label style={labelStyle}>CUE VOLUME ({soundVolume}%)</label>
+                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                  <label style={labelStyle}>PLAYBACK SPEECH SPEED ({voiceSpeed.toFixed(2)}x)</label>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                     <input
                       type="range"
-                      min="0" max="100" step="5"
-                      value={soundVolume}
-                      onChange={(e) => setSoundVolume(parseInt(e.target.value, 10))}
-                      onMouseUp={() => playCue("listen_start")}
-                      onTouchEnd={() => playCue("listen_start")}
+                      min="0.8" max="2.0" step="0.05"
+                      value={voiceSpeed}
+                      onChange={(e) => setVoiceSpeed(parseFloat(e.target.value))}
                       style={{ flex: 1, accentColor: "var(--accent)", cursor: "pointer" }}
                     />
                     <span style={{ fontSize: "13px", fontFamily: "var(--font-mono)", color: "var(--accent)", minWidth: "42px", textAlign: "right" }}>
-                      {soundVolume}%
+                      {voiceSpeed.toFixed(2)}x
                     </span>
                   </div>
-                  <span style={{ fontSize: "10px", color: "var(--text-muted)", letterSpacing: "0.04em" }}>
-                    Drag to adjust — releases a preview beep
-                  </span>
-                </motion.div>
-              )}
+                </div>
+
+                <Toggle
+                  id="continuous-listening"
+                  checked={continuousListening}
+                  onChange={setContinuousListening}
+                  label="CONTINUOUS BACKGROUND LISTENING"
+                  sublabel="Listens continuously after wake word — no gaps"
+                />
+
+                {/* Wake Word Detection Options */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "4px", paddingTop: "12px", borderTop: "1px dashed rgba(255,255,255,0.07)" }}>
+                  <Toggle
+                      id="wake-word-enabled"
+                      checked={wakeWordEnabled}
+                      onChange={setWakeWordEnabled}
+                      label="ENABLE WAKE WORD DETECTION"
+                      sublabel='Say "hey sarthi" to activate'
+                    />
+
+                  {wakeWordEnabled && (
+                    <>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                        <label style={labelStyle}>CUSTOM WAKE WORDS (COMMA SEPARATED)</label>
+                        <input
+                          value={wakeWordsInput}
+                          onChange={(e) => setWakeWordsInput(e.target.value)}
+                          placeholder="e.g. hey sarthi, hello sarthi"
+                          style={inputStyle}
+                        />
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                        <label style={labelStyle}>DETECTION THRESHOLD / SENSITIVITY ({wakeWordThreshold.toFixed(2)})</label>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <input
+                            type="range"
+                            min="0.1" max="0.9" step="0.05"
+                            value={wakeWordThreshold}
+                            onChange={(e) => setWakeWordThreshold(parseFloat(e.target.value))}
+                            style={{ flex: 1, accentColor: "var(--accent)", cursor: "pointer" }}
+                          />
+                          <span style={{ fontSize: "13px", fontFamily: "var(--font-mono)", color: "var(--accent)", minWidth: "42px", textAlign: "right" }}>
+                            {wakeWordThreshold.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* ── SOUND & AUDIO SECTION ── */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px", paddingTop: "4px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                <SectionHeader icon={<Bell size={12} color="var(--accent)" />} title="[ SOUND & AUDIO CUES ]" />
+
+                <Toggle
+                  id="sound-enabled"
+                  checked={soundEnabled}
+                  onChange={(val) => {
+                    setSoundEnabledLocal(val);
+                    if (val) {
+                      setTimeout(() => playCue("listen_start"), 80);
+                    }
+                  }}
+                  label="ENABLE SOUND CUES"
+                  sublabel="Beeps & tones on wake, listen, reply, errors, etc."
+                />
+
+                {soundEnabled && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.15 }}
+                    style={{ display: "flex", flexDirection: "column", gap: "5px" }}
+                  >
+                    <label style={labelStyle}>CUE VOLUME ({soundVolume}%)</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <input
+                        type="range"
+                        min="0" max="100" step="5"
+                        value={soundVolume}
+                        onChange={(e) => setSoundVolume(parseInt(e.target.value, 10))}
+                        onMouseUp={() => playCue("listen_start")}
+                        onTouchEnd={() => playCue("listen_start")}
+                        style={{ flex: 1, accentColor: "var(--accent)", cursor: "pointer" }}
+                      />
+                      <span style={{ fontSize: "13px", fontFamily: "var(--font-mono)", color: "var(--accent)", minWidth: "42px", textAlign: "right" }}>
+                        {soundVolume}%
+                      </span>
+                    </div>
+                    <span style={{ fontSize: "10px", color: "var(--text-muted)", letterSpacing: "0.04em" }}>
+                      Drag to adjust — releases a preview beep
+                    </span>
+                  </motion.div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
         </div>
 
@@ -786,7 +805,18 @@ export function SettingsView({
             }}
             className="hover-glow"
           >
-            {saved ? <><CheckCircle2 size={16} /> ALL SETTINGS SAVED!</> : <><Save size={16} /> SAVE ALL SETTINGS</>}
+            {saved ? (
+              <><CheckCircle2 size={16} /> SETTINGS SAVED!</>
+            ) : (
+              <>
+                <Save size={16} />{" "}
+                {viewMode === "agent"
+                  ? "SAVE AGENT CONFIGURATION"
+                  : viewMode === "interaction"
+                  ? "SAVE INTERACTION CONFIGURATION"
+                  : "SAVE ALL SETTINGS"}
+              </>
+            )}
           </button>
         </div>
       </motion.div>

@@ -21,6 +21,7 @@ import { AnimatePresence } from "framer-motion";
 export default function App() {
   const [runtimePort, setRuntimePort] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsMode, setSettingsMode] = useState<"agent" | "interaction" | "all">("all");
   const logQueue = useRef<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
@@ -247,7 +248,7 @@ export default function App() {
   const pendingRequest = usePermissionStore((s) => s.pendingRequest);
   const pendingInputRequest = usePermissionStore((s) => s.pendingInputRequest);
 
-  const isModalOpen = showSettings || showHistory || showCustomizer || showMcpSettings || showJsonImport || showContext || !!pendingRequest || !!pendingInputRequest;
+  const isModalOpen = !onboardingCompleted || showSettings || showHistory || showCustomizer || showMcpSettings || showJsonImport || showContext || !!pendingRequest || !!pendingInputRequest;
 
   return (
     <>
@@ -279,7 +280,7 @@ export default function App() {
         }}
       >
         <AssistantOverlay 
-          onOpenSettings={() => setShowSettings(true)} 
+          onOpenSettings={(mode = "all") => { setSettingsMode(mode); setShowSettings(true); }} 
           onOpenHistory={() => setShowHistory(true)}
           onOpenCustomizer={() => setShowCustomizer(true)}
           onOpenMcpSettings={() => setShowMcpSettings(true)}
@@ -297,6 +298,7 @@ export default function App() {
       <AnimatePresence>
         {showSettings && (
           <SettingsView
+            viewMode={settingsMode}
             onClose={() => setShowSettings(false)}
             currentLocalModel={activeLocalModel}
             currentCloudModel={activeCloudModel}

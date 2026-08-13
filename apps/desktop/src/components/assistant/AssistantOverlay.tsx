@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette } from "lucide-react";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
@@ -30,7 +30,7 @@ const getBuildTarget = (): string => {
 };
 
 interface AssistantOverlayProps {
-  onOpenSettings: () => void;
+  onOpenSettings: (mode?: "agent" | "interaction" | "all") => void;
   onOpenHistory: () => void;
   onOpenCustomizer: () => void;
   onOpenMcpSettings: () => void;
@@ -39,11 +39,44 @@ interface AssistantOverlayProps {
   onNewChat?: () => void;
 }
 
+const THEMES = [
+  { value: "theme-green-black", label: "🟢 Matrix Green" },
+  { value: "theme-red-black", label: "🔴 Dark Crimson" },
+  { value: "theme-mono-dark", label: "⚫ Mono Dark" },
+  { value: "theme-purple-black", label: "🟣 Dark Nebula" },
+  { value: "theme-blue-black", label: "🌊 Dark Ocean" },
+  { value: "theme-light-sakura", label: "🌸 Light Sakura" },
+  { value: "theme-light-slate", label: "🏙️ Light Slate" },
+  { value: "theme-light-clean", label: "⬜ Light Clean" },
+  { value: "theme-multicolor-dark", label: "🌌 Cyberpunk Neon" },
+  { value: "theme-multicolor-light", label: "🌈 Vivid Rainbow" },
+];
+
 export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomizer, onOpenMcpSettings, onOpenJsonImport, onOpenContext, onNewChat }: AssistantOverlayProps) {
   const [textInput, setTextInput] = useState("");
   const [statusIdx, setStatusIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showLogsPanel, setShowLogsPanel] = useState(false);
+  const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowSettingsDropdown(false);
+      }
+    };
+    if (showSettingsDropdown) {
+      document.addEventListener("mousedown", handleOutsideClick);
+      document.body.classList.add("settings-dropdown-open");
+    } else {
+      document.body.classList.remove("settings-dropdown-open");
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.body.classList.remove("settings-dropdown-open");
+    };
+  }, [showSettingsDropdown]);
 
   const {
     voiceState, isConnected, currentTranscript,
@@ -55,6 +88,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     userOverrodeMinimize, setUserOverrodeMinimize,
     streamingResponse,
     onboardingCompleted,
+    activeTheme, setActiveTheme,
   } = useAssistantStore();
 
   const modelKey = activeProvider === "ollama" || activeProvider === "local" ? activeLocalModel : activeCloudModel;
@@ -846,34 +880,6 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>New Thread</span>}
           </motion.button>
 
-          {/* Toggle Console Logs Button */}
-          <motion.button
-            onClick={() => setShowLogsPanel(!showLogsPanel)}
-            title="System Console Logs"
-            whileHover={{ scale: 1.05, color: showLogsPanel ? "var(--accent)" : "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
-            whileTap={{ scale: 0.95 }}
-            style={{
-              height: "32px",
-              width: isMaximized ? "auto" : "32px",
-              padding: isMaximized ? "0 12px" : "0",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: isMaximized ? "6px" : "0",
-              borderRadius: "4px",
-              background: showLogsPanel ? "var(--accent-glow)" : "rgba(0,0,0,0.3)",
-              border: `1px solid ${showLogsPanel ? "var(--border-accent)" : "var(--border)"}`,
-              color: showLogsPanel ? "var(--accent)" : "var(--text-secondary)",
-              transition: "all 0.2s"
-            }}
-          >
-            <motion.div whileHover={{ scale: 1.15 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Terminal size={14} />
-            </motion.div>
-            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Logs</span>}
-          </motion.button>
-
-
           {/* History Button */}
           <motion.button
             onClick={onOpenHistory}
@@ -901,11 +907,11 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Past Threads</span>}
           </motion.button>
 
-          {/* Customise Persona Button */}
+          {/* Toggle Console Logs Button */}
           <motion.button
-            onClick={onOpenCustomizer}
-            title="Customise Persona"
-            whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+            onClick={() => setShowLogsPanel(!showLogsPanel)}
+            title="System Console Logs"
+            whileHover={{ scale: 1.05, color: showLogsPanel ? "var(--accent)" : "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
             whileTap={{ scale: 0.95 }}
             style={{
               height: "32px",
@@ -916,73 +922,127 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               justifyContent: "center",
               gap: isMaximized ? "6px" : "0",
               borderRadius: "4px",
-              background: "rgba(0,0,0,0.3)",
-              border: "1px solid var(--border)",
-              color: "var(--text-secondary)",
-              transition: "all 0.2s"
-            }}
-          >
-            <motion.div whileHover={{ rotate: 30 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Wrench size={14} />
-            </motion.div>
-            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Customise</span>}
-          </motion.button>
-
-
-
-          {/* MCP Settings Button */}
-          <motion.button
-            onClick={onOpenMcpSettings}
-            title="MCP Settings"
-            whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
-            whileTap={{ scale: 0.95 }}
-            style={{
-              height: "32px",
-              width: isMaximized ? "auto" : "32px",
-              padding: isMaximized ? "0 12px" : "0",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: isMaximized ? "6px" : "0",
-              borderRadius: "4px",
-              background: "rgba(0,0,0,0.3)",
-              border: "1px solid var(--border)",
-              color: "var(--text-secondary)",
+              background: showLogsPanel ? "var(--accent-glow)" : "rgba(0,0,0,0.3)",
+              border: `1px solid ${showLogsPanel ? "var(--border-accent)" : "var(--border)"}`,
+              color: showLogsPanel ? "var(--accent)" : "var(--text-secondary)",
               transition: "all 0.2s"
             }}
           >
             <motion.div whileHover={{ scale: 1.15 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Cpu size={14} />
+              <Terminal size={14} />
             </motion.div>
-            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>MCP Settings</span>}
+            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Terminal</span>}
           </motion.button>
 
-          {/* Settings Button */}
-          <motion.button
-            onClick={onOpenSettings}
-            title="Settings"
-            whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
-            whileTap={{ scale: 0.95 }}
-            style={{
-              height: "32px",
-              width: isMaximized ? "auto" : "32px",
-              padding: isMaximized ? "0 12px" : "0",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: isMaximized ? "6px" : "0",
-              borderRadius: "4px",
-              background: "rgba(0,0,0,0.3)",
-              border: "1px solid var(--border)",
-              color: "var(--text-secondary)",
-              transition: "all 0.2s"
-            }}
-          >
-            <motion.div whileHover={{ rotate: 90 }} transition={{ type: "spring", stiffness: 200 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Settings size={14} />
-            </motion.div>
-            {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Settings</span>}
-          </motion.button>
+          {/* Settings Button Container (relative for dropdown anchor) */}
+          <div ref={dropdownRef} style={{ position: "relative" }}>
+            <motion.button
+              onClick={() => setShowSettingsDropdown(!showSettingsDropdown)}
+              title="Settings"
+              whileHover={{ scale: 1.05, color: "var(--accent)", borderColor: "var(--accent)", boxShadow: "0 0 8px var(--accent-glow)" }}
+              whileTap={{ scale: 0.95 }}
+              style={{
+                height: "32px",
+                width: isMaximized ? "auto" : "32px",
+                padding: isMaximized ? "0 12px" : "0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: isMaximized ? "6px" : "0",
+                borderRadius: "4px",
+                background: "rgba(0,0,0,0.3)",
+                border: "1px solid var(--border)",
+                color: "var(--text-secondary)",
+                transition: "all 0.2s"
+              }}
+            >
+              <motion.div whileHover={{ rotate: 90 }} transition={{ type: "spring", stiffness: 200 }} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Settings size={14} />
+              </motion.div>
+              {isMaximized && <span style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em" }}>Settings</span>}
+            </motion.button>
+
+            <AnimatePresence>
+              {showSettingsDropdown && (
+                <motion.div
+                  initial={{ opacity: 0, y: -15, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -15, scale: 0.95 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="settings-dropdown-menu"
+                  style={{ originY: 0, originX: 1 }}
+                >
+                  <button
+                    onClick={() => {
+                      onOpenSettings("agent");
+                      setShowSettingsDropdown(false);
+                    }}
+                    className="dropdown-item"
+                  >
+                    <Cpu size={13} style={{ color: "var(--accent)" }} />
+                    <span>Agent Settings</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      onOpenSettings("interaction");
+                      setShowSettingsDropdown(false);
+                    }}
+                    className="dropdown-item"
+                  >
+                    <Volume2 size={13} style={{ color: "var(--accent)" }} />
+                    <span>Interaction Settings</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      onOpenMcpSettings();
+                      setShowSettingsDropdown(false);
+                    }}
+                    className="dropdown-item"
+                  >
+                    <Wrench size={13} style={{ color: "var(--accent)" }} />
+                    <span>MCP Settings</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      onOpenCustomizer();
+                      setShowSettingsDropdown(false);
+                    }}
+                    className="dropdown-item"
+                  >
+                    <Bot size={13} style={{ color: "var(--accent)" }} />
+                    <span>Customizations</span>
+                  </button>
+
+                  <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
+
+                  <div className="dropdown-submenu-trigger">
+                    <Palette size={13} style={{ color: "var(--accent)" }} />
+                    <span>Themes</span>
+                    <ChevronRight size={10} style={{ marginLeft: "auto" }} />
+                    
+                    <div className="dropdown-submenu">
+                      {THEMES.map(t => (
+                        <button
+                          key={t.value}
+                          onClick={() => {
+                            setActiveTheme(t.value);
+                            // Do not close the dropdown menu as requested
+                          }}
+                          className="dropdown-item"
+                          style={{ color: activeTheme === t.value ? "var(--accent)" : "var(--text-secondary)" }}
+                        >
+                          <span>{t.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
           {/* Minimise to Sidebar Button */}
           <motion.button
@@ -1282,7 +1342,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 {/* Chrome plus icon button */}
                 <button
                   onClick={handleNewThread}
-                  title="New Tab"
+                  title="New Thread"
                   style={{
                     height: "26px",
                     width: "26px",
