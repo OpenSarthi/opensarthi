@@ -13,8 +13,8 @@ def build_model(provider: str, model_name: str, api_key: str | None = None) -> A
     elif provider == "google":
         if api_key:
             os.environ["GEMINI_API_KEY"] = api_key
-        from pydantic_ai.models.gemini import GeminiModel
-        return GeminiModel(model_name)
+        from pydantic_ai.models.google import GoogleModel
+        return GoogleModel(model_name)
     elif provider == "anthropic":
         if api_key:
             os.environ["ANTHROPIC_API_KEY"] = api_key
