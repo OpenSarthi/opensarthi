@@ -11,6 +11,75 @@ from agents.healer import HealerAgent
 from agents.reviewer import ReviewerAgent
 from agents.behavioral_observer import BehavioralObserver
 
+TOOL_ARG_ORDER = {
+    "open_app": ["app"],
+    "click": ["x", "y", "button"],
+    "type_text": ["text"],
+    "press_key": ["key"],
+    "shell": ["command", "timeout"],
+    "wait_for_window": ["title", "timeout"],
+    "wait_for_text": ["text", "timeout"],
+    "click_element": ["role", "name"],
+    "focus_window": ["title"],
+}
+
+def _cleanup_step(s: dict) -> dict:
+    if not isinstance(s, dict):
+        return s
+    
+    if "tool" not in s and "action" in s:
+        s["tool"] = s.pop("action")
+    
+    # Auto-detect if a key in the step is a registered tool name (e.g. {"open_app": "kate"})
+    if "tool" not in s:
+        from tools.registry import all_tools, get
+        try:
+            registered_names = {t.name for t in all_tools()}
+        except Exception:
+            registered_names = set()
+        for k, v in list(s.items()):
+            if k in registered_names:
+                s["tool"] = k
+                if isinstance(v, dict):
+                    s["args"] = v
+                else:
+                    # Retrieve arguments schema dynamically
+                    t = get(k)
+                    arg_keys = []
+                    if t and hasattr(t, "schema") and isinstance(t.schema, dict):
+                        arg_keys = list(t.schema.get("properties", {}).keys())
+                    if not arg_keys:
+                        arg_keys = TOOL_ARG_ORDER.get(k, [])
+                    
+                    if arg_keys:
+                        s["args"] = {arg_keys[0]: v}
+                    else:
+                        s["args"] = {k: v}
+                s.pop(k, None)
+                break
+
+    if "description" not in s and "comment" in s:
+        s["description"] = s.pop("comment")
+    elif "description" not in s:
+        s["description"] = ""
+    for p_key in ("params", "arguments", "parameters"):
+        if "args" not in s and p_key in s:
+            s["args"] = s.pop(p_key)
+    if "args" not in s or s["args"] is None:
+        s["args"] = {}
+    elif isinstance(s["args"], list):
+        tool_name = s.get("tool", "")
+        arg_keys = TOOL_ARG_ORDER.get(tool_name, [])
+        s["args"] = {k: v for k, v in zip(arg_keys, s["args"])}
+    reserved_step_keys = {"tool", "action", "args", "description",
+                          "comment", "params", "arguments",
+                          "parameters", "verify_with", "wait_after",
+                          "depends_on"}
+    for k in list(s.keys()):
+        if k not in reserved_step_keys:
+            s["args"].setdefault(k, s.pop(k))
+    return s
+
 class TaskUsage:
     def __init__(self, request_tokens=0, response_tokens=0, total_tokens=0):
         self.request_tokens = request_tokens
@@ -787,13 +856,8 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
         try:
             plan_steps = []
             for s in steps:
-                if "tool" not in s and "action" in s:
-                    s["tool"] = s.pop("action")
-                if "args" not in s:
-                    s["args"] = {}
-                if "description" not in s:
-                    s["description"] = s.get("tool", "")
-                plan_steps.append(PS(**s))
+                s_cleaned = _cleanup_step(s)
+                plan_steps.append(PS(**s_cleaned))
         except Exception as e:
             return f"❌ Invalid plan format: {e}"
 
@@ -917,42 +981,7 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
 
                 if data is not None:
                     try:
-                        TOOL_ARG_ORDER = {
-                            "open_app": ["app"],
-                            "click": ["x", "y", "button"],
-                            "type_text": ["text"],
-                            "press_key": ["key"],
-                            "shell": ["command", "timeout"],
-                            "wait_for_window": ["title", "timeout"],
-                            "wait_for_text": ["text", "timeout"],
-                            "click_element": ["role", "name"],
-                            "focus_window": ["title"],
-                        }
 
-                        def _cleanup_step(s: dict) -> dict:
-                            if "tool" not in s and "action" in s:
-                                s["tool"] = s.pop("action")
-                            if "description" not in s and "comment" in s:
-                                s["description"] = s.pop("comment")
-                            elif "description" not in s:
-                                s["description"] = ""
-                            for p_key in ("params", "arguments", "parameters"):
-                                if "args" not in s and p_key in s:
-                                    s["args"] = s.pop(p_key)
-                            if "args" not in s or s["args"] is None:
-                                s["args"] = {}
-                            elif isinstance(s["args"], list):
-                                tool_name = s.get("tool", "")
-                                arg_keys = TOOL_ARG_ORDER.get(tool_name, [])
-                                s["args"] = {k: v for k, v in zip(arg_keys, s["args"])}
-                            reserved_step_keys = {"tool", "action", "args", "description",
-                                                  "comment", "params", "arguments",
-                                                  "parameters", "verify_with", "wait_after",
-                                                  "depends_on"}
-                            for k in list(s.keys()):
-                                if k not in reserved_step_keys:
-                                    s["args"].setdefault(k, s.pop(k))
-                            return s
 
                         if isinstance(data, list):
                             steps = [PlanStep(**_cleanup_step(s)) for s in data]

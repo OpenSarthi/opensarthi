@@ -83,13 +83,23 @@ class TestGraphRouting(unittest.TestCase):
         state = OpenSarthiState(goal="test", is_cancelled=True)
         self.assertEqual(route_after_heal(state), "__end__")
 
-        # Retries remain -> retry execute
+        # Retries remain but not healed -> replan
         state = OpenSarthiState(goal="test", retry_count=1, max_retries=3)
+        self.assertEqual(route_after_heal(state), "replan")
+
+        # Retries remain and healed -> execute
+        state = OpenSarthiState(
+            goal="test", 
+            retry_count=1, 
+            max_retries=3, 
+            current_step_index=0, 
+            plan_steps=[{"description": "[HEALED] step"}]
+        )
         self.assertEqual(route_after_heal(state), "execute")
 
-        # Retries exhausted -> end
+        # Retries exhausted -> review
         state = OpenSarthiState(goal="test", retry_count=3, max_retries=3)
-        self.assertEqual(route_after_heal(state), "__end__")
+        self.assertEqual(route_after_heal(state), "review")
 
     def test_route_replan(self):
         state = OpenSarthiState(goal="test", is_cancelled=True)
@@ -99,9 +109,9 @@ class TestGraphRouting(unittest.TestCase):
         state = OpenSarthiState(goal="test", retry_count=1, max_retries=3)
         self.assertEqual(route_replan(state), "observe")
 
-        # Retries exhausted -> end
+        # Retries exhausted -> review
         state = OpenSarthiState(goal="test", retry_count=3, max_retries=3)
-        self.assertEqual(route_replan(state), "__end__")
+        self.assertEqual(route_replan(state), "review")
 
 
 class TestGraphCompilation(unittest.TestCase):

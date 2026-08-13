@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, User, Volume2, Copy, Check, Terminal } from "lucide-react";
+import { Bot, User, Volume2, Copy, Check, Terminal, Play } from "lucide-react";
 import type { Message } from "../../lib/schemas";
 import { wsClient } from "../../lib/ws";
 import ReactMarkdown from "react-markdown";
@@ -619,22 +619,39 @@ function ExecuteBlock({ actionJson }: { actionJson: string }) {
     cleanJson = cleanJson.trim();
     
     const parsed = JSON.parse(cleanJson);
-    const tool = parsed.action || parsed.tool || "step";
-    const params = parsed.params || parsed.args || {};
-    
-    let detailText = "";
-    if (tool === "shell" && params.command) {
-      detailText = `$ ${params.command}`;
-    } else {
-      detailText = Object.entries(params)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join(" | ");
+    let steps: any[] = [];
+    if (Array.isArray(parsed)) {
+      steps = parsed;
+    } else if (parsed && typeof parsed === "object" && Array.isArray(parsed.steps)) {
+      steps = parsed.steps;
+    } else if (parsed && typeof parsed === "object") {
+      steps = [parsed];
     }
-    
+
+    if (steps.length === 0) {
+      throw new Error("No steps found");
+    }
+
+    const getStepToolAndArgs = (s: any) => {
+      if (!s || typeof s !== "object") return { tool: "step", args: {} };
+      const tool = s.tool || s.action;
+      if (tool) {
+        return { tool, args: s.args || s.params || {} };
+      }
+      const reserved = ["description", "comment", "params", "arguments", "parameters", "verify_with", "wait_after", "depends_on"];
+      const toolKey = Object.keys(s).find(k => !reserved.includes(k));
+      if (toolKey) {
+        const val = s[toolKey];
+        const args = typeof val === "object" && val !== null ? val : { [toolKey]: val };
+        return { tool: toolKey, args };
+      }
+      return { tool: "step", args: {} };
+    };
+
     return (
       <div style={{
         margin: "12px 0",
-        padding: "10px 14px",
+        padding: "12px 14px",
         background: "rgba(0, 230, 180, 0.02)",
         border: "1px solid rgba(0, 230, 180, 0.15)",
         borderLeft: "3px solid var(--accent)",
@@ -645,7 +662,7 @@ function ExecuteBlock({ actionJson }: { actionJson: string }) {
         boxShadow: "0 0 15px rgba(0, 230, 180, 0.05)",
         display: "flex",
         flexDirection: "column",
-        gap: "6px"
+        gap: "10px"
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: "bold", fontSize: "9px", color: "var(--accent)", letterSpacing: "0.05em" }}>
@@ -653,21 +670,67 @@ function ExecuteBlock({ actionJson }: { actionJson: string }) {
             <span>SYSTEM DIRECTIVE</span>
           </div>
           <span style={{ fontSize: "8px", background: "rgba(0, 230, 180, 0.15)", color: "var(--accent)", padding: "1px 5px", borderRadius: "3px", fontWeight: "bold" }}>
-            READY
+            READY ({steps.length} {steps.length === 1 ? "STEP" : "STEPS"})
           </span>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-          <div style={{ display: "flex", gap: "6px", alignItems: "baseline" }}>
-            <span style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase" }}>Action:</span>
-            <span style={{ fontWeight: "bold", color: "var(--accent)", textTransform: "uppercase" }}>{tool}</span>
-          </div>
-          {detailText && (
-            <div style={{ display: "flex", gap: "6px", alignItems: "baseline", marginTop: "2px" }}>
-              <span style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase" }}>Params:</span>
-              <span style={{ color: "var(--text-secondary)", wordBreak: "break-all", fontFamily: "var(--font-mono)", fontSize: "11px" }}>{detailText}</span>
-            </div>
-          )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {steps.map((s, idx) => {
+            const { tool, args } = getStepToolAndArgs(s);
+            const detailText = Object.entries(args)
+              .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
+              .join(" | ");
+            return (
+              <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "2px", paddingLeft: "6px", borderLeft: "1.5px solid rgba(0, 230, 180, 0.2)" }}>
+                <div style={{ display: "flex", gap: "6px", alignItems: "baseline" }}>
+                  <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.3)" }}>[{idx + 1}]</span>
+                  <span style={{ fontWeight: "bold", color: "var(--accent)", textTransform: "uppercase", fontSize: "11px" }}>{tool}</span>
+                </div>
+                {detailText && (
+                  <div style={{ display: "flex", gap: "6px", paddingLeft: "15px" }}>
+                    <span style={{ color: "var(--text-secondary)", wordBreak: "break-all", fontSize: "10px", opacity: 0.8 }}>{detailText}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+
+        <button
+          onClick={() => {
+            wsClient.send("run_json_plan", { steps, goal: "Custom task from response" });
+          }}
+          style={{
+            marginTop: "4px",
+            padding: "5px 12px",
+            background: "rgba(0, 230, 180, 0.1)",
+            border: "1px solid rgba(0, 230, 180, 0.4)",
+            color: "var(--accent)",
+            borderRadius: "4px",
+            fontFamily: "var(--font-mono)",
+            fontSize: "10px",
+            fontWeight: "bold",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            alignSelf: "flex-start",
+            transition: "all 0.2s"
+          }}
+          onMouseEnter={e => {
+            const target = e.currentTarget;
+            target.style.background = "rgba(0, 230, 180, 0.2)";
+            target.style.boxShadow = "0 0 8px rgba(0, 230, 180, 0.4)";
+          }}
+          onMouseLeave={e => {
+            const target = e.currentTarget;
+            target.style.background = "rgba(0, 230, 180, 0.1)";
+            target.style.boxShadow = "none";
+          }}
+        >
+          <Play size={10} fill="var(--accent)" />
+          RUN TASK
+        </button>
       </div>
     );
   } catch (e) {
