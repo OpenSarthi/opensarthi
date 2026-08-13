@@ -224,7 +224,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   userOverrodeMinimize: false,
   snapAlign: "right",
   activeLocalModel: "qwen2.5-coder:3b",
-  activeCloudModel: "gemini-2.5-flash",
+  activeCloudModel: "gemini-3.6-flash",
   activeProvider: "google",
   cloudApiKey: "",
   geminiApiKey: "",

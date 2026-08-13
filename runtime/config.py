@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     wake_word_enabled: bool = True
     wake_word_threshold: float = 0.5
     local_model: str = "qwen2.5-coder:3b"
-    cloud_model: str = "gemini-2.5-flash"
+    cloud_model: str = "gemini-3.6-flash"
     
     # AI provider selection
     ai_provider: str = "google"  # local_llm, ollama, google, openai, anthropic, groq, openrouter

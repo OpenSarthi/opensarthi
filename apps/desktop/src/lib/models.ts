@@ -82,11 +82,13 @@ export const PROVIDER_LABELS: Record<string, ProviderMeta> = {
 
 export const PROVIDER_MODELS: Record<string, ModelEntry[]> = {
   google: [
-    { value: "gemini-2.5-flash",      label: "Gemini 2.5 Flash",      tags: ["⚡", "🛠", "💰"], note: "Best default — fast & multimodal" },
-    { value: "gemini-2.5-pro",        label: "Gemini 2.5 Pro",        tags: ["🧠", "💻", "👁"], note: "Best reasoning" },
-    { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite", tags: ["⚡", "💰"],        note: "Cheapest" },
-    { value: "gemini-2.0-flash",      label: "Gemini 2.0 Flash",      tags: ["⚡", "🛠"],        note: "" },
-    { value: "gemini-1.5-pro",        label: "Gemini 1.5 Pro",        tags: ["🧠", "👁"],        note: "" },
+    { value: "gemini-3.6-flash",            label: "Gemini 3.6 Flash",       tags: ["⚡", "🛠", "✨"], note: "Latest flagship — speed & agency" },
+    { value: "gemini-3.5-flash-lite",       label: "Gemini 3.5 Flash Lite",  tags: ["⚡", "💰"],        note: "Fastest cost-effective model" },
+    { value: "gemini-3.5-flash",            label: "Gemini 3.5 Flash",       tags: ["🧠", "💻"],        note: "Frontier coding & agentic tasks" },
+    { value: "gemini-3.1-pro-preview",       label: "Gemini 3.1 Pro Preview", tags: ["🧠", "👁", "💻"], note: "SOTA reasoning & multimodal" },
+    { value: "gemini-3.1-flash-lite",       label: "Gemini 3.1 Flash Lite",  tags: ["⚡", "💰"],        note: "High-volume agentic tasks" },
+    { value: "gemini-3-flash-preview",      label: "Gemini 3 Flash Preview", tags: ["⚡", "🛠"],        note: "Frontier speed & grounding" },
+    { value: "gemini-flash-latest",         label: "Gemini Flash (Latest)",  tags: ["⚡", "✨"],        note: "Points to gemini-3.6-flash" },
   ],
 
   openai: [

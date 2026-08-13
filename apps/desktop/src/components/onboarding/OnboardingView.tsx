@@ -80,7 +80,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
 
   // Agent Settings local states
   const [provider, setProvider] = useState("google");
-  const [cloudModel, setCloudModel] = useState("gemini-2.5-flash");
+  const [cloudModel, setCloudModel] = useState("gemini-3.6-flash");
   const [localModel, setLocalModel] = useState(OLLAMA_ALL_SUGGESTIONS[0]?.value || "llama3.1:8b");
   const [apiKey, setApiKey] = useState("");
 
