@@ -798,15 +798,6 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             <span style={{ color: "var(--text-secondary)" }}>{getFormattedTime()}</span>
           </div>
         </div>
-        {/* Collapsible Absolute Bottom Console Overlay (Full Width of App) */}
-        {onboardingCompleted && (
-          <RuntimeConsole 
-            isOpen={showLogsPanel} 
-            onClose={() => setShowLogsPanel(false)} 
-            height={consoleHeight}
-            onResizeStart={startResizeConsole}
-          />
-        )}
       </div>
     );
   }
