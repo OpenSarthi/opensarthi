@@ -125,6 +125,12 @@ interface AssistantState {
   longTermMemoryEnabled: boolean;
   longTermMemories: any[];
   nodeStatuses: Record<string, "idle" | "running" | "done">;
+  
+  // Remote dashboard pairing state
+  remoteDashboardEnabled: boolean;
+  mobilePairing: { key: string; url: string; qr: string } | null;
+  setRemoteDashboardEnabled: (enabled: boolean) => void;
+  setMobilePairing: (pairing: { key: string; url: string; qr: string } | null) => void;
 
   // Token tracking (Legacy mapping to active tab)
   tokenUsage: TokenUsage;
@@ -202,6 +208,36 @@ interface AssistantState {
   sidecarLogs: string[];
   addSidecarLogs: (lines: string[]) => void;
   clearSidecarLogs: () => void;
+  // Custom accent color
+  customAccent: string | null;
+  setCustomAccent: (color: string | null) => void;
+
+  // Real-time system metrics
+  systemMetrics: {
+    cpu: number;
+    mem: number;
+    net_kbps: number;
+    gpu: number | string;
+    temp: number | string;
+    mobile_status?: {
+      enabled: boolean;
+      connected: boolean;
+      devices: string[];
+    };
+  };
+  setSystemMetrics: (metrics: {
+    cpu: number;
+    mem: number;
+    net_kbps: number;
+    gpu: number | string;
+    temp: number | string;
+    mobile_status?: {
+      enabled: boolean;
+      connected: boolean;
+      devices: string[];
+    };
+  }) => void;
+
   // Temporary storage for onboarding settings before connection handshake completes
   pendingOnboarding: any | null;
   setPendingOnboarding: (data: any | null) => void;
@@ -263,10 +299,14 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   longTermMemories: [],
   nodeStatuses: {},
   planReasonings: {},
+  remoteDashboardEnabled: false,
+  mobilePairing: null,
 
   setVoiceState: (voiceState) => set({ voiceState }),
   setConnected: (isConnected) => set({ isConnected }),
   setLongTermMemoryEnabled: (longTermMemoryEnabled) => set({ longTermMemoryEnabled }),
+  setRemoteDashboardEnabled: (remoteDashboardEnabled) => set({ remoteDashboardEnabled }),
+  setMobilePairing: (mobilePairing) => set({ mobilePairing }),
   setLongTermMemories: (longTermMemories) => set({ longTermMemories }),
   setNodeStatus: (node, status, _thread_id) => set((s) => ({
     nodeStatuses: { ...s.nodeStatuses, [node]: status }
@@ -775,6 +815,26 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     };
   }),
   clearSidecarLogs: () => set({ sidecarLogs: [] }),
+  customAccent: typeof window !== "undefined" ? localStorage.getItem("opensarthi_custom_accent") : null,
+  setCustomAccent: (color) => {
+    if (typeof window !== "undefined") {
+      if (color) {
+        localStorage.setItem("opensarthi_custom_accent", color);
+      } else {
+        localStorage.removeItem("opensarthi_custom_accent");
+      }
+    }
+    set({ customAccent: color });
+  },
+  systemMetrics: { 
+    cpu: 0, 
+    mem: 0, 
+    net_kbps: 0, 
+    gpu: "N/A", 
+    temp: "N/A",
+    mobile_status: { enabled: false, connected: false, devices: [] }
+  },
+  setSystemMetrics: (systemMetrics) => set({ systemMetrics }),
   pendingOnboarding: null,
   setPendingOnboarding: (data) => set({ pendingOnboarding: data }),
 }));

@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     custom_prompt: str = ""
     long_term_memory_enabled: bool = True
 
+    # Remote control dashboard settings
+    remote_dashboard_enabled: bool = False
+
     model_config = SettingsConfigDict(env_file=env_file_path)
 
 settings = Settings()
@@ -72,6 +75,7 @@ def save_settings_to_env(
     user_skills: list[str] = None,
     custom_prompt: str = "",
     long_term_memory_enabled: bool = True,
+    remote_dashboard_enabled: bool = False,
 ):
     import json
     # Always write to the writable user's home configuration directory (safe for read-only AppImage filesystems!)
@@ -97,6 +101,7 @@ def save_settings_to_env(
         f.write(f"WAKE_WORD_ENABLED={'True' if wake_word_enabled else 'False'}\n")
         f.write(f"WAKE_WORD_THRESHOLD={wake_word_threshold}\n")
         f.write(f"LONG_TERM_MEMORY_ENABLED={'True' if long_term_memory_enabled else 'False'}\n")
+        f.write(f"REMOTE_DASHBOARD_ENABLED={'True' if remote_dashboard_enabled else 'False'}\n")
         if user_name:
             f.write(f"USER_NAME={user_name}\n")
         if user_skills:

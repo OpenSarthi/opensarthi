@@ -44,6 +44,20 @@ export function useWebSocket(port: number | null) {
         }
       }),
 
+      wsClient.on("system_metrics", (msg) => {
+        const metrics = msg.payload as any;
+        if (metrics) {
+          useAssistantStore.getState().setSystemMetrics(metrics);
+        }
+      }),
+
+      wsClient.on("mobile_pairing", (msg) => {
+        const pairing = msg.payload as any;
+        if (pairing) {
+          useAssistantStore.getState().setMobilePairing(pairing);
+        }
+      }),
+
       wsClient.on("transcript_update", (msg) => {
         const { text } = msg.payload as { text: string };
         const { voiceState, setVoiceState, setTranscript, wakeWords, wakeWordEnabled } = useAssistantStore.getState();
@@ -263,6 +277,9 @@ export function useWebSocket(port: number | null) {
         if (p.active_theme) store.setActiveTheme(p.active_theme);
         if (p.long_term_memory_enabled !== undefined) {
           store.setLongTermMemoryEnabled(p.long_term_memory_enabled);
+        }
+        if (p.remote_dashboard_enabled !== undefined) {
+          store.setRemoteDashboardEnabled(p.remote_dashboard_enabled);
         }
 
         store.setAllApiKeys({
