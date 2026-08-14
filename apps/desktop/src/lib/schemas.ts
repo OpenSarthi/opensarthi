@@ -51,6 +51,9 @@ export const WSMessageTypeSchema = z.enum([
   "get_memories",
   "memories_response",
   "graph_node_status",
+  "system_metrics",
+  "mobile_pairing",
+  "get_mobile_pairing",
 ]);
 export type WSMessageType = z.infer<typeof WSMessageTypeSchema>;
 

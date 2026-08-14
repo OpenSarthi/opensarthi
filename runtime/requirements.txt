@@ -26,4 +26,6 @@ langgraph>=0.4
 langchain-core>=0.3
 langgraph-checkpoint-sqlite; sys_platform != 'android'
 sentence-transformers>=3.0
-
+qrcode>=8.2
+cryptography>=50.0
+pillow>=12.3
