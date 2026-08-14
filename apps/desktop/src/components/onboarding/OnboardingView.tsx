@@ -133,32 +133,35 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        transition={{ duration: 0.15 }}
         style={{
-          position: "fixed", inset: 0, zIndex: 9999,
-          background: "rgba(0, 0, 0, 0.15)",
-          backdropFilter: "blur(32px) saturate(180%)",
-          WebkitBackdropFilter: "blur(32px) saturate(180%)",
-          display: "flex", alignItems: "center", justifyContent: "center",
+          position: "fixed",
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0, 0, 0, 0.05)",
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "flex-start",
+          padding: "54px 12px 12px 12px",
+          zIndex: 9999,
           fontFamily: "var(--font-sans, 'Inter', sans-serif)",
         }}
         onClick={onClose}
       >
         <motion.div
           className="hud-panel"
-          initial={{ scale: 0.93, opacity: 0, y: 20 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.93, opacity: 0, y: 20 }}
-          transition={{ type: "spring", stiffness: 350, damping: 25 }}
+          initial={{ x: 250, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          exit={{ x: 250, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 280, damping: 26 }}
           onClick={e => e.stopPropagation()}
           style={{
-            width: "min(720px, 94vw)",
-            maxHeight: "85vh",
-            background: "rgba(0, 0, 0, 0.45)",
-            backdropFilter: "blur(28px) saturate(160%)",
-            WebkitBackdropFilter: "blur(28px) saturate(160%)",
+            width: "min(720px, calc(100vw - 24px))",
+            maxHeight: "calc(100vh - 66px)",
+            background: "rgba(10, 10, 10, 0.98)",
+            border: "1px solid var(--border)",
+            boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)",
             padding: 24,
             display: "flex", flexDirection: "column", gap: 16,
-            boxShadow: "0 20px 50px rgba(0, 0, 0, 0.6), inset 0 0 20px rgba(255,255,255,0.03)",
             overflowY: "auto",
           }}
         >

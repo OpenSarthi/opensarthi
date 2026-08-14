@@ -88,33 +88,31 @@ export function McpSettingsModal({ isOpen, onClose }: McpSettingsModalProps) {
           style={{
             position: "fixed",
             top: 0, left: 0, right: 0, bottom: 0,
-            background: "rgba(0, 0, 0, 0.15)",
-            backdropFilter: "blur(32px) saturate(180%)",
-            WebkitBackdropFilter: "blur(32px) saturate(180%)",
+            background: "rgba(0, 0, 0, 0.05)",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            justifyContent: "flex-end",
+            alignItems: "flex-start",
+            padding: "54px 12px 12px 12px",
             zIndex: 100,
           }}
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
             className="hud-panel"
-            initial={{ scale: 0.93, y: 15, opacity: 0 }}
-            animate={{ scale: 1, y: 0, opacity: 1 }}
-            exit={{ scale: 0.93, y: 15, opacity: 0 }}
+            initial={{ x: 250, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 250, opacity: 0 }}
             transition={{ type: "spring", damping: 25, stiffness: 350 }}
             style={{
               width: "560px",
-              maxHeight: "85vh",
+              maxHeight: "calc(100vh - 66px)",
               display: "flex",
               flexDirection: "column",
               gap: "0",
               overflow: "hidden",
-              background: "rgba(0, 0, 0, 0.45)",
-              backdropFilter: "blur(28px) saturate(160%)",
-              WebkitBackdropFilter: "blur(28px) saturate(160%)",
-              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.6), inset 0 0 20px rgba(255,255,255,0.03)",
+              background: "rgba(10, 10, 10, 0.95)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)",
             }}
           >
             {/* Header */}

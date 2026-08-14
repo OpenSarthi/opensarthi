@@ -260,39 +260,28 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
           style={{
             position: "fixed",
             top: 0, left: 0, right: 0, bottom: 0,
-            background: "rgba(0, 0, 0, 0.15)",
-            backdropFilter: "blur(28px) saturate(160%)",
-            WebkitBackdropFilter: "blur(28px) saturate(160%)",
+            background: "rgba(0, 0, 0, 0.05)",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            justifyContent: "flex-end",
+            alignItems: "flex-start",
+            padding: "54px 12px 12px 12px",
             zIndex: 200,
           }}
           onClick={e => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            initial={{ scale: 0.92, y: 20, opacity: 0 }}
-            animate={{ scale: 1, y: 0, opacity: 1 }}
-            exit={{ scale: 0.92, y: 20, opacity: 0 }}
+            initial={{ x: 250, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 250, opacity: 0 }}
             transition={{ type: "spring", damping: 28, stiffness: 360 }}
             style={{
-              width: "min(860px, 94vw)",
-              height: "80vh",
-              maxHeight: "720px",
-              minHeight: "450px",
+              width: "560px",
+              height: "calc(100vh - 66px)",
               display: "flex",
               flexDirection: "column",
-              background: "rgba(4, 8, 20, 0.88)",
-              backdropFilter: "blur(24px) saturate(150%)",
-              WebkitBackdropFilter: "blur(24px) saturate(150%)",
-              border: "1px solid rgba(0, 230, 180, 0.22)",
-              borderRadius: "12px",
-              boxShadow: `
-                0 0 0 1px rgba(0, 230, 180, 0.1),
-                0 32px 80px rgba(0, 0, 0, 0.85),
-                inset 0 0 60px rgba(0, 200, 160, 0.03),
-                0 0 80px rgba(0, 200, 160, 0.05)
-              `,
+              background: "rgba(10, 10, 10, 0.98)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)",
               overflow: "hidden",
             }}
           >

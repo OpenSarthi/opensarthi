@@ -71,31 +71,29 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
             position: "fixed",
             inset: 0,
             zIndex: 99999, // Ensure it sits above overlay containers
-            background: "rgba(0, 0, 0, 0.15)",
-            backdropFilter: "blur(30px) saturate(160%)",
-            WebkitBackdropFilter: "blur(30px) saturate(160%)",
+            background: "rgba(0, 0, 0, 0.05)",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            justifyContent: "flex-start",
+            alignItems: "flex-start",
+            padding: "54px 12px 12px 12px",
           }}
           onClick={onClose}
         >
           <motion.div
-            initial={{ scale: 0.92, opacity: 0, y: 16 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.92, opacity: 0, y: 16 }}
+            initial={{ x: -250, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -250, opacity: 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 28 }}
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: "min(560px, 92vw)",
-              background: "rgba(10,10,18,0.97)",
-              border: "1.5px solid var(--border-accent)",
-              borderRadius: 16,
-              padding: 24,
+              width: "560px",
+              background: "rgba(10, 10, 10, 0.98)",
+              border: "1px solid var(--border)",
+              boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)",
               display: "flex",
               flexDirection: "column",
               gap: 16,
-              boxShadow: "0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)",
+              padding: 24,
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
