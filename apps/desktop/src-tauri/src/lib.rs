@@ -58,6 +58,7 @@ pub fn run() {
             ipc::capture_screen,
             ipc::set_window_visible,
             ipc::show_notification,
+            ipc::create_desktop_shortcut,
         ])
         .setup(|app| {
             // Setup System Tray

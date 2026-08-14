@@ -83,3 +83,91 @@ pub fn show_notification(title: String, body: String, app: AppHandle) -> Result<
         .show()
         .map_err(|e| e.to_string())
 }
+
+/// Create a desktop shortcut for OpenSarthi on the user's Desktop.
+/// Linux: writes a .desktop file. macOS: symlink. Windows: PowerShell WScript.Shell .lnk.
+#[tauri::command]
+pub async fn create_desktop_shortcut(app: AppHandle) -> Result<String, String> {
+    use std::fs;
+    use std::path::PathBuf;
+    use tauri::Manager;
+
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let desktop_dir = app.path().desktop_dir().map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let apps_dir = std::env::var("HOME")
+            .map(|h| PathBuf::from(h).join(".local/share/applications"))
+            .map_err(|_| "Could not find HOME")?;
+
+        let exe_str = exe.display().to_string();
+        let icon_path = exe.parent()
+            .map(|p| p.join("icons/icon.png").display().to_string())
+            .unwrap_or_default();
+
+        let desktop_content = format!(
+            "[Desktop Entry]\nVersion=1.0\nType=Application\nName=OpenSarthi\nComment=AI Powered Desktop Agent\nExec={}\nIcon={}\nTerminal=false\nCategories=Utility;AI;\n",
+            exe_str, icon_path
+        );
+
+        // Write to Desktop
+        let _ = fs::create_dir_all(&desktop_dir);
+        let desktop_file = desktop_dir.join("opensarthi.desktop");
+        fs::write(&desktop_file, &desktop_content).map_err(|e| e.to_string())?;
+        // Make it executable
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&desktop_file).map_err(|e| e.to_string())?.permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&desktop_file, perms).map_err(|e| e.to_string())?;
+        }
+
+        // Also install to ~/.local/share/applications for app menu
+        let _ = fs::create_dir_all(&apps_dir);
+        let apps_file = apps_dir.join("opensarthi.desktop");
+        let _ = fs::write(&apps_file, &desktop_content);
+
+        return Ok(format!("Shortcut created at {}", desktop_file.display()));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let link = desktop_dir.join("OpenSarthi");
+        if link.exists() {
+            let _ = fs::remove_file(&link);
+        }
+        std::os::unix::fs::symlink(&exe, &link).map_err(|e| e.to_string())?;
+        return Ok(format!("Shortcut created at {}", link.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let lnk_path = desktop_dir.join("OpenSarthi.lnk");
+        let exe_str = exe.display().to_string().replace('/', "\\");
+        let lnk_str = lnk_path.display().to_string().replace('/', "\\");
+
+        let script = format!(
+            "Set oWS = WScript.CreateObject(\"WScript.Shell\")\n\
+             Set oLink = oWS.CreateShortcut(\"{}\")\n\
+             oLink.TargetPath = \"{}\"\n\
+             oLink.Description = \"OpenSarthi AI Desktop Agent\"\n\
+             oLink.Save",
+            lnk_str, exe_str
+        );
+
+        let tmp = std::env::temp_dir().join("os_shortcut.vbs");
+        fs::write(&tmp, &script).map_err(|e| e.to_string())?;
+        std::process::Command::new("cscript")
+            .args(["//Nologo", &tmp.display().to_string()])
+            .output()
+            .map_err(|e| e.to_string())?;
+        let _ = fs::remove_file(&tmp);
+        return Ok(format!("Shortcut created at {}", lnk_path.display()));
+    }
+
+    #[allow(unreachable_code)]
+    Err("Desktop shortcuts not supported on this platform".into())
+}
+
