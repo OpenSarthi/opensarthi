@@ -1,6 +1,6 @@
 # OpenSarthi — Backend Runtime & Infrastructure
 
-> **Updated:** July 2026 — Dual execution engine (AgentRuntime + LangGraph), SileroVAD ONNX (no PyTorch), 32-tool registry, conversational settings tool, long-term memory toggle + model caching, DevLogger structured run logs, smart overlay minimize, cancellation/pause architecture, token tracking, and Android Chaquopy path.
+> **Updated:** August 2026 — Dual execution engine (AgentRuntime + LangGraph), SileroVAD ONNX (no PyTorch), 32-tool registry, long-term memory toggle, DevLogger structured run logs, smart overlay minimize, cancellation/pause architecture, token tracking, Android Chaquopy path, Mobile Control Dashboard Server with auto-boot lifecycle and connection telemetry.
 
 ---
 
@@ -663,6 +663,9 @@ aiosqlite>=0.20
 structlog>=24.4
 psutil>=6.0
 gtts                                          # TTS (basic)
+qrcode>=8.2                                   # Mobile Remote pairing QR generator
+cryptography>=50.0                            # Symmetric AES-GCM decryption
+pillow>=12.3                                  # QR image format rendering
 # LangGraph orchestration (USE_LANGGRAPH=true)
 langgraph>=0.4
 langchain-core>=0.3
@@ -670,5 +673,18 @@ langgraph-checkpoint-sqlite; sys_platform != "android"
 sentence-transformers>=3.0
 onnxruntime                                   # SileroVAD (no PyTorch needed)
 ```
+
+---
+
+## 18. Mobile Control Dashboard Server
+
+The Python runtime supports real-time remote execution control from a phone browser over local Wi-Fi:
+- **Server Instance**: Encapsulated in `dashboard/server.py`. Runs a separate Uvicorn instance on port `8765` binding to `0.0.0.0` (accessible from any client device on the same local network).
+- **Auto-Boot Lifecycle**: Instead of requiring manual toggles, the server is automatically booted when the desktop overlay requests pairing details via the `get_mobile_pairing` WebSocket event.
+- **Connection Telemetry**: Client WebSocket connections monitor client User-Agent and remote host IP details. These metrics are compiled into `mobile_status` sub-payloads inside the `system_metrics` event (pushed to the desktop overlay every 2 seconds), allowing the desktop overlay to display list of active connected devices in real-time.
+- **Security & Encryption**: Operates end-to-end symmetric encryption using **AES-256-GCM**. Commands sent from the phone client are encrypted with a key derived from the temporary 6-digit PIN and decrypted on the sidecar before forwarding to the active desktop execution loop.
+- **Thread Lifecycle & Clean Shutdown**: The server runs programmatically via `uvicorn.Server` inside a managed Python daemon thread. When toggled off or during parent process shutdown (via the main FastAPI app `@app.on_event("shutdown")` hook or python `atexit` handlers), it sets `should_exit = True` on the uvicorn server instance to cleanly shut down its internal event loop and immediately release port `8765`, preventing port conflicts upon restart.
+
+---
 
 > **Python version: 3.12 exactly.** `faster-whisper`, `kokoro`, `numpy`, `blis` require pre-compiled wheels only available for Python 3.10–3.12.

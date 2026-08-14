@@ -601,6 +601,55 @@ Sent when a LangGraph node transitions (runs or completes).
 }
 ```
 
+### `system_metrics`
+
+Periodic (every 2s) OS metrics broadcast from the Python backend. Includes system utilization stats and active mobile dashboard status.
+
+```json
+{
+  "type": "system_metrics",
+  "payload": {
+    "cpu": 14.5,
+    "mem": 42.1,
+    "net_kbps": 245.8,
+    "gpu": 8,
+    "temp": 49.0,
+    "mobile_status": {
+      "enabled": true,
+      "connected": true,
+      "devices": [
+        "iPhone (10.170.105.15)"
+      ]
+    }
+  }
+}
+```
+
+### `get_mobile_pairing`
+
+Client request to generate a pairing QR code and PIN for remote connection. If the Uvicorn remote control dashboard server (port `8765`) is not currently active, receiving this message will automatically boot the server.
+
+```json
+{
+  "type": "get_mobile_pairing",
+  "payload": {}
+}
+```
+
+### `mobile_pairing`
+
+Server response containing pairing details: QR code image (base64 PNG) and derived pairing PIN.
+
+```json
+{
+  "type": "mobile_pairing",
+  "payload": {
+    "key": "A8X9K3",
+    "qr": "iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAD9Ff36AAAACXBIWXMA..."
+  }
+}
+```
+
 ---
 
 ## Android-Specific Messages

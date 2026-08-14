@@ -204,8 +204,8 @@ Settings are organized in four tabs:
 
 ### UI & Sounds Tab
 
-- **Theme** selection (8 themes)
 - **Sound Effects** toggle + volume slider
+- *(Note: Theme Selection, Custom Color Picker, Mobile Remote Control, and Desktop Shortcut options are located directly in the header Settings Cog Dropdown Menu)*
 
 ### Memory Tab
 
@@ -213,10 +213,18 @@ Settings are organized in four tabs:
   - When disabled: `SentenceTransformer` model never loads → faster startup & lower RAM
   - Toggle state sent to backend via `update_settings`
 
+### Settings Cog Dropdown Menu Options
+
+The Header Settings Cog Dropdown Menu houses direct UI customization and integration access:
+- **Agent, Interaction, MCP Settings, and Customizations**: Access to their respective settings dialog modals.
+- **Remote Control Option**: Opens the **Remote Access Modal** displaying connection status, active client device list, PIN code, and QR pairing code. Automatically boots up the backend remote pairing server on port `8765` when opened.
+- **Create Shortcut Option**: Creates a system desktop shortcut icon on click via a direct Tauri command.
+- **Themes Sub-menu**: Allows selecting preset UI matrix themes, and includes a **Custom Color Override** conic circle color picker. Hovering/dragging on the custom color wheel dynamically previews and animates the UI accent color in real-time, with Save/Discard controls.
+
 ### Save Behavior
 
 - **"Save AI Details"** → saves only AI-related settings, triggers `settings_sync`
-- **"Save All Settings"** → saves everything (AI + voice + UI + memory), triggers `settings_sync`
+- **"Save All Settings"** → saves everything (AI + voice + memory), triggers `settings_sync`
 - Opening settings again always reflects the currently active model and settings
 
 ---

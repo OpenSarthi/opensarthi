@@ -1,6 +1,6 @@
 # OpenSarthi — Frontend & Desktop Shell
 
-> **Updated:** August 2026 — Multi-tab threads, smart overlay mode + edge snapping, OverlayIdleView, audio cues engine, full markdown rendering + URL links, ResponseBubble modal with eye animations, STOP button, separate AI/all settings save, Long-Term Memory toggle, 10 themes, persistent panel widths; real-time task panel sync fix, robust task derivation logic.
+> **Updated:** August 2026 — Multi-tab threads, smart overlay mode + edge snapping, OverlayIdleView, audio cues engine, full markdown rendering, separate AI/all settings save, Long-Term Memory toggle, 8 themes, Settings Cog dropdown menu integrations, Custom Color Picker, dynamic connection uptime tracker, real-time client connection telemetry.
 
 ---
 
@@ -245,9 +245,10 @@ All toggles use custom animated Toggle switch components.
 
 | Setting | Control |
 |---------|---------|
-| Theme | Selection grid (10 themes) |
 | Sound Effects | Animated Toggle |
 | Sound Volume | Slider (0–100) |
+
+*(Note: Theme Selection, Custom Color Picker, Mobile Remote Control, and Desktop Shortcut options are located directly in the header Settings Cog Dropdown Menu)*
 
 ### Tab 4 — Memory
 
@@ -422,7 +423,9 @@ Auto-connects to the Python runtime on the dynamically negotiated port. Handles 
 
 ## 12. Theme System
 
-10 themes in `styles/themes.css`, applied via `document.body.className`:
+Theme selection has been relocated to the header **Settings Cog Dropdown Menu -> Themes sub-menu** to keep SettingsView modal layouts cleaner and more focused.
+
+8 active themes remain in `styles/themes.css` (with `theme-mono-dark` and `theme-light-clean` removed as deprecated), applied via `document.body.className`:
 
 | Theme ID | Palette | Mode |
 |---------|---------|------|
@@ -430,12 +433,17 @@ Auto-connects to the Python runtime on the dynamically negotiated port. Handles 
 | `theme-red-black` | Red accent | Dark |
 | `theme-purple-black` | Purple accent | Dark |
 | `theme-blue-black` | Cyan/blue accent | Dark |
-| `theme-mono-dark` | Gray/white flat | Dark |
 | `theme-light-sakura` | Pink accent | Light |
 | `theme-light-slate` | Slate accent | Light |
-| `theme-light-clean` | Clean white | Light |
 | `theme-multicolor-dark` | Animated rainbow gradient | Dark |
 | `theme-multicolor-light` | Animated rainbow gradient | Light |
+
+### Custom Color Override
+
+Located within the Themes sub-menu, clicking the **Custom Color Override** option opens a sidebar popover containing a premium conic-gradient annulus color wheel.
+- **Interaction**: Dragging the handle calculates mouse coordinates relative to the wheel's center to determine the HSL angle (0–360° Hue).
+- **Real-Time Previewing**: CSS variables are injected dynamically on `document.documentElement` during drag so the UI colors animate and update in real-time.
+- **Controls**: Includes `SAVE` (commit selected accent color to `localStorage` store), `DISCARD` (revert colors to their pre-opened states), and `DEFAULT` (restore theme native color mappings).
 
 Themes can also be changed by voice: *"Switch to cyberpunk theme"* → agent calls `update_settings` tool.
 

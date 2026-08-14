@@ -429,6 +429,16 @@ python -m unittest discover tests
 
 ---
 
+## 📱 Mobile Control Dashboard Server
+
+The runtime hosts an auxiliary FastAPI server (`dashboard/server.py`) binding to port `8765` for remote smartphone control:
+- **Authentication**: Generates a cryptographically secure 6-character PIN pairing code (`secrets.choice`).
+- **WebSockets**: Serves `/ws?token=<pairing_pin>` to clients. When connected, metadata (browser user-agent, remote IP) is stored and pushed to the desktop overlay in the `system_metrics` websocket event.
+- **Security**: Utilizes end-to-end symmetric encryption (AES-GCM-256) for command transmission over local Wi-Fi, preventing MITM injection.
+- **Lifecycle Management**: Runs in a managed background thread via `uvicorn.Server`. Handles clean startup and exit (`should_exit` signals) to immediately release port `8765` upon toggle off or app shutdown, preventing port conflicts on restart.
+
+---
+
 ## 🔮 Planned
 
 - [ ] **ElevenLabs TTS** — replace gTTS for high-quality streaming voice
