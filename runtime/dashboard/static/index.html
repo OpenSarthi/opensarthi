@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>OpenSarthi Remote</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:      #07090f;
+      --surface: rgba(255,255,255,0.04);
+      --border:  rgba(255,255,255,0.08);
+      --accent:  #00e6b4;
+      --adim:    rgba(0,230,180,0.12);
+      --text:    #d0f0ea;
+      --muted:   #5e8a80;
+      --green:   #00e6b4;
+      --gdim:    rgba(0,230,180,0.14);
+      --red:     #ff4d6d;
+    }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      background-image: radial-gradient(ellipse at 20% 30%, rgba(0,230,180,0.04) 0%, transparent 60%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(7,9,15,0.97);
+    }
+    .logo { font-size: 13px; font-weight: 800; letter-spacing: 5px; color: var(--text); text-transform: uppercase; }
+    .logo em { color: var(--accent); font-style: normal; }
+    .pill {
+      display: flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 99px;
+      background: var(--surface); border: 1px solid var(--border);
+      font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
+      color: var(--muted); transition: all 0.3s;
+    }
+    .pill.on { background: var(--gdim); border-color: rgba(0,230,180,0.3); color: var(--accent); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); transition: background 0.3s; flex-shrink: 0; }
+    .pill.on .dot { background: var(--accent); animation: blink 2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.35} }
+    .spacer { flex: 1; }
+    .enc-badge { font-size: 9px; font-weight: 700; letter-spacing: 1.2px; padding: 3px 7px; border-radius: 4px; display: none; }
+    .enc-badge.on  { display: block; background: rgba(0,230,180,0.08); border: 1px solid rgba(0,230,180,0.22); color: var(--accent); }
+    .enc-badge.off { display: block; background: rgba(255,77,109,0.08); border: 1px solid rgba(255,77,109,0.2); color: var(--red); }
+    main { flex: 1; overflow-y: auto; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
+    main::-webkit-scrollbar { width: 3px; }
+    main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .msg { max-width: 85%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.55; animation: pop 0.18s ease; }
+    @keyframes pop { from { opacity:0; transform:translateY(5px); } }
+    .msg-a { align-self: flex-start; background: var(--adim); border: 1px solid rgba(0,230,180,0.16); border-bottom-left-radius: 4px; }
+    .msg-u { align-self: flex-end; background: var(--surface); border: 1px solid var(--border); border-bottom-right-radius: 4px; }
+    .msg-sys { align-self: center; font-size: 11px; color: var(--muted); background: transparent; border: none; padding: 2px 0; letter-spacing: 0.3px; }
+    .lbl { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; opacity: 0.5; margin-bottom: 5px; }
+    .msg-a .lbl { color: var(--accent); }
+    .msg-u .lbl { color: var(--muted); text-align: right; }
+    #toast {
+      position: fixed; top: 62px; left: 50%; transform: translateX(-50%) translateY(-8px);
+      background: rgba(0,230,180,0.14); border: 1px solid rgba(0,230,180,0.38);
+      color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 0.8px;
+      padding: 7px 18px; border-radius: 99px; opacity: 0;
+      transition: opacity 0.22s, transform 0.22s; pointer-events: none; white-space: nowrap; z-index: 100;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    footer { flex-shrink: 0; padding: 10px 14px; border-top: 1px solid var(--border); background: rgba(7,9,15,0.97); display: flex; gap: 8px; align-items: center; }
+    #inp { flex: 1; padding: 11px 14px; background: var(--surface); border: 1.5px solid var(--border); border-radius: 12px; color: var(--text); font-size: 14px; outline: none; transition: border-color 0.15s; }
+    #inp:focus { border-color: var(--accent); }
+    #inp::placeholder { color: var(--muted); }
+    .btn-icon { background: var(--surface); border: 1.5px solid var(--border); color: var(--muted); padding: 11px 13px; font-size: 16px; line-height: 1; border-radius: 12px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .btn-icon:hover  { border-color: var(--accent); color: var(--accent); }
+    .btn-icon:active { transform: scale(0.95); }
+    .btn-icon.recording { background: rgba(255,77,109,0.12); border-color: rgba(255,77,109,0.4); color: var(--red); animation: mic-pulse 1s ease-in-out infinite; }
+    @keyframes mic-pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+    .btn-send { background: var(--accent); border: none; color: #07090f; padding: 11px 18px; font-size: 12px; font-weight: 800; letter-spacing: 1.5px; border-radius: 12px; cursor: pointer; transition: opacity 0.15s, transform 0.1s; flex-shrink: 0; }
+    .btn-send:hover  { opacity: 0.85; }
+    .btn-send:active { transform: scale(0.96); }
+    #login-screen { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px; }
+    .login-box { background: rgba(0,230,180,0.04); border: 1px solid rgba(0,230,180,0.18); border-radius: 16px; padding: 32px 28px; width: 100%; max-width: 340px; text-align: center; }
+    .login-logo { font-size: 12px; font-weight: 800; letter-spacing: 5px; color: var(--accent); margin-bottom: 6px; text-transform: uppercase; }
+    .login-sub { font-size: 12px; color: var(--muted); margin-bottom: 24px; line-height: 1.5; }
+    .pin-row { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; }
+    .pin-digit { width: 42px; height: 52px; background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; color: var(--accent); font-size: 20px; font-weight: 800; text-align: center; text-transform: uppercase; outline: none; caret-color: var(--accent); transition: border-color 0.15s; }
+    .pin-digit:focus { border-color: var(--accent); }
+    .connect-btn { width: 100%; padding: 13px; background: var(--accent); border: none; border-radius: 12px; color: #07090f; font-size: 12px; font-weight: 800; letter-spacing: 2px; cursor: pointer; transition: opacity 0.15s; }
+    .connect-btn:hover { opacity: 0.85; }
+    .login-err { font-size: 12px; color: var(--red); margin-top: 12px; min-height: 18px; }
+    .hidden { display: none !important; }
+    #chat-screen { flex: 1; display: flex; flex-direction: column; }
+  </style>
+</head>
+<body>
+  <div id="toast"></div>
+  <header>
+    <div class="logo"><em>S</em>ARTHI</div>
+    <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
+    <div class="enc-badge" id="enc">AES-256</div>
+    <div class="spacer"></div>
+  </header>
+
+  <div id="login-screen">
+    <div class="login-box">
+      <div class="login-logo">OPENSARTHI</div>
+      <div class="login-sub">Enter the 6-character pairing code shown on your desktop.</div>
+      <div class="pin-row">
+        <input type="text" maxlength="1" class="pin-digit" autocomplete="off">
+        <input type="text" maxlength="1" class="pin-digit" autocomplete="off">
+        <input type="text" maxlength="1" class="pin-digit" autocomplete="off">
+        <input type="text" maxlength="1" class="pin-digit" autocomplete="off">
+        <input type="text" maxlength="1" class="pin-digit" autocomplete="off">
+        <input type="text" maxlength="1" class="pin-digit" autocomplete="off">
+      </div>
+      <button class="connect-btn" onclick="submitPin()">CONNECT</button>
+      <div class="login-err" id="login-error"></div>
+    </div>
+  </div>
+
+  <div id="chat-screen" class="hidden">
+    <main id="feed"></main>
+    <footer>
+      <input id="inp" placeholder="Send a command to OpenSarthi…" autocomplete="off">
+      <button class="btn-icon" id="mic-btn" onclick="doMic()" title="Voice">🎤</button>
+      <button class="btn-send" onclick="doSend()">SEND</button>
+    </footer>
+  </div>
+
+  <script>
+    const AES_SALT = 'OPENSARTHI-DASHBOARD-v1';
+    let ws = null, _aesKey = null, _sessionKey = null;
+    let _voiceWs = null, _audioCtx = null, _micStm = null, _audioNd = null;
+    let _toastTimer = null;
+
+    const digits = document.querySelectorAll('.pin-digit');
+    digits.forEach((el, i) => {
+      el.addEventListener('input', () => {
+        el.value = el.value.toUpperCase();
+        if (el.value.length === 1 && i < digits.length - 1) digits[i + 1].focus();
+      });
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Backspace' && el.value.length === 0 && i > 0) digits[i - 1].focus();
+      });
+    });
+
+    function getPinString() {
+      let code = ''; digits.forEach(el => code += el.value); return code.trim().toUpperCase();
+    }
+
+    function initCrypto(key) {
+      if (typeof CryptoJS === 'undefined') return false;
+      _aesKey = CryptoJS.SHA256(key + AES_SALT); _sessionKey = key; return true;
+    }
+
+    function encrypt(text) {
+      if (!_aesKey) return null;
+      try {
+        const iv = CryptoJS.lib.WordArray.random(16);
+        const enc = CryptoJS.AES.encrypt(text, _aesKey, { iv });
+        const combined = iv.clone().concat(enc.ciphertext);
+        return CryptoJS.enc.Base64.stringify(combined);
+      } catch { return null; }
+    }
+
+    async function submitPin() {
+      const pin = getPinString();
+      if (pin.length !== 6) { showErr('Please enter all 6 characters.'); return; }
+      showErr('');
+      try {
+        const res = await fetch('/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin })
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          sessionStorage.setItem('os_remote_token', data.token);
+          sessionStorage.setItem('os_remote_key', pin);
+          initCrypto(pin); startChat();
+        } else { showErr(data.error || 'Incorrect PIN — try again.'); }
+      } catch { showErr('Cannot reach desktop. Are you on the same network?'); }
+    }
+
+    function showErr(msg) { document.getElementById('login-error').textContent = msg; }
+
+    async function checkDeviceToken() {
+      const devToken = localStorage.getItem('os_remote_device_token');
+      if (devToken) {
+        try {
+          const res = await fetch('/api/device-login', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_token: devToken })
+          });
+          const data = await res.json();
+          if (res.ok && data.ok) {
+            sessionStorage.setItem('os_remote_token', data.token);
+            sessionStorage.setItem('os_remote_key', data.key);
+          }
+        } catch {}
+      }
+      const token = sessionStorage.getItem('os_remote_token');
+      const key   = sessionStorage.getItem('os_remote_key');
+      if (token && key) { initCrypto(key); startChat(); }
+      else { showScreen('login-screen'); }
+    }
+
+    function showScreen(id) {
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('chat-screen').classList.add('hidden');
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    function startChat() {
+      showScreen('chat-screen');
+      const token = sessionStorage.getItem('os_remote_token');
+      connectWS(token);
+      const encEl = document.getElementById('enc');
+      if (_aesKey) { encEl.className = 'enc-badge on'; }
+      else          { encEl.className = 'enc-badge off'; encEl.textContent = 'NO ENC'; }
+    }
+
+    function connectWS(token) {
+      if (ws) { try { ws.close(); } catch {} }
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/ws?token=${token}`);
+      ws.onopen    = () => { setStatus(true);  toast('Connected to OpenSarthi'); };
+      ws.onclose   = () => { setStatus(false); sysMsg('Connection lost — refresh to reconnect.'); };
+      ws.onerror   = () => { setStatus(false); };
+      ws.onmessage = (e) => { try { handleMsg(JSON.parse(e.data)); } catch {} };
+    }
+
+    function setStatus(online) {
+      const pill = document.getElementById('pill');
+      const st   = document.getElementById('st');
+      pill.className = online ? 'pill on' : 'pill';
+      st.textContent = online ? 'Active' : 'Offline';
+    }
+
+    function handleMsg(m) {
+      const type = m.type, payload = m.payload || {};
+      if (type === 'assistant_response') append('agent', payload.content || '');
+      else if (type === 'user_message')  append('user', payload.text || '');
+      else if (type === 'sys')           sysMsg(m.text || payload.text || '');
+      else if (type === 'info')          sysMsg(payload.text || '');
+    }
+
+    const feed = document.getElementById('feed');
+
+    function append(sender, text) {
+      if (!text) return;
+      const d = document.createElement('div');
+      if (sender === 'agent') {
+        d.className = 'msg msg-a';
+        d.innerHTML = `<div class="lbl">OpenSarthi</div>${esc(text)}`;
+      } else {
+        d.className = 'msg msg-u';
+        d.innerHTML = `<div class="lbl">You</div>${esc(text)}`;
+      }
+      feed.appendChild(d); feed.scrollTop = feed.scrollHeight;
+    }
+
+    function sysMsg(text) {
+      if (!text) return;
+      const d = document.createElement('div');
+      d.className = 'msg msg-sys'; d.textContent = text;
+      feed.appendChild(d); feed.scrollTop = feed.scrollHeight;
+    }
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function doSend() {
+      const inp = document.getElementById('inp'), text = inp.value.trim();
+      if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+      inp.value = ''; append('user', text);
+      const enc = encrypt(text);
+      ws.send(JSON.stringify(enc ? { type: 'command', enc } : { type: 'command', text }));
+    }
+
+    document.getElementById('inp').addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); doSend(); }
+    });
+
+    function toast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.classList.add('show');
+      clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+    }
+
+    const micBtn = document.getElementById('mic-btn');
+    function micIdle() { micBtn.innerHTML = '🎤'; micBtn.classList.remove('recording'); }
+
+    function f32toPcm16(f32, srcRate) {
+      let s = f32;
+      if (srcRate !== 16000) {
+        const ratio = srcRate / 16000, len = Math.round(f32.length / ratio);
+        s = new Float32Array(len);
+        for (let i = 0; i < len; i++) s[i] = f32[Math.min(Math.round(i * ratio), f32.length - 1)];
+      }
+      const out = new Int16Array(s.length);
+      for (let i = 0; i < s.length; i++) out[i] = Math.max(-32768, Math.min(32767, Math.round(s[i] * 32768)));
+      return out.buffer;
+    }
+
+    async function doMic() {
+      if (_voiceWs) { stopVoice(); return; }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        sysMsg('Mic not available — enable permissions in browser settings.'); return;
+      }
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
+        });
+      } catch (e) {
+        sysMsg(e.name === 'NotAllowedError'
+          ? 'Mic denied — tap address bar lock icon to allow.'
+          : 'Mic error: ' + e.message);
+        return;
+      }
+      let ctx;
+      try { ctx = new AudioContext({ sampleRate: 16000 }); } catch { ctx = new AudioContext(); }
+      if (ctx.state === 'suspended') await ctx.resume();
+
+      const token = sessionStorage.getItem('os_remote_token');
+      const wsProt = location.protocol === 'https:' ? 'wss' : 'ws';
+      const voiceWs = new WebSocket(`${wsProt}://${location.host}/ws/phone-audio?token=${encodeURIComponent(token)}`);
+      voiceWs.binaryType = 'arraybuffer';
+
+      voiceWs.onopen = async () => {
+        const rate = ctx.sampleRate, src = ctx.createMediaStreamSource(stream);
+        try {
+          const wCode = `class J extends AudioWorkletProcessor{process(i){const c=i[0]?.[0];if(c)this.port.postMessage(c.slice());return true;}}registerProcessor('j',J);`;
+          const burl = URL.createObjectURL(new Blob([wCode], { type: 'application/javascript' }));
+          await ctx.audioWorklet.addModule(burl); URL.revokeObjectURL(burl);
+          const nd = new AudioWorkletNode(ctx, 'j');
+          let _pbuf = [], _plen = 0;
+          nd.port.onmessage = e => {
+            const chunk = new Int16Array(f32toPcm16(e.data, rate));
+            _pbuf.push(chunk); _plen += chunk.length;
+            if (_plen >= 1024) {
+              const out = new Int16Array(_plen); let off = 0;
+              for (const c of _pbuf) { out.set(c, off); off += c.length; }
+              if (voiceWs.readyState === 1) voiceWs.send(out.buffer);
+              _pbuf = []; _plen = 0;
+            }
+          };
+          src.connect(nd); _audioNd = nd;
+        } catch {
+          const sp = ctx.createScriptProcessor(4096, 1, 1);
+          sp.onaudioprocess = e => {
+            if (voiceWs.readyState === 1) voiceWs.send(f32toPcm16(e.inputBuffer.getChannelData(0), rate));
+          };
+          src.connect(sp); sp.connect(ctx.destination); _audioNd = sp;
+        }
+        micBtn.innerHTML = '⏹'; micBtn.classList.add('recording');
+        sysMsg('Voice live — speak now'); toast('🎤 Mic live');
+      };
+      voiceWs.onclose = () => stopVoice();
+      voiceWs.onerror = () => { sysMsg('Voice error.'); stopVoice(); };
+      _voiceWs = voiceWs; _audioCtx = ctx; _micStm = stream;
+    }
+
+    function stopVoice() {
+      if (_audioNd)  { try { _audioNd.disconnect(); }  catch {} _audioNd  = null; }
+      if (_audioCtx) { try { _audioCtx.close(); }      catch {} _audioCtx = null; }
+      if (_micStm)   { _micStm.getTracks().forEach(t => t.stop()); _micStm = null; }
+      if (_voiceWs)  { const w = _voiceWs; _voiceWs = null; if (w.readyState < 2) w.close(); }
+      micIdle();
+    }
+
+    window.onload = checkDeviceToken;
+  </script>
+</body>
+</html>
