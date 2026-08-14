@@ -11,6 +11,7 @@ datas = [
     ('tools', 'tools'),
     ('planner', 'planner'),
     ('voice', 'voice'),
+    ('dashboard', 'dashboard'),
 ]
 
 # Add openwakeword/kokoro/faster_whisper/sentence_transformers model data if present
@@ -45,6 +46,9 @@ a = Analysis(
         'psutil',
         'sounddevice',
         'torchaudio',
+        'qrcode',
+        'cryptography',
+        'PIL',
     ],
     hookspath=[],
     hooksconfig={},
