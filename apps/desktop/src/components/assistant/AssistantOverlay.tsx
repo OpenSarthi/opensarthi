@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
@@ -42,12 +43,10 @@ interface AssistantOverlayProps {
 const THEMES = [
   { value: "theme-green-black", label: "🟢 Matrix Green" },
   { value: "theme-red-black", label: "🔴 Dark Crimson" },
-  { value: "theme-mono-dark", label: "⚫ Mono Dark" },
   { value: "theme-purple-black", label: "🟣 Dark Nebula" },
   { value: "theme-blue-black", label: "🌊 Dark Ocean" },
   { value: "theme-light-sakura", label: "🌸 Light Sakura" },
   { value: "theme-light-slate", label: "🏙️ Light Slate" },
-  { value: "theme-light-clean", label: "⬜ Light Clean" },
   { value: "theme-multicolor-dark", label: "🌌 Cyberpunk Neon" },
   { value: "theme-multicolor-light", label: "🌈 Vivid Rainbow" },
 ];
@@ -58,15 +57,31 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showLogsPanel, setShowLogsPanel] = useState(false);
   const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
+  const [showRemotePopover, setShowRemotePopover] = useState(false);
+  
+  // Custom theme color picker, mobile remote modal, and uptime tracking states
+  const [showRemoteModal, setShowRemoteModal] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [pendingColor, setPendingColor] = useState<string | null>(null);
+  const [previousColor, setPreviousColor] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [shortcutStatus, setShortcutStatus] = useState<string | null>(null);
+  const [onlineSince, setOnlineSince] = useState<number | null>(null);
+
   const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const remoteRef = useRef<HTMLDivElement | null>(null);
+  const wheelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowSettingsDropdown(false);
       }
+      if (remoteRef.current && !remoteRef.current.contains(e.target as Node)) {
+        setShowRemotePopover(false);
+      }
     };
-    if (showSettingsDropdown) {
+    if (showSettingsDropdown || showRemotePopover) {
       document.addEventListener("mousedown", handleOutsideClick);
       document.body.classList.add("settings-dropdown-open");
     } else {
@@ -76,7 +91,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
       document.removeEventListener("mousedown", handleOutsideClick);
       document.body.classList.remove("settings-dropdown-open");
     };
-  }, [showSettingsDropdown]);
+  }, [showSettingsDropdown, showRemotePopover]);
 
   const {
     voiceState, isConnected, currentTranscript,
@@ -89,7 +104,152 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     streamingResponse,
     onboardingCompleted,
     activeTheme, setActiveTheme,
+    systemMetrics,
+    mobilePairing,
+    customAccent,
+    setCustomAccent
   } = useAssistantStore();
+
+  const [_uptimeTicker, setUptimeTicker] = useState(0);
+
+  // Uptime state tracking effect
+  useEffect(() => {
+    if (isConnected) {
+      setOnlineSince(Date.now());
+      const interval = setInterval(() => {
+        setUptimeTicker(prev => prev + 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
+      setOnlineSince(null);
+    }
+  }, [isConnected]);
+
+  const getUptimeString = () => {
+    if (!isConnected || !onlineSince) return "00h 00m";
+    const diffMs = Date.now() - onlineSince;
+    if (diffMs < 0) return "00h 00m";
+    const totalMin = Math.floor(diffMs / 60000);
+    const hrs = Math.floor(totalMin / 60);
+    const mins = totalMin % 60;
+    
+    const hrsStr = hrs.toString().padStart(2, '0');
+    const minsStr = mins.toString().padStart(2, '0');
+    return `${hrsStr}h ${minsStr}m`;
+  };
+
+  // Color picker helper functions
+  const hexToHue = (hex: string): number => {
+    if (!hex || !hex.startsWith("#")) return 120; // default Matrix green
+    let cleanedHex = hex;
+    if (hex.length === 4) {
+      cleanedHex = "#" + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+    }
+    let r = parseInt(cleanedHex.slice(1, 3), 16) / 255;
+    let g = parseInt(cleanedHex.slice(3, 5), 16) / 255;
+    let b = parseInt(cleanedHex.slice(5, 7), 16) / 255;
+    let max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0;
+    if (max !== min) {
+      let d = max - min;
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h /= 6;
+    }
+    return Math.round(h * 360);
+  };
+
+  const hslToHex = (h: number, s: number, l: number): string => {
+    l /= 100;
+    const a = (s * Math.min(l, 1 - l)) / 100;
+    const f = (n: number) => {
+      const k = (n + h / 30) % 12;
+      const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+      return Math.round(255 * color).toString(16).padStart(2, "0");
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
+  };
+
+  const handleColorSelection = (clientX: number, clientY: number) => {
+    if (!wheelRef.current) return;
+    const rect = wheelRef.current.getBoundingClientRect();
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+    const x = clientX - rect.left - cx;
+    const y = clientY - rect.top - cy;
+    
+    let angle = Math.atan2(y, x);
+    let hue = ((angle + Math.PI / 2) * 180) / Math.PI;
+    hue = (hue + 360) % 360;
+    
+    const hex = hslToHex(hue, 100, 50);
+    setPendingColor(hex);
+    setCustomAccent(hex);
+  };
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    handleColorSelection(e.clientX, e.clientY);
+  };
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (isDragging) {
+        handleColorSelection(e.clientX, e.clientY);
+      }
+    };
+    const onMouseUp = () => {
+      setIsDragging(false);
+    };
+    if (isDragging) {
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+    }
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [isDragging]);
+
+  const handleOpenColorPicker = () => {
+    // Read the actual computed accent from CSS so we start on the correct color
+    // for whatever theme is active (e.g. red, purple, blue), not hardcoded green
+    const computedAccent = getComputedStyle(document.documentElement)
+      .getPropertyValue("--accent")
+      .trim();
+    const startColor = customAccent || (computedAccent ? computedAccent : "#1aff1a");
+    setPreviousColor(customAccent);
+    setPendingColor(startColor);
+    if (!customAccent) {
+      // Temporarily apply to keep UI consistent while picker is open
+      setCustomAccent(startColor);
+    }
+    setShowColorPicker(true);
+  };
+
+  const handleDiscardColor = () => {
+    setCustomAccent(previousColor);
+    setShowColorPicker(false);
+  };
+
+  const handleSaveColor = () => {
+    setShowColorPicker(false);
+  };
+
+  const handleCreateShortcut = async () => {
+    try {
+      setShortcutStatus("CREATING...");
+      await invoke<string>("create_desktop_shortcut");
+      setShortcutStatus("SUCCESS!");
+      setTimeout(() => setShortcutStatus(null), 3000);
+    } catch (err: any) {
+      setShortcutStatus("FAILED: " + err);
+      setTimeout(() => setShortcutStatus(null), 4000);
+    }
+  };
 
   const modelKey = activeProvider === "ollama" || activeProvider === "local" ? activeLocalModel : activeCloudModel;
   const globalSessionCount = globalSessionTokens[modelKey] || 0;
@@ -439,6 +599,16 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
   const getFormattedTime = () => {
     return time.toLocaleTimeString('en-US', { hour12: false });
+  };
+
+  const getFormattedDate = () => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const dayName = days[time.getDay()];
+    const day = time.getDate();
+    const monthName = months[time.getMonth()];
+    const year = time.getFullYear();
+    return `${dayName} ${day} ${monthName} ${year}`;
   };
 
   const handleNewThread = () => {
@@ -795,7 +965,10 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               fontWeight: 700,
               textShadow: isConnected ? "0 0 6px var(--accent-glow)" : "none"
             }}>{isConnected ? "YES" : "NO"}</span></span>
-            <span style={{ color: "var(--text-secondary)" }}>{getFormattedTime()}</span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "2px" }}>
+              <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>{getFormattedTime()}</span>
+              <span style={{ fontSize: "7px", color: "var(--text-muted)", letterSpacing: "0.03em" }}>{getFormattedDate().toUpperCase()}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1009,6 +1182,36 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
                   <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
 
+                  {/* Remote Control Dropdown Entry */}
+                  <button
+                    onClick={() => {
+                      setShowRemoteModal(true);
+                      wsClient.send("get_mobile_pairing", {});
+                      setShowSettingsDropdown(false);
+                    }}
+                    className="dropdown-item"
+                  >
+                    <Smartphone size={13} style={{ color: "var(--accent)" }} />
+                    <span>Remote Control</span>
+                  </button>
+
+                  {/* Create Desktop Shortcut Dropdown Entry */}
+                  <button
+                    onClick={handleCreateShortcut}
+                    className="dropdown-item"
+                    style={{ position: "relative" }}
+                  >
+                    <Laptop size={13} style={{ color: "var(--accent)" }} />
+                    <span>Create Shortcut</span>
+                    {shortcutStatus && (
+                      <span style={{ fontSize: "8px", position: "absolute", right: "12px", color: shortcutStatus === "SUCCESS!" ? "var(--success)" : "var(--accent)" }}>
+                        {shortcutStatus}
+                      </span>
+                    )}
+                  </button>
+
+                  <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
+
                   <div className="dropdown-submenu-trigger">
                     <Palette size={13} style={{ color: "var(--accent)" }} />
                     <span>Themes</span>
@@ -1020,14 +1223,200 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                           key={t.value}
                           onClick={() => {
                             setActiveTheme(t.value);
-                            // Do not close the dropdown menu as requested
+                            setCustomAccent(null);
                           }}
                           className="dropdown-item"
-                          style={{ color: activeTheme === t.value ? "var(--accent)" : "var(--text-secondary)" }}
+                          style={{ color: (activeTheme === t.value && !customAccent) ? "var(--accent)" : "var(--text-secondary)" }}
                         >
                           <span>{t.label}</span>
                         </button>
                       ))}
+
+                      <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenColorPicker();
+                        }}
+                        className="dropdown-item"
+                        style={{ color: customAccent ? "var(--accent)" : "var(--text-secondary)" }}
+                      >
+                        <span>Custom Color Override</span>
+                      </button>
+
+                      {showColorPicker && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: "0px",
+                            right: "100%",
+                            marginRight: "8px",
+                            width: "200px",
+                            background: "rgba(12, 12, 12, 0.98)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "6px",
+                            padding: "12px",
+                            boxShadow: "0 12px 40px rgba(0, 0, 0, 0.7)",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "10px",
+                            zIndex: 1100,
+                            fontFamily: "var(--font-mono)",
+                            color: "var(--text-secondary)"
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontSize: "9px", letterSpacing: "0.03em", color: "var(--text-muted)" }}>UI COLOUR</span>
+                            <button
+                              onClick={() => {
+                                setCustomAccent(null);
+                                setPendingColor("#1aff1a");
+                              }}
+                              style={{
+                                background: "rgba(255,255,255,0.05)",
+                                border: "1px solid var(--border)",
+                                color: "var(--text-primary)",
+                                fontSize: "8px",
+                                padding: "2px 6px",
+                                borderRadius: "3px",
+                                cursor: "pointer",
+                                fontWeight: "bold"
+                              }}
+                            >
+                              DEFAULT
+                            </button>
+                          </div>
+                          
+                          <div
+                            ref={wheelRef}
+                            onMouseDown={onMouseDown}
+                            style={{
+                              width: "110px",
+                              height: "110px",
+                              borderRadius: "50%",
+                              background: "conic-gradient(from 0deg, red, yellow, lime, cyan, blue, magenta, red)",
+                              position: "relative",
+                              cursor: "pointer",
+                              userSelect: "none"
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: "15px",
+                                left: "15px",
+                                width: "80px",
+                                height: "80px",
+                                borderRadius: "50%",
+                                background: "rgba(12, 12, 12, 0.98)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center"
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: "48px",
+                                  height: "48px",
+                                  borderRadius: "50%",
+                                  background: pendingColor || customAccent || "#1aff1a",
+                                  boxShadow: "inset 0 0 8px rgba(0,0,0,0.8)",
+                                  border: "1px solid rgba(255,255,255,0.07)"
+                                }}
+                              />
+                            </div>
+                            
+                            {/* Compute coordinates based on HSL angle */}
+                            {(() => {
+                              const currentHueColor = pendingColor || customAccent || "#1aff1a";
+                              const currentHue = hexToHue(currentHueColor);
+                              const theta = (currentHue * Math.PI) / 180 - Math.PI / 2;
+                              const radius = 45;
+                              const cx = 55;
+                              const cy = 55;
+                              const handleX = cx + radius * Math.cos(theta);
+                              const handleY = cy + radius * Math.sin(theta);
+                              return (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    left: `${handleX}px`,
+                                    top: `${handleY}px`,
+                                    width: "12px",
+                                    height: "12px",
+                                    borderRadius: "50%",
+                                    border: "2px solid #fff",
+                                    background: "transparent",
+                                    transform: "translate(-50%, -50%)",
+                                    boxShadow: "0 0 6px rgba(0,0,0,0.8)",
+                                    pointerEvents: "none"
+                                  }}
+                                />
+                              );
+                            })()}
+                          </div>
+
+                          <div style={{ width: "100%", textAlign: "center" }}>
+                            <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>drag the handle</span>
+                          </div>
+
+                          <input
+                            type="text"
+                            readOnly
+                            value={(pendingColor || customAccent || "#1AFF1A").toUpperCase()}
+                            style={{
+                              width: "100%",
+                              background: "rgba(0,0,0,0.3)",
+                              border: "1px solid var(--border)",
+                              borderRadius: "4px",
+                              color: "var(--text-primary)",
+                              fontFamily: "var(--font-mono)",
+                              fontSize: "11px",
+                              textAlign: "center",
+                              padding: "4px 0",
+                              outline: "none"
+                            }}
+                          />
+
+                          <div style={{ width: "100%", display: "flex", gap: "8px", marginTop: "4px" }}>
+                            <button
+                              onClick={handleDiscardColor}
+                              style={{
+                                flex: 1,
+                                background: "rgba(255, 77, 77, 0.1)",
+                                border: "1px solid rgba(255, 77, 77, 0.3)",
+                                color: "#ff4d4d",
+                                fontSize: "10px",
+                                padding: "6px 0",
+                                cursor: "pointer",
+                                borderRadius: "4px",
+                                fontWeight: "bold"
+                              }}
+                            >
+                              DISCARD
+                            </button>
+                            <button
+                              onClick={handleSaveColor}
+                              style={{
+                                flex: 1,
+                                background: "var(--accent)",
+                                border: "none",
+                                color: "#000",
+                                fontSize: "10px",
+                                padding: "6px 0",
+                                cursor: "pointer",
+                                borderRadius: "4px",
+                                fontWeight: "bold"
+                              }}
+                            >
+                              SAVE
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </motion.div>
@@ -1122,99 +1511,96 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               </div>
             </div>
 
-            {/* QUICK ACTIONS PANEL */}
-            <div className="hud-panel" style={{ flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* AGENT STATUS & SYSTEMS */}
+            <div className="hud-panel" style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <MatrixRainBackground voiceState={voiceState} />
-              <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1 }}>
-                <div className="hud-panel-title">// QUICK ACTIONS</div>
-                <div style={{ padding: "8px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px" }}>
-                  {[
-                    { icon: "🌤️", label: "Weather", cmd: "What's the current weather like?" },
-                    { icon: "🔋", label: "Battery", cmd: "Check my battery status" },
-                    { icon: "🔍", label: "Web Search", cmd: "Search the web for: " },
-                    { icon: "📸", label: "Screenshot", cmd: "Take a screenshot and describe what's on my screen" },
-                    { icon: "⏱️", label: "5min Timer", cmd: "Set a 5 minute timer" },
-                    { icon: "💻", label: "System Info", cmd: "Show me my system information (CPU, RAM, disk usage)" },
-                    { icon: "📁", label: "Downloads", cmd: "List files in my Downloads folder" },
-                    { icon: "🌐", label: "IP Address", cmd: "What is my current IP address and network info?" },
-                  ].map(({ icon, label, cmd }) => (
-                    <button
-                      key={label}
-                      title={cmd}
-                      onClick={() => {
-                        if (!isConnected) return;
-                        const text = cmd.endsWith(": ") ? cmd : cmd;
-                        if (cmd.endsWith(": ")) {
-                          // Focus the text input with the prefix
-                          setTextInput(cmd);
-                          const inputEl = document.getElementById("sarthi-text-input");
-                          if (inputEl) { (inputEl as HTMLInputElement).focus(); }
-                          return;
-                        }
-                        addMessage({ id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now() });
-                        wsClient.send("user_message", { text, source: "text", thread_id: activeThreadId });
-                        setVoiceState("processing");
-                      }}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: "3px",
-                        padding: "7px 4px",
-                        borderRadius: "var(--radius-sm)",
-                        background: "rgba(255,255,255,0.03)",
-                        border: "1px solid var(--border)",
-                        color: "var(--text-secondary)",
-                        fontSize: "9px",
-                        fontFamily: "var(--font-mono)",
-                        fontWeight: "bold",
-                        letterSpacing: "0.04em",
-                        cursor: isConnected ? "pointer" : "not-allowed",
-                        opacity: isConnected ? 1 : 0.5,
-                        transition: "all 0.15s",
-                      }}
-                      onMouseOver={e => {
-                        if (isConnected) {
-                          e.currentTarget.style.background = "rgba(var(--accent-rgb, 255,80,80), 0.1)";
-                          e.currentTarget.style.borderColor = "var(--border-accent)";
-                          e.currentTarget.style.color = "var(--accent)";
-                        }
-                      }}
-                      onMouseOut={e => {
-                        e.currentTarget.style.background = "rgba(255,255,255,0.03)";
-                        e.currentTarget.style.borderColor = "var(--border)";
-                        e.currentTarget.style.color = "var(--text-secondary)";
-                      }}
-                    >
-                      <span style={{ fontSize: "15px", lineHeight: 1 }}>{icon}</span>
-                      <span>{label.toUpperCase()}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="hud-panel" style={{ height: "180px", display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
-              <MatrixRainBackground voiceState={voiceState} />
-              <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1 }}>
+              <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div className="hud-panel-title">// AGENT STATUS & SYSTEMS</div>
-                <div style={{ padding: "12px", fontSize: "12px", color: "var(--text-secondary)", flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <div>PROVIDER: <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{activeProvider}</span></div>
-                  <div>LLM: <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{activeProvider === "ollama" ? activeLocalModel : activeCloudModel}</span></div>
-                  <div style={{ borderTop: "1px dashed rgba(255,255,255,0.08)", marginTop: "4px", paddingTop: "4px" }}>
+                <div style={{ display: "flex", flexDirection: "column", padding: "12px", gap: "8px", overflowY: "auto" }} className="custom-scrollbar">
+                  
+                  {/* Top Part: System Monitor */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "11px" }}>
+                    {/* <div style={{ textTransform: "uppercase", fontSize: "9px", color: "var(--text-muted)", letterSpacing: "0.05em", fontWeight: "bold" }}>[ SYS MONITOR ]</div> */}
+                    
+                    {/* CPU */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>CPU:</span>
+                        <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{systemMetrics.cpu}%</span>
+                      </div>
+                      <div style={{ height: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "2px", overflow: "hidden" }}>
+                        <div style={{ width: `${systemMetrics.cpu}%`, height: "100%", background: "var(--accent)", transition: "width 1s ease-out" }} />
+                      </div>
+                    </div>
+
+                    {/* MEM */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>RAM:</span>
+                        <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{systemMetrics.mem}%</span>
+                      </div>
+                      <div style={{ height: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "2px", overflow: "hidden" }}>
+                        <div style={{ width: `${systemMetrics.mem}%`, height: "100%", background: "var(--accent)", transition: "width 1s ease-out" }} />
+                      </div>
+                    </div>
+
+                    {/* GPU */}
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>TOKEN USAGE:</span>
+                      <span>GPU:</span>
+                      <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
+                        {typeof systemMetrics.gpu === "number" ? `${systemMetrics.gpu}%` : systemMetrics.gpu}
+                      </span>
+                    </div>
+
+                    {/* NET Speed */}
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>
+                      <span>NET SPEED:</span>
+                      <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
+                        {systemMetrics.net_kbps >= 1024 
+                          ? `${(systemMetrics.net_kbps / 1024).toFixed(1)} MB/s`
+                          : `${systemMetrics.net_kbps.toFixed(0)} KB/s`}
+                      </span>
+                    </div>
+
+                    {/* TEMP */}
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>CORE TEMP:</span>
+                      <span style={{ color: typeof systemMetrics.temp === "number" && systemMetrics.temp > 75 ? "var(--danger)" : "var(--accent)", fontFamily: "var(--font-mono)" }}>
+                        {typeof systemMetrics.temp === "number" ? `${systemMetrics.temp}°C` : systemMetrics.temp}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div style={{ borderTop: "1px dashed rgba(255,255,255,0.08)", margin: "4px 0" }} />
+
+                  {/* Bottom Part: Agent Metadata */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "5px", fontSize: "11px" }}>
+                    {/* <div style={{ textTransform: "uppercase", fontSize: "9px", color: "var(--text-muted)", letterSpacing: "0.05em", fontWeight: "bold" }}>[ AGENT MATRIX ]</div> */}
+                    
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>PROVIDER:</span>
+                      <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{activeProvider}</span>
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>LLM:</span>
+                      <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", textTransform: "uppercase", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap", maxWidth: "160px", textAlign: "right" }} title={modelKey}>
+                        {modelKey}
+                      </span>
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>TOKENS (SESSION):</span>
                       <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{tokenUsage.sessionTotalTokens}</span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px" }}>
-                      <span>SESSION TOTAL:</span>
+
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>TOKENS (TOTAL):</span>
                       <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{globalSessionCount}</span>
                     </div>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "auto", borderTop: "1px solid var(--border)", paddingTop: "6px", marginBottom: "10px" }}>
-                    <span>VOICE INPUT:</span>
-                    <span style={{ color: voiceState !== "idle" ? "var(--accent)" : "var(--text-secondary)" }}>{voiceState.toUpperCase()}</span>
-                  </div>
+
                 </div>
               </div>
             </div>
@@ -1817,12 +2203,24 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   </div>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border)", paddingTop: "8px", marginTop: "4px" }}>
-                  <span style={{ fontSize: "12px", fontWeight: "bold", color: isConnected ? "var(--accent)" : "var(--text-secondary)" }}>
-                    {isConnected ? "ONLINE" : "OFFLINE"}
-                  </span>
-                  <span style={{ fontSize: "14px", color: "var(--text-primary)", fontWeight: "bold", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
-                    {getFormattedTime()}
-                  </span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <span style={{ fontSize: "12px", fontWeight: "bold", color: isConnected ? "var(--accent)" : "var(--text-secondary)" }}>
+                      {isConnected ? "ONLINE" : "OFFLINE"}
+                    </span>
+                    {isConnected && (
+                      <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.01em" }}>
+                        UP: {getUptimeString()}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "2px" }}>
+                    <span style={{ fontSize: "14px", color: "var(--text-primary)", fontWeight: "bold", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
+                      {getFormattedTime()}
+                    </span>
+                    <span style={{ fontSize: "11px", color: "var(--text-muted)", letterSpacing: "0.012em" }}>
+                      {getFormattedDate().toUpperCase()}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1838,6 +2236,148 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           onResizeStart={startResizeConsole}
         />
       )}
+
+      {/* ── REMOTE PAIRING MODAL ── */}
+      <AnimatePresence>
+        {showRemoteModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            style={{
+              position: "fixed",
+              top: 0, left: 0, right: 0, bottom: 0,
+              background: "rgba(0, 0, 0, 0.05)",
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "flex-start",
+              padding: "54px 12px 12px 12px",
+              zIndex: 2000,
+            }}
+            onClick={(e) => { if (e.target === e.currentTarget) setShowRemoteModal(false); }}
+          >
+            <motion.div
+              className="hud-panel"
+              initial={{ x: 250, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 250, opacity: 0 }}
+              transition={{ type: "spring", damping: 26, stiffness: 280 }}
+              style={{
+                width: "360px",
+                maxHeight: "calc(100vh - 66px)",
+                overflowY: "auto",
+                background: "rgba(10, 10, 10, 0.98)",
+                border: "1px solid var(--border)",
+                boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: "16px",
+                fontFamily: "var(--font-mono)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px 14px", borderBottom: "1px solid var(--border)", width: "100%" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Smartphone size={14} color="var(--accent)" />
+                  <span style={{ fontSize: "13px", fontWeight: "bold", letterSpacing: "0.1em", color: "var(--accent)" }}>REMOTE ACCESS</span>
+                </div>
+                <button
+                  onClick={() => setShowRemoteModal(false)}
+                  style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: 4, display: "flex", alignItems: "center" }}
+                  onMouseOver={e => e.currentTarget.style.color = "var(--accent)"}
+                  onMouseOut={e => e.currentTarget.style.color = "var(--text-secondary)"}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div style={{ padding: "0 20px 20px", display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", width: "100%" }}>
+                {/* QR Code */}
+                {mobilePairing ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
+                    <div style={{ background: "white", padding: "10px", borderRadius: "6px", display: "flex", justifyContent: "center", alignItems: "center", boxShadow: "0 0 15px rgba(255,255,255,0.1)" }}>
+                      <img src={`data:image/png;base64,${mobilePairing.qr}`} alt="QR" style={{ width: "160px", height: "160px", display: "block" }} />
+                    </div>
+                    <span style={{ fontSize: "10px", color: "var(--text-muted)", textAlign: "center" }}>
+                      Scan with phone camera to connect instantly
+                    </span>
+                  </div>
+                ) : (
+                  <div style={{ height: "180px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", color: "var(--text-muted)" }}>
+                    GENERATING KEY...
+                  </div>
+                )}
+
+                {/* PIN + URL */}
+                {mobilePairing && (
+                  <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }}>
+                    <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>Or enter manually:</span>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>
+                      {mobilePairing.url.split("/auto-login")[0]}
+                    </div>
+                    <div style={{
+                      fontSize: "24px",
+                      fontWeight: "bold",
+                      letterSpacing: "0.15em",
+                      color: "var(--accent)",
+                      background: "rgba(0,0,0,0.4)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "6px",
+                      padding: "8px 24px",
+                      textAlign: "center",
+                      width: "100%",
+                      textShadow: "0 0 10px var(--accent-glow)"
+                    }}>
+                      {mobilePairing.key}
+                    </div>
+                  </div>
+                )}
+
+                {/* Connection Status */}
+                <div style={{ width: "100%", background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.08)", borderRadius: "4px", padding: "10px", display: "flex", flexDirection: "column", gap: "6px", fontSize: "11px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>STATUS:</span>
+                    <span style={{ fontWeight: "bold", color: systemMetrics.mobile_status?.connected ? "var(--success)" : "var(--text-muted)" }}>
+                      {systemMetrics.mobile_status?.connected ? "CONNECTED" : "NOT CONNECTED"}
+                    </span>
+                  </div>
+                  {systemMetrics.mobile_status?.connected && systemMetrics.mobile_status.devices && systemMetrics.mobile_status.devices.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px", borderTop: "1px dashed rgba(255,255,255,0.06)", paddingTop: "6px", marginTop: "2px" }}>
+                      <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>CONNECTED DEVICES:</span>
+                      {systemMetrics.mobile_status.devices.map((device, idx) => (
+                        <div key={idx} style={{ color: "var(--text-primary)", fontSize: "10px" }}>• {device}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{ width: "100%", display: "flex", gap: "10px" }}>
+                  <button
+                    onClick={() => wsClient.send("get_mobile_pairing", {})}
+                    style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "11px", padding: "8px 0", cursor: "pointer", borderRadius: "4px", fontWeight: "bold", transition: "all 0.15s", fontFamily: "var(--font-mono)" }}
+                    onMouseOver={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
+                    onMouseOut={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                  >
+                    NEW KEY
+                  </button>
+                  <button
+                    onClick={() => setShowRemoteModal(false)}
+                    style={{ flex: 1, background: "var(--accent)", border: "none", color: "#000", fontSize: "11px", padding: "8px 0", cursor: "pointer", borderRadius: "4px", fontWeight: "bold", transition: "all 0.15s", fontFamily: "var(--font-mono)" }}
+                    onMouseOver={e => e.currentTarget.style.boxShadow = "0 0 10px var(--accent-glow)"}
+                    onMouseOut={e => e.currentTarget.style.boxShadow = "none"}
+                  >
+                    DISMISS
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
