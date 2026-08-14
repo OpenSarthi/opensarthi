@@ -17,6 +17,16 @@ app.include_router(api_router)
 app.include_router(ws_router)
 app.include_router(mcp_router)
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Stopping OpenSarthi runtime, cleaning up active services...")
+    try:
+        from dashboard.server import dashboard_server
+        dashboard_server.stop()
+    except Exception as e:
+        logger.error("Failed to stop dashboard server during shutdown", error=str(e))
+
+
 def get_free_port() -> int:
     """Get a random free port from the OS."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

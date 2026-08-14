@@ -4,6 +4,12 @@ import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Any
 
+try:
+    from tools.system_monitor import metrics_push_loop as _metrics_push_loop
+    _METRICS_AVAILABLE = True
+except ImportError:
+    _METRICS_AVAILABLE = False
+
 from planner.agent import agent, AgentDependencies
 import os
 if os.environ.get("OPENSARTHI_PLATFORM") == "android":
@@ -68,6 +74,9 @@ class Session:
         }
         try:
             await self.ws.send_json(msg)
+            from dashboard.server import dashboard_server
+            if getattr(dashboard_server, "_running", False):
+                asyncio.create_task(dashboard_server.broadcast(msg_type, payload))
         except Exception as e:
             logger.warning("Failed to send websocket message (client probably disconnected)", error=str(e), msg_type=msg_type)
 
@@ -587,6 +596,16 @@ class Session:
             steps = payload.get("steps", [])
             goal = payload.get("goal", "Custom JSON Task")
             self._message_task = asyncio.create_task(self.handle_json_plan(steps, goal))
+        elif msg_type == "get_mobile_pairing":
+            from dashboard.server import dashboard_server
+            if not getattr(dashboard_server, "_running", False):
+                try:
+                    dashboard_server.start()
+                    logger.info("Mobile Remote Control Dashboard started via get_mobile_pairing")
+                except Exception as e:
+                    logger.error("Failed to start dashboard server in get_mobile_pairing", error=str(e))
+            pairing_info = dashboard_server.get_pairing_info()
+            await self.send_message("mobile_pairing", pairing_info)
         elif msg_type == "user_message":
             thread_id = payload.get("thread_id") or self.thread_id
             task = asyncio.create_task(
@@ -806,6 +825,17 @@ class Session:
                         settings.user_skills = [s.strip() for s in raw_skills.split(",") if s.strip()]
             settings.custom_prompt = payload.get("custom_prompt", settings.custom_prompt)
 
+            was_enabled = getattr(settings, "remote_dashboard_enabled", False)
+            settings.remote_dashboard_enabled = bool(payload.get("remote_dashboard_enabled", settings.remote_dashboard_enabled))
+            if settings.remote_dashboard_enabled != was_enabled:
+                from dashboard.server import dashboard_server
+                if settings.remote_dashboard_enabled:
+                    dashboard_server.start()
+                    logger.info("Mobile Remote Control Dashboard started on port 8765")
+                else:
+                    dashboard_server.stop()
+                    logger.info("Mobile Remote Control Dashboard stopped")
+
             save_settings_to_env(
                 settings.local_model,
                 settings.cloud_model,
@@ -826,6 +856,7 @@ class Session:
                 settings.user_skills,
                 settings.custom_prompt,
                 settings.long_term_memory_enabled,
+                settings.remote_dashboard_enabled,
             )
 
             # Propagate to running voice pipeline
@@ -903,6 +934,37 @@ class Session:
 class ConnectionManager:
     def __init__(self):
         self.sessions: dict[WebSocket, Session] = {}
+        self._metrics_task: asyncio.Task | None = None
+        
+        # Start remote dashboard if enabled in config settings
+        from config import settings
+        if getattr(settings, "remote_dashboard_enabled", False):
+            try:
+                from dashboard.server import dashboard_server
+                dashboard_server.start()
+                logger.info("Mobile Remote Control Dashboard started on port 8765 on startup")
+            except Exception as e:
+                logger.error("Failed to start remote dashboard server on startup", error=str(e))
+
+    async def _broadcast_to_all(self, event_type: str, payload: dict):
+        """Send an event to every connected session."""
+        dead: list[WebSocket] = []
+        for ws, session in list(self.sessions.items()):
+            try:
+                await session.send_message(event_type, dict(payload))
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.sessions.pop(ws, None)
+
+    def _ensure_metrics_loop(self):
+        """Start the system metrics push loop if not already running."""
+        if not _METRICS_AVAILABLE:
+            return
+        if self._metrics_task is None or self._metrics_task.done():
+            self._metrics_task = asyncio.create_task(
+                _metrics_push_loop(self._broadcast_to_all, interval=2.0)
+            )
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -910,6 +972,9 @@ class ConnectionManager:
         self.sessions[websocket] = session
         logger.info("Client connected", session_id=session.session_id)
         
+        # Start system metrics push loop (starts once, keeps running)
+        self._ensure_metrics_loop()
+
         # Eagerly pre-load voice models in the background to prevent lazy-loading lag spikes and websocket connection timeout
         async def init_task():
             try:
@@ -940,6 +1005,7 @@ class ConnectionManager:
             "user_skills": getattr(settings, "user_skills", ["general", "desktop_automation", "developer", "home_user"]),
             "custom_prompt": getattr(settings, "custom_prompt", ""),
             "long_term_memory_enabled": getattr(settings, "long_term_memory_enabled", True),
+            "remote_dashboard_enabled": getattr(settings, "remote_dashboard_enabled", False),
         })
         
         # Voice listening will be started via 'client_state' message from frontend
