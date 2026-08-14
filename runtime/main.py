@@ -1,6 +1,7 @@
 import asyncio
 import socket
 import sys
+from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 import structlog
@@ -11,20 +12,26 @@ from mcp import mcp_router
 
 logger = structlog.get_logger()
 
-app = FastAPI(title="OpenSarthi Runtime")
 
-app.include_router(api_router)
-app.include_router(ws_router)
-app.include_router(mcp_router)
-
-@app.on_event("shutdown")
-async def shutdown_event():
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    # ── Startup ──────────────────────────────────────────────────────────────
+    yield
+    # ── Shutdown ─────────────────────────────────────────────────────────────
     logger.info("Stopping OpenSarthi runtime, cleaning up active services...")
     try:
         from dashboard.server import dashboard_server
         dashboard_server.stop()
     except Exception as e:
         logger.error("Failed to stop dashboard server during shutdown", error=str(e))
+
+
+app = FastAPI(title="OpenSarthi Runtime", lifespan=lifespan)
+
+app.include_router(api_router)
+app.include_router(ws_router)
+app.include_router(mcp_router)
+
 
 
 def get_free_port() -> int:

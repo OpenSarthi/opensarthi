@@ -66,6 +66,28 @@ def _local_ip() -> str:
     return "127.0.0.1"
 
 
+def _kill_port_owner(port: int) -> bool:
+    """
+    Terminate any process listening on *port* using psutil.
+    Returns True if a process was killed, False if the port was already free.
+    """
+    try:
+        import psutil
+        killed = False
+        for conn in psutil.net_connections(kind="tcp"):
+            if conn.laddr.port == port and conn.status == "LISTEN" and conn.pid:
+                try:
+                    proc = psutil.Process(conn.pid)
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                    killed = True
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+                    pass
+        return killed
+    except Exception:
+        return False
+
+
 class DashboardServer:
     def __init__(self):
         self._ip = _local_ip()
@@ -275,11 +297,18 @@ class DashboardServer:
         if self._running:
             return
         self._running = True
-        
+
+        # Kill any stale process holding PORT from a previous session / old AppImage
+        import logging as _logging
+        if _kill_port_owner(PORT):
+            _logging.info(f"[Dashboard] Killed stale process on port {PORT}, proceeding with bind.")
+            # Give the OS a moment to reclaim the port
+            import threading as _t; _t.Event().wait(0.4)
+
         import threading
         config = uvicorn.Config(self.app, host="0.0.0.0", port=PORT, log_level="warning")
         self._server = uvicorn.Server(config)
-        
+
         def run_server():
             try:
                 self._server.run()
@@ -288,7 +317,7 @@ class DashboardServer:
                 logging.error(f"Dashboard server error: {e}")
             finally:
                 self._running = False
-            
+
         self._thread = threading.Thread(target=run_server, daemon=True)
         self._thread.start()
 
