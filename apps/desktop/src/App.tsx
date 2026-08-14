@@ -68,6 +68,7 @@ export default function App() {
   } = useAssistantStore();
 
   // Dynamic Theme application to document.body
+  const { customAccent } = useAssistantStore();
   useEffect(() => {
     document.body.className = document.body.className
       .split(" ")
@@ -75,6 +76,55 @@ export default function App() {
       .join(" ");
     document.body.classList.add(activeTheme);
   }, [activeTheme]);
+
+  useEffect(() => {
+    if (customAccent) {
+      // Helper: parse hex → HSL hue (0-360)
+      const hex = customAccent.replace("#", "");
+      const r = parseInt(hex.slice(0, 2), 16) / 255;
+      const g = parseInt(hex.slice(2, 4), 16) / 255;
+      const b = parseInt(hex.slice(4, 6), 16) / 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      let h = 0;
+      if (max !== min) {
+        const d = max - min;
+        switch (max) {
+          case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+          case g: h = (b - r) / d + 2; break;
+          case b: h = (r - g) / d + 4; break;
+        }
+        h = Math.round((h / 6) * 360);
+      }
+
+      // Core accent vars
+      document.documentElement.style.setProperty("--accent", customAccent);
+      document.documentElement.style.setProperty("--border-accent", customAccent);
+      document.documentElement.style.setProperty("--accent-dim", `hsl(${h}, 100%, 40%)`);
+      document.documentElement.style.setProperty("--accent-glow", `${customAccent}66`);
+      document.documentElement.style.setProperty("--accent-glow-lg", `${customAccent}26`);
+      document.documentElement.style.setProperty("--shadow-accent", `0 0 24px ${customAccent}66`);
+
+      // Derived text / border vars so ALL theme colors follow
+      document.documentElement.style.setProperty("--text-primary", `hsl(${h}, 60%, 92%)`);
+      document.documentElement.style.setProperty("--text-secondary", `hsl(${h}, 100%, 65%)`);
+      document.documentElement.style.setProperty("--text-muted", `hsl(${h}, 80%, 40%)`);
+      document.documentElement.style.setProperty("--border", `hsla(${h}, 100%, 40%, 0.3)`);
+
+      // Background gradient tuned to hue
+      document.documentElement.style.setProperty(
+        "--bg-body-gradient",
+        `radial-gradient(ellipse at 20% 50%, hsla(${h}, 100%, 3%, 0.9) 0%, hsla(${h}, 60%, 1%, 0.98) 70%)`
+      );
+    } else {
+      // Remove all overrides → let active theme CSS take over
+      [
+        "--accent", "--border-accent", "--accent-dim",
+        "--accent-glow", "--accent-glow-lg", "--shadow-accent",
+        "--text-primary", "--text-secondary", "--text-muted",
+        "--border", "--bg-body-gradient",
+      ].forEach(v => document.documentElement.style.removeProperty(v));
+    }
+  }, [customAccent]);
 
   // Disable default browser context menu globally to feel like a native desktop app
   useEffect(() => {
@@ -268,19 +318,19 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <div 
-        id="app-container" 
+      <div
+        id="app-container"
         className={isModalOpen ? "blurred-layout" : ""}
-        style={{ 
-          width: "100%", 
-          height: "100%", 
-          display: "flex", 
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
           flexDirection: "column",
-          transition: "filter 0.2s ease-out, transform 0.2s ease-out" 
+          transition: "filter 0.2s ease-out, transform 0.2s ease-out"
         }}
       >
-        <AssistantOverlay 
-          onOpenSettings={(mode = "all") => { setSettingsMode(mode); setShowSettings(true); }} 
+        <AssistantOverlay
+          onOpenSettings={(mode = "all") => { setSettingsMode(mode); setShowSettings(true); }}
           onOpenHistory={() => setShowHistory(true)}
           onOpenCustomizer={() => setShowCustomizer(true)}
           onOpenMcpSettings={() => setShowMcpSettings(true)}

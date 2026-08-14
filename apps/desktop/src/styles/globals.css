@@ -1066,7 +1066,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--border)
 
 /* --- Premium Viewport Blur Layout --- */
 #app-container.blurred-layout {
-  filter: blur(14px) saturate(110%);
+  filter: blur(4px) saturate(110%);
   transform: scale(0.99);
   pointer-events: none;
 }
