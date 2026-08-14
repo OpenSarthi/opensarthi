@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { X, Save, Volume2, Bell, Palette, Cpu, ChevronRight, CheckCircle2, RefreshCw } from "lucide-react";
+import { X, Save, Volume2, Bell, Cpu, ChevronRight, CheckCircle2, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { playCue } from "../../hooks/useAudioCues";
+import { useAssistantStore } from "../../stores/assistantStore";
 import {
   PROVIDER_MODELS,
   PROVIDER_LABELS,
@@ -51,6 +52,7 @@ interface SettingsViewProps {
     soundEnabled: boolean;
     soundVolume: number;
     longTermMemoryEnabled: boolean;
+    remoteDashboardEnabled: boolean;
   }) => void;
 }
 
@@ -197,7 +199,6 @@ export function SettingsView({
   const [voiceAccent, setVoiceAccent] = useState(currentVoiceAccent);
   const [voiceSpeed, setVoiceSpeed] = useState(currentVoiceSpeed);
   const [continuousListening, setContinuousListening] = useState(currentContinuousListening !== undefined ? currentContinuousListening : true);
-  const [theme, setTheme] = useState(currentTheme);
   const [wakeWordsInput, setWakeWordsInput] = useState((currentWakeWords || []).join(", "));
   const [wakeWordEnabled, setWakeWordEnabled] = useState(currentWakeWordEnabled !== undefined ? currentWakeWordEnabled : true);
   const [wakeWordThreshold, setWakeWordThreshold] = useState(currentWakeWordThreshold !== undefined ? currentWakeWordThreshold : 0.5);
@@ -311,6 +312,7 @@ export function SettingsView({
       wakeWordThreshold: currentWakeWordThreshold,
       soundEnabled: currentSoundEnabled,
       soundVolume: currentSoundVolume,
+      remoteDashboardEnabled: useAssistantStore.getState().remoteDashboardEnabled || false,
     });
     setSaved(true);
     setTimeout(() => {
@@ -340,12 +342,13 @@ export function SettingsView({
       voiceAccent,
       voiceSpeed,
       continuousListening,
-      theme,
+      theme: useAssistantStore.getState().activeTheme,
       wakeWords: parsedWakeWords,
       wakeWordEnabled,
       wakeWordThreshold,
       soundEnabled,
       soundVolume,
+      remoteDashboardEnabled: useAssistantStore.getState().remoteDashboardEnabled || false,
     });
     setSaved(true);
     setTimeout(() => {
@@ -363,31 +366,29 @@ export function SettingsView({
       style={{
         position: "fixed",
         top: 0, left: 0, right: 0, bottom: 0,
-        background: "rgba(0, 0, 0, 0.15)",
-        backdropFilter: "blur(32px) saturate(180%)",
-        WebkitBackdropFilter: "blur(32px) saturate(180%)",
+        background: "rgba(0, 0, 0, 0.05)",
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        justifyContent: "flex-end",
+        alignItems: "flex-start",
+        padding: "54px 12px 12px 12px",
         zIndex: 50,
-        perspective: "1200px",
       }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <motion.div
         className="hud-panel"
-        initial={{ scale: 0.9, rotateX: 12, y: -10, opacity: 0 }}
-        animate={{ scale: 1, rotateX: 0, y: 0, opacity: 1 }}
-        exit={{ scale: 0.9, rotateX: -8, y: 10, opacity: 0 }}
+        initial={{ x: 250, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: 250, opacity: 0 }}
         transition={{ type: "spring", damping: 26, stiffness: 280 }}
         style={{
-          width: viewMode === "agent" || viewMode === "interaction" ? "440px" : "840px",
-          maxHeight: "85vh",
+          width: viewMode === "agent" || viewMode === "interaction" ? "440px" : "680px",
+          maxHeight: "calc(100vh - 66px)",
           display: "flex",
           flexDirection: "column",
           gap: "0",
           overflow: "hidden",
-          background: "rgba(10, 10, 10, 0.97)",
+          background: "rgba(10, 10, 10, 0.98)",
           border: "1px solid var(--border)",
           boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)"
         }}
@@ -617,27 +618,6 @@ export function SettingsView({
           {/* Column 2: Theme & Interaction settings */}
           {(viewMode === "interaction" || viewMode === "all") && (
             <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              {/* ── THEME SECTION ── */}
-              {viewMode === "all" && (
-                <div style={sectionStyle}>
-                  <SectionHeader icon={<Palette size={12} color="var(--accent)" />} title="[ INTERFACE THEME ]" />
-                  <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                    <label style={labelStyle}>ACTIVE STYLING MATRIX</label>
-                    <select value={theme} onChange={(e) => setTheme(e.target.value)} style={selectStyle}>
-                      <option value="theme-green-black">🟢 Matrix Green (Default)</option>
-                      <option value="theme-red-black">🔴 Dark Crimson (HUD)</option>
-                      <option value="theme-mono-dark">⚫ Mono Dark (Black &amp; White)</option>
-                      <option value="theme-purple-black">🟣 Dark Nebula (Cyberpunk Purple)</option>
-                      <option value="theme-blue-black">🌊 Dark Ocean (Neon Cyan)</option>
-                      <option value="theme-light-sakura">🌸 Light Sakura (Pink &amp; White)</option>
-                      <option value="theme-light-slate">🏙️ Light Slate (Sky Blue &amp; Gray)</option>
-                      <option value="theme-light-clean">⬜ Light Clean (Pure White)</option>
-                      <option value="theme-multicolor-dark">🌌 Cyberpunk Neon (Multicolor Dark)</option>
-                      <option value="theme-multicolor-light">🌈 Vivid Rainbow (Multicolor Light)</option>
-                    </select>
-                  </div>
-                </div>
-              )}
 
               {/* ── VOICE SECTION ── */}
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
