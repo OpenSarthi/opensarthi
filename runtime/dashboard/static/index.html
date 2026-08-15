@@ -309,7 +309,7 @@
   function hexToBytes(h) { const b = new Uint8Array(h.length/2); for(let i=0;i<b.length;i++) b[i]=parseInt(h.substr(i*2,2),16); return b; }
   function bytesToHex(b) { return Array.from(b).map(x=>x.toString(16).padStart(2,"0")).join(""); }
 
-  // ── Auto-login from URL ──
+  // ── Auto-login and Session Restore ──
   async function tryAutoLogin() {
     const params = new URLSearchParams(location.search);
     const key = (params.get("key") || "").trim().toUpperCase();
@@ -317,36 +317,77 @@
       loadingScreen.style.display = "flex";
       loginScreen.style.display = "none";
       await attemptPair(key);
-    } else {
-      loadingScreen.style.display = "none";
-      loginScreen.style.display = "flex";
+      return;
     }
+
+    // Try restoring WebSocket session from sessionStorage
+    const storedToken = sessionStorage.getItem('os_remote_token');
+    const storedKey = sessionStorage.getItem('os_remote_key');
+    if (storedToken && storedKey) {
+      authToken = storedToken;
+      sessionKey = storedKey;
+      aesKey = await deriveAesKey(sessionKey);
+      connectWs();
+      return;
+    }
+
+    // Try auto-login using stored device token
+    const deviceToken = localStorage.getItem('os_remote_device_token');
+    if (deviceToken) {
+      try {
+        const resp = await fetch("/api/device-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ device_token: deviceToken }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          authToken = data.token;
+          sessionKey = data.key;
+          
+          sessionStorage.setItem('os_remote_token', authToken);
+          sessionStorage.setItem('os_remote_key', sessionKey);
+          
+          aesKey = await deriveAesKey(sessionKey);
+          connectWs();
+          return;
+        }
+      } catch (e) {
+        // Fall through to login screen on error
+      }
+    }
+
+    // Fall back to login screen
+    loadingScreen.style.display = "none";
+    loginScreen.style.display = "flex";
   }
 
   async function attemptPair(key) {
     try {
-      const resp = await fetch("/auth/pair", {
+      const resp = await fetch("/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key }),
+        body: JSON.stringify({ pin: key }),
       });
       if (!resp.ok) {
         const j = await resp.json().catch(() => ({}));
-        const msg = (j.detail || "Pairing failed.").toLowerCase();
-        if (msg.includes("expired") || msg.includes("invalid")) {
-          loadingScreen.style.display = "none";
-          loginScreen.style.display = "flex";
-          errorMsg.textContent = "Link expired — enter a new code from the desktop app.";
-        } else {
-          loadingScreen.style.display = "none";
-          loginScreen.style.display = "flex";
-          errorMsg.textContent = "Pairing failed: " + (j.detail || resp.status);
-        }
+        errorMsg.textContent = j.error || "Invalid or expired key.";
+        loadingScreen.style.display = "none";
+        loginScreen.style.display = "flex";
         return;
       }
       const data = await resp.json();
       authToken = data.token;
-      sessionKey = data.session_key;
+      sessionKey = key; // The PIN itself is the session key
+      
+      // Store in session storage
+      sessionStorage.setItem('os_remote_token', authToken);
+      sessionStorage.setItem('os_remote_key', sessionKey);
+      
+      if (data.device_token) {
+        localStorage.setItem('os_remote_device_token', data.device_token);
+      }
+
       aesKey = await deriveAesKey(sessionKey);
       connectWs();
     } catch (e) {
