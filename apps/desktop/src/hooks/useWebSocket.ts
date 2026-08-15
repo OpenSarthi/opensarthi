@@ -35,11 +35,14 @@ export function useWebSocket(port: number | null) {
           setConnected(connected);
           if (connected) {
             setVoiceState("idle");
+            useAssistantStore.getState().addActivityLog("SYS: Connected to backend runtime.");
             // Load or initialize the active thread on the backend!
             const activeId = useAssistantStore.getState().activeThreadId;
             if (activeId) {
               wsClient.send("load_thread", { thread_id: activeId });
             }
+          } else {
+            useAssistantStore.getState().addActivityLog("SYS: Disconnected from backend runtime.");
           }
         }
       }),
@@ -113,6 +116,7 @@ export function useWebSocket(port: number | null) {
         setPlan(plan, thread_id);
         setVoiceState("processing");
         playCue("processing");
+        store.addActivityLog(`SYS: Task plan created with ${plan.steps.length} steps.`);
       }),
 
       wsClient.on("plan_reasoning", (msg) => {
@@ -139,6 +143,7 @@ export function useWebSocket(port: number | null) {
           ...(description && { description }),
           ...(args && { args }),
         }, thread_id);
+        useAssistantStore.getState().addActivityLog(`SYS: Executing tool [${(tool || "unknown").toUpperCase()}] for step ${index + 1}: "${description || tool}".`);
       }),
 
       wsClient.on("tool_completed", (msg) => {
@@ -151,6 +156,7 @@ export function useWebSocket(port: number | null) {
           ...(description && { description }),
           ...(args && { args }),
         }, thread_id);
+        useAssistantStore.getState().addActivityLog(`SYS: Tool [${(tool || "unknown").toUpperCase()}] (step ${index + 1}) succeeded.`);
       }),
 
       wsClient.on("tool_error", (msg) => {
@@ -163,11 +169,13 @@ export function useWebSocket(port: number | null) {
           ...(description && { description }),
           ...(args && { args }),
         }, thread_id);
+        useAssistantStore.getState().addActivityLog(`SYS: Tool [${(tool || "unknown").toUpperCase()}] (step ${index + 1}) failed: "${error}".`);
       }),
 
       wsClient.on("tool_terminated", (msg) => {
         const { index, thread_id } = msg.payload as { index: number; thread_id?: string };
         updateStepStatus(index, { status: "terminated", timestamp: Date.now() }, thread_id);
+        useAssistantStore.getState().addActivityLog(`SYS: Step ${index + 1} execution terminated.`);
       }),
 
       wsClient.on("assistant_response", (msg) => {
@@ -209,7 +217,13 @@ export function useWebSocket(port: number | null) {
         const { thread_id } = msg.payload as { thread_id?: string };
         const tid = thread_id || useAssistantStore.getState().activeThreadId;
         const activeTab = useAssistantStore.getState().tabs.find(t => t.id === tid);
-        if (activeTab?.messages.some(m => m.id === message.id)) {
+        
+        // Deduplicate: skip if message ID matches OR if the last message in the thread is identical
+        const lastMsg = activeTab?.messages[activeTab.messages.length - 1];
+        if (
+          activeTab?.messages.some(m => m.id === message.id) ||
+          (lastMsg && lastMsg.role === message.role && lastMsg.content === message.content)
+        ) {
           return;
         }
         addMessage(message, thread_id);
@@ -220,10 +234,12 @@ export function useWebSocket(port: number | null) {
       wsClient.on("speech_started", () => {
         setVoiceState("speaking");
         playCue("speech_start");
+        useAssistantStore.getState().addActivityLog("SARTHI: Speaking response.");
       }),
 
       wsClient.on("speech_completed", (msg) => {
         const wasManual = (msg?.payload as any)?.was_manual === true;
+        useAssistantStore.getState().addActivityLog("SYS: Speech finished.");
         if (wasManual) {
           setVoiceState("idle");
           return;
@@ -243,6 +259,7 @@ export function useWebSocket(port: number | null) {
         if (state) {
           const prev = useAssistantStore.getState().voiceState;
           setVoiceState(state);
+          useAssistantStore.getState().addActivityLog(`SYS: Voice state: ${state}.`);
           if (state === "listening") {
             // Mic just opened — play listen_start cue
             playCue("listen_start");
@@ -288,6 +305,9 @@ export function useWebSocket(port: number | null) {
         if (p.active_theme) store.setActiveTheme(p.active_theme);
         if (p.long_term_memory_enabled !== undefined) {
           store.setLongTermMemoryEnabled(p.long_term_memory_enabled);
+        }
+        if (p.use_langgraph !== undefined) {
+          store.setUseLanggraph(p.use_langgraph);
         }
         if (p.remote_dashboard_enabled !== undefined) {
           store.setRemoteDashboardEnabled(p.remote_dashboard_enabled);
@@ -380,11 +400,13 @@ export function useWebSocket(port: number | null) {
       wsClient.on("task_paused", (msg) => {
         const { thread_id } = msg.payload as { thread_id?: string };
         useAssistantStore.getState().setTaskPaused(true, thread_id);
+        useAssistantStore.getState().addActivityLog("SYS: Task execution paused.");
       }),
 
       wsClient.on("task_resumed", (msg) => {
         const { thread_id } = msg.payload as { thread_id?: string };
         useAssistantStore.getState().setTaskPaused(false, thread_id);
+        useAssistantStore.getState().addActivityLog("SYS: Task execution resumed.");
       }),
 
       wsClient.on("shell_output", (msg) => {
@@ -452,6 +474,53 @@ export function useWebSocket(port: number | null) {
         // Mark that a streaming session just completed and is pending response message ID
         store.markStreamedMessage("PENDING");
         store.clearStreamingResponse();
+      }),
+
+      wsClient.on("briefing_phase1", (msg) => {
+        const { text, thread_id } = msg.payload as { text: string; thread_id?: string };
+        const store = useAssistantStore.getState();
+        store.addActivityLog("SYS: Briefing phase 1 (greeting) sent.");
+        store.addActivityLog(`SARTHI: ${text}`);
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: text,
+          timestamp: Date.now()
+        }, thread_id);
+      }),
+
+      wsClient.on("briefing_phase2", (msg) => {
+        const { text, content_panel_data, thread_id } = msg.payload as { text: string; content_panel_data: any; thread_id?: string };
+        const store = useAssistantStore.getState();
+        store.addActivityLog("SYS: Briefing phase 2 (news/weather/calendar) sent.");
+        if (content_panel_data) {
+          store.setContentPanel("briefing", content_panel_data);
+        }
+        if (text) {
+          store.addActivityLog(`SARTHI: ${text}`);
+          addMessage({
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: text,
+            timestamp: Date.now()
+          }, thread_id);
+        }
+      }),
+
+      wsClient.on("screen_analysis", (msg) => {
+        const { text } = msg.payload as { text: string };
+        const store = useAssistantStore.getState();
+        store.addActivityLog("SYS: Screen analysis complete.");
+        if (text) {
+          store.setContentPanel("screen_analysis", text);
+        }
+      }),
+
+      wsClient.on("content_update", (msg) => {
+        const { content_type, data } = msg.payload as { content_type: string; data: any };
+        const store = useAssistantStore.getState();
+        store.addActivityLog(`SYS: Content panel update: [${content_type.toUpperCase()}].`);
+        store.setContentPanel(content_type, data);
       }),
 
     ];

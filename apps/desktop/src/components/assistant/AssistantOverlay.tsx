@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop, Paperclip } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -6,12 +6,12 @@ import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
 import { MatrixRainBackground } from "./MatrixRainBackground";
-import { TranscriptView } from "./TranscriptView";
 import { MessageList } from "./ResponseBubble";
 import { ActionLog } from "../execution/ActionLog";
 import { TaskList } from "./TaskList";
 import { OverlayIdleView } from "./OverlayIdleView";
 import { RuntimeConsole } from "./RuntimeConsole";
+import { ContentPanelView } from "./ContentPanelView";
 import { useAssistantStore } from "../../stores/assistantStore";
 import { wsClient } from "../../lib/ws";
 import pkg from "../../../package.json";
@@ -60,6 +60,49 @@ function metricColor(pct: number): string {
   return "#ef4444";               // red
 }
 
+export function ActivityLogPanel({ logs }: { logs: { id: string; text: string; timestamp: number }[] }) {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, [logs.length]);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        flex: 1,
+        padding: "12px",
+        overflowY: "auto",
+        display: "flex",
+        flexDirection: "column",
+        gap: "6px",
+        fontFamily: "var(--font-mono)",
+        fontSize: "10px",
+        background: "rgba(0, 0, 0, 0.25)",
+        borderRadius: "var(--radius-md)",
+        border: "1px solid rgba(255, 255, 255, 0.05)",
+      }}
+      className="custom-scrollbar"
+    >
+      {logs.map((log) => {
+        let color = "var(--text-secondary)";
+        if (log.text.startsWith("SYS:")) color = "#00f0ff";
+        else if (log.text.startsWith("SARTHI:")) color = "#00ff66";
+        else if (log.text.startsWith("USER:")) color = "var(--accent)";
+
+        return (
+          <div key={log.id} style={{ color, whiteSpace: "pre-wrap", lineHeight: "1.4" }}>
+            {log.text}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomizer, onOpenMcpSettings, onOpenJsonImport, onOpenContext, onNewChat }: AssistantOverlayProps) {
   const [textInput, setTextInput] = useState("");
   const [statusIdx, setStatusIdx] = useState(0);
@@ -67,7 +110,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const [showLogsPanel, setShowLogsPanel] = useState(false);
   const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
   const [showRemotePopover, setShowRemotePopover] = useState(false);
-  
+
   // Custom theme color picker, mobile remote modal, and uptime tracking states
   const [showRemoteModal, setShowRemoteModal] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -78,6 +121,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const [onlineSince, setOnlineSince] = useState<number | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [hoveredTabId, setHoveredTabId] = useState<string | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const remoteRef = useRef<HTMLDivElement | null>(null);
@@ -120,7 +164,9 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     systemMetrics,
     mobilePairing,
     customAccent,
-    setCustomAccent
+    setCustomAccent,
+    activityLogs,
+    contentPanel
   } = useAssistantStore();
 
   const [_uptimeTicker, setUptimeTicker] = useState(0);
@@ -145,7 +191,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     const totalMin = Math.floor(diffMs / 60000);
     const hrs = Math.floor(totalMin / 60);
     const mins = totalMin % 60;
-    
+
     const hrsStr = hrs.toString().padStart(2, '0');
     const minsStr = mins.toString().padStart(2, '0');
     return `${hrsStr}h ${minsStr}m`;
@@ -166,12 +212,12 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
       // Handle #rgb or #rrggbb
       let hex = color.trim();
       if (!hex.startsWith("#")) return 120;
-      if (hex.length === 4) hex = "#" + hex[1]+hex[1]+hex[2]+hex[2]+hex[3]+hex[3];
-      r = parseInt(hex.slice(1,3),16)/255;
-      g = parseInt(hex.slice(3,5),16)/255;
-      b = parseInt(hex.slice(5,7),16)/255;
+      if (hex.length === 4) hex = "#" + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+      r = parseInt(hex.slice(1, 3), 16) / 255;
+      g = parseInt(hex.slice(3, 5), 16) / 255;
+      b = parseInt(hex.slice(5, 7), 16) / 255;
     }
-    const max = Math.max(r,g,b), min = Math.min(r,g,b);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
     let h = 0;
     if (max !== min) {
       const d = max - min;
@@ -205,11 +251,11 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     const cy = rect.height / 2;
     const x = clientX - rect.left - cx;
     const y = clientY - rect.top - cy;
-    
+
     let angle = Math.atan2(y, x);
     let hue = ((angle + Math.PI / 2) * 180) / Math.PI;
     hue = (hue + 360) % 360;
-    
+
     const hex = hslToHex(hue, 100, 50);
     setPendingColor(hex);
     setCustomAccent(hex);
@@ -456,7 +502,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         isRestoringFromOverlay.current = true;
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOverlayMode]);
 
   // Clean up global listeners on unmount
@@ -777,8 +823,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           boxShadow: snapAlign === "right"
             ? "-4px 0 40px rgba(0,0,0,0.7), 0 0 0 1px var(--border-accent)"
             : snapAlign === "left"
-            ? "4px 0 40px rgba(0,0,0,0.7), 0 0 0 1px var(--border-accent)"
-            : "0 8px 40px rgba(0,0,0,0.7), 0 0 24px var(--accent-glow)",
+              ? "4px 0 40px rgba(0,0,0,0.7), 0 0 0 1px var(--border-accent)"
+              : "0 8px 40px rgba(0,0,0,0.7), 0 0 24px var(--accent-glow)",
           padding: "0",
           gap: "0",
           overflow: "hidden",
@@ -1015,8 +1061,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             fontSize: "9px", color: "var(--text-secondary)",
             fontFamily: "var(--font-mono)", letterSpacing: "0.05em",
           }}>
-            <span>ONLINE: <span style={{ 
-              color: isConnected ? "var(--accent)" : "var(--danger)", 
+            <span>ONLINE: <span style={{
+              color: isConnected ? "var(--accent)" : "var(--danger)",
               fontWeight: 700,
               textShadow: isConnected ? "0 0 6px var(--accent-glow)" : "none"
             }}>{isConnected ? "YES" : "NO"}</span></span>
@@ -1114,10 +1160,10 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           <span
             className={[
               "os-listen-ear",
-              voiceState === "listening"  ? "is-listening"  : "",
+              voiceState === "listening" ? "is-listening" : "",
               voiceState === "processing" ? "is-processing" : "",
-              voiceState === "speaking"   ? "is-speaking"   : "",
-              voiceState === "error"      ? "is-error"      : "",
+              voiceState === "speaking" ? "is-speaking" : "",
+              voiceState === "error" ? "is-error" : "",
             ].filter(Boolean).join(" ")}
             title={`Voice: ${voiceState}`}
           />
@@ -1327,7 +1373,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                     <Palette size={13} style={{ color: "var(--accent)" }} />
                     <span>Themes</span>
                     <ChevronRight size={10} style={{ marginLeft: "auto" }} />
-                    
+
                     <div className="dropdown-submenu">
                       {THEMES.map(t => (
                         <button
@@ -1400,7 +1446,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                               DEFAULT
                             </button>
                           </div>
-                          
+
                           <div
                             ref={wheelRef}
                             onMouseDown={onMouseDown}
@@ -1439,7 +1485,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                                 }}
                               />
                             </div>
-                            
+
                             {/* Compute coordinates based on HSL angle */}
                             {(() => {
                               const currentHueColor = pendingColor || customAccent || "#1aff1a";
@@ -1628,11 +1674,11 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div className="hud-panel-title">// AGENT STATUS & SYSTEMS</div>
                 <div style={{ display: "flex", flexDirection: "column", padding: "12px", gap: "8px", overflowY: "auto" }} className="custom-scrollbar">
-                  
+
                   {/* Top Part: System Monitor */}
                   <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "11px" }}>
                     {/* <div style={{ textTransform: "uppercase", fontSize: "9px", color: "var(--text-muted)", letterSpacing: "0.05em", fontWeight: "bold" }}>[ SYS MONITOR ]</div> */}
-                    
+
                     {/* CPU */}
                     <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1702,7 +1748,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   {/* Bottom Part: Agent Metadata */}
                   <div style={{ display: "flex", flexDirection: "column", gap: "5px", fontSize: "11px" }}>
                     {/* <div style={{ textTransform: "uppercase", fontSize: "9px", color: "var(--text-muted)", letterSpacing: "0.05em", fontWeight: "bold" }}>[ AGENT MATRIX ]</div> */}
-                    
+
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>PROVIDER:</span>
                       <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{activeProvider}</span>
@@ -1762,16 +1808,16 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           <div className="hud-panel" style={{ flex: "1 1 0%", minWidth: "320px", display: "flex", flexDirection: "column" }}>
             <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 8px 0 0", height: "36px", overflow: "visible", gap: "8px" }}>
               {/* Scrollable Tabs Wrapper */}
-              <div 
-                style={{ 
-                  display: "flex", 
-                  alignItems: "flex-end", 
-                  flex: 1, 
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  flex: 1,
                   minWidth: 0,
-                  height: "100%", 
-                  overflowX: "auto", 
-                  scrollbarWidth: "none", 
-                  gap: "6px",
+                  height: "100%",
+                  overflowX: "auto",
+                  scrollbarWidth: "none",
+                  gap: "0px",
                   paddingLeft: "16px"
                 }}
                 className="chrome-tabs-container"
@@ -1782,10 +1828,13 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 {tabs.map((tab) => {
                   const isActive = tab.id === activeThreadId;
                   const isRunning = !!tab.currentPlan;
+                  const isHovered = tab.id === hoveredTabId;
                   return (
                     <div
                       key={tab.id}
                       onClick={() => setActiveThreadId(tab.id)}
+                      onMouseEnter={() => setHoveredTabId(tab.id)}
+                      onMouseLeave={() => setHoveredTabId(null)}
                       className={`chrome-tab ${isActive ? "active" : ""}`}
                       style={{
                         height: "30px",
@@ -1801,9 +1850,38 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                         maxWidth: "180px",
                         gap: "8px",
                         justifyContent: "space-between",
-                        flexShrink: 0
+                        flexShrink: 0,
+                        marginRight: "-10px",
+                        zIndex: isActive ? 5 : (isHovered ? 4 : 2)
                       }}
                     >
+                      {/* Chrome Tab SVG Background */}
+                      <svg
+                        viewBox="0 0 100 30"
+                        preserveAspectRatio="none"
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          height: "100%",
+                          zIndex: 1,
+                          pointerEvents: "none",
+                          filter: isActive ? "drop-shadow(0px -2px 4px var(--accent-glow))" : "none"
+                        }}
+                      >
+                        <path
+                          d="M 0 30 C 5 30, 8 25, 10 15 C 12 5, 15 0, 22 0 L 78 0 C 85 0, 88 5, 90 15 C 92 25, 95 30, 100 30"
+                          vectorEffect="non-scaling-stroke"
+                          style={{
+                            fill: isActive ? "rgba(255, 255, 255, 0.09)" : (isHovered ? "rgba(255, 255, 255, 0.04)" : "transparent"),
+                            stroke: isActive ? "var(--border-accent)" : "transparent",
+                            strokeWidth: 1.5,
+                            transition: "fill 0.15s, stroke 0.15s"
+                          }}
+                        />
+                      </svg>
+
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, zIndex: 2 }}>
                         {isRunning ? "⚡ " : ""}// {tab.title.replace(/^\/\/\s*/, "").toUpperCase()}
                       </span>
@@ -2422,16 +2500,39 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
           {/* RIGHT PANEL */}
           <div data-panel="right" style={{ width: `${rightWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
+
+            {/* ACTIVITY LOG */}
             <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <MatrixRainBackground voiceState={voiceState} />
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-                <div className="hud-panel-title">// LIVE PLAN & ACTIVITY</div>
-                <div className="activity-scroll-container" style={{ padding: "12px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
-                  <TranscriptView transcript={currentTranscript} />
+                <div className="hud-panel-title">// ACTIVITY LOG</div>
+                <ActivityLogPanel logs={activityLogs} />
+              </div>
+            </div>
+
+            {/* ACTIVE TASK PLAN */}
+            <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <MatrixRainBackground voiceState={voiceState} />
+              <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+                <div className="hud-panel-title">// ACTIVE TASK PLAN</div>
+                <div className="activity-scroll-container" style={{ padding: "12px", overflowY: "auto", flex: 1, minHeight: 0 }}>
                   <ActionLog plan={currentPlan} selectedTaskId={selectedTaskId} messages={messages} />
                 </div>
               </div>
             </div>
+
+            {/* CONTENT VIEW */}
+            {contentPanel.contentType && (
+              <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <MatrixRainBackground voiceState={voiceState} />
+                <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+                  <div className="hud-panel-title">// CONTENT VIEW</div>
+                  <div style={{ flex: 1, padding: "12px", overflowY: "auto", minHeight: 0 }}>
+                    <ContentPanelView contentType={contentPanel.contentType} data={contentPanel.contentData} />
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="hud-panel" style={{ padding: "12px", display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0, overflow: "hidden" }}>
               <MatrixRainBackground voiceState={voiceState} />
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: "8px", flex: 1 }}>
@@ -2476,9 +2577,9 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
       </AnimatePresence>
       {/* Collapsible Absolute Bottom Console Overlay (Full Width of App) */}
       {onboardingCompleted && (
-        <RuntimeConsole 
-          isOpen={showLogsPanel} 
-          onClose={() => setShowLogsPanel(false)} 
+        <RuntimeConsole
+          isOpen={showLogsPanel}
+          onClose={() => setShowLogsPanel(false)}
           height={consoleHeight}
           onResizeStart={startResizeConsole}
         />
