@@ -308,6 +308,14 @@ class Session:
             timestamp = int(time.time() * 1000)
             db.save_message(tid, msg_id, "user", text, timestamp)
 
+            if source in ("remote", "voice"):
+                await self.send_message("user_message", {
+                    "id": msg_id,
+                    "role": "user",
+                    "content": text,
+                    "timestamp": timestamp
+                }, thread_id=tid)
+
             from config import settings, get_active_api_key
             # Refresh deps with current settings at run-time
             self.deps.skills = list(getattr(settings, 'user_skills', ['general', 'desktop_automation']))
@@ -920,12 +928,24 @@ class Session:
     async def _listen_loop(self):
         """Simulate sending transcript updates."""
         try:
-            async for transcript in self.voice_pipeline.start_listening():
+            async for transcript_info in self.voice_pipeline.start_listening():
+                if isinstance(transcript_info, dict):
+                    transcript = transcript_info["text"]
+                    source = transcript_info["source"]
+                else:
+                    transcript = transcript_info
+                    source = "desktop"
+
                 await self.send_message("transcript_update", {
                     "text": transcript,
                     "engine": "local",
                     "is_final": True
                 })
+
+                if source in ("phone", "remote"):
+                    asyncio.create_task(
+                        self.handle_user_message(transcript, source="voice", thread_id=self.thread_id)
+                    )
         except asyncio.CancelledError:
             logger.info("Voice listen loop cancelled")
         except Exception as e:
