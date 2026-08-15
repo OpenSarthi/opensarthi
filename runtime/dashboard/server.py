@@ -19,6 +19,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 import uvicorn
 import qrcode
+import structlog
+logger = structlog.get_logger()
 
 PORT = 8765
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -291,7 +293,7 @@ class DashboardServer:
                                 # Get first active session
                                 active_session = list(ws_manager.sessions.values())[0]
                                 asyncio.create_task(
-                                    active_session.handle_user_message(t, source="text", thread_id=active_session.thread_id)
+                                    active_session.handle_user_message(t, source="remote", thread_id=active_session.thread_id)
                                 )
             except WebSocketDisconnect:
                 pass
@@ -299,7 +301,78 @@ class DashboardServer:
                 self._clients.discard(websocket)
                 self._device_info.pop(websocket, None)
 
+        @app.websocket("/ws/phone-audio")
+        async def phone_audio_ws(websocket: WebSocket, token: str = ""):
+            tok = token.strip()
+            if not tok or tok not in self._tokens:
+                await websocket.close(code=4001)
+                return
+            await websocket.accept()
+            logger.info("Phone voice connection established.")
+            
+            try:
+                from api.websocket import manager as ws_manager
+                from voice.vad import SileroVAD
+                import numpy as np
+                
+                vad = SileroVAD(sample_rate=16000, threshold=0.45)
+                voiced_frames = []
+                silence_frames = 0
+                is_speaking = False
+                
+                RATE = 16000
+                CHUNK = 1024  # Browser buffers to 1024 samples
+                SILENCE_LIMIT = int(1.2 * RATE / CHUNK)
+                MIN_SPEECH_LIMIT = int(0.20 * RATE / CHUNK)
+                
+                while True:
+                    data = await websocket.receive_bytes()
+                    if not data:
+                        continue
+                    
+                    audio_frame = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32767.0
+                    is_voiced = vad.is_speech(audio_frame)
+                    
+                    if is_voiced:
+                        voiced_frames.append(audio_frame)
+                        silence_frames = 0
+                        if not is_speaking and len(voiced_frames) >= MIN_SPEECH_LIMIT:
+                            is_speaking = True
+                            logger.info("Phone VAD: Speech started")
+                            if ws_manager.sessions:
+                                active_session = list(ws_manager.sessions.values())[0]
+                                asyncio.create_task(active_session.send_message("voice_state", {"state": "listening"}))
+                    else:
+                        if is_speaking:
+                            voiced_frames.append(audio_frame)
+                            silence_frames += 1
+                            if silence_frames >= SILENCE_LIMIT:
+                                logger.info("Phone VAD: Speech ended, yielding audio to pipeline")
+                                audio_data = np.concatenate(voiced_frames)
+                                
+                                if ws_manager.sessions:
+                                    active_session = list(ws_manager.sessions.values())[0]
+                                    if active_session.voice_pipeline and active_session.voice_pipeline.is_listening:
+                                        # Inject into the active session's audio queue with source='phone'
+                                        active_session.voice_pipeline.audio_queue.put({"audio": audio_data, "source": "phone"})
+                                        asyncio.create_task(active_session.send_message("voice_state", {"state": "processing"}))
+                                
+                                voiced_frames = []
+                                is_speaking = False
+                                silence_frames = 0
+                        else:
+                            voiced_frames.append(audio_frame)
+                            if len(voiced_frames) > 6:
+                                voiced_frames.pop(0)
+            except WebSocketDisconnect:
+                pass
+            except Exception as e:
+                logger.error("Error in phone audio websocket", error=str(e))
+            finally:
+                logger.info("Phone voice connection closed.")
+
         return app
+
     def start(self):
         if self._running:
             return
