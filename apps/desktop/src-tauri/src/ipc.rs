@@ -102,13 +102,43 @@ pub async fn create_desktop_shortcut(app: AppHandle) -> Result<String, String> {
             .map_err(|_| "Could not find HOME")?;
 
         let exe_str = exe.display().to_string();
-        let icon_path = exe.parent()
-            .map(|p| p.join("icons/icon.png").display().to_string())
-            .unwrap_or_default();
+
+        let home = std::env::var("HOME").unwrap_or_default();
+        let user_icon_dir = PathBuf::from(&home).join(".local/share/icons");
+        let user_icon_path = user_icon_dir.join("opensarthi.png");
+
+        let mut copied = false;
+        if let Ok(res_dir) = app.path().resource_dir() {
+            let res_icon = res_dir.join("icons/icon.png");
+            if res_icon.exists() {
+                let _ = fs::create_dir_all(&user_icon_dir);
+                if fs::copy(&res_icon, &user_icon_path).is_ok() {
+                    copied = true;
+                }
+            }
+        }
+
+        if !copied {
+            if let Some(parent) = exe.parent() {
+                let dev_icon = parent.join("icons/icon.png");
+                if dev_icon.exists() {
+                    let _ = fs::create_dir_all(&user_icon_dir);
+                    if fs::copy(&dev_icon, &user_icon_path).is_ok() {
+                        copied = true;
+                    }
+                }
+            }
+        }
+
+        let icon_val = if copied {
+            user_icon_path.display().to_string()
+        } else {
+            "opensarthi".to_string()
+        };
 
         let desktop_content = format!(
             "[Desktop Entry]\nVersion=1.0\nType=Application\nName=OpenSarthi\nComment=AI Powered Desktop Agent\nExec={}\nIcon={}\nTerminal=false\nCategories=Utility;AI;\n",
-            exe_str, icon_path
+            exe_str, icon_val
         );
 
         // Write to Desktop

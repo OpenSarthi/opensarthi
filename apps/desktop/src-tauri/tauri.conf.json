@@ -66,7 +66,8 @@
       "../../../runtime/providers/**/*",
       "../../../runtime/security/**/*",
       "../../../runtime/tools/**/*",
-      "../../../runtime/voice/**/*"
+      "../../../runtime/voice/**/*",
+      "icons/icon.png"
     ],
     "externalBin": ["binaries/opensarthi-runtime"]
   }
