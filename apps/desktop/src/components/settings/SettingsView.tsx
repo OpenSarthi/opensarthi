@@ -32,6 +32,7 @@ interface SettingsViewProps {
   currentSoundEnabled: boolean;
   currentSoundVolume: number;
   currentLongTermMemoryEnabled: boolean;
+  currentUseLanggraph: boolean;
   runtimePort: number | null;
   onSave: (settings: {
     localModel: string;
@@ -52,6 +53,7 @@ interface SettingsViewProps {
     soundEnabled: boolean;
     soundVolume: number;
     longTermMemoryEnabled: boolean;
+    useLanggraph: boolean;
     remoteDashboardEnabled: boolean;
   }) => void;
 }
@@ -177,6 +179,7 @@ export function SettingsView({
   currentSoundEnabled,
   currentSoundVolume,
   currentLongTermMemoryEnabled,
+  currentUseLanggraph,
   runtimePort,
   onSave,
 }: SettingsViewProps) {
@@ -204,7 +207,8 @@ export function SettingsView({
   const [wakeWordThreshold, setWakeWordThreshold] = useState(currentWakeWordThreshold !== undefined ? currentWakeWordThreshold : 0.5);
   const [soundEnabled, setSoundEnabledLocal] = useState(currentSoundEnabled !== undefined ? currentSoundEnabled : true);
   const [soundVolume, setSoundVolume] = useState(currentSoundVolume !== undefined ? currentSoundVolume : 60);
-  const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(currentLongTermMemoryEnabled !== undefined ? currentLongTermMemoryEnabled : true);
+  const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(currentLongTermMemoryEnabled !== undefined ? currentLongTermMemoryEnabled : false);
+  const [useLanggraph, setUseLanggraph] = useState(currentUseLanggraph !== undefined ? currentUseLanggraph : true);
   const [saved, setSaved] = useState(false);
 
   const providerInfo = PROVIDER_LABELS[provider] || PROVIDER_LABELS.google;
@@ -302,6 +306,7 @@ export function SettingsView({
       groqKey:       provider === "groq"        ? (currentKey || currentGroqKey)        : currentGroqKey,
       openrouterKey: provider === "openrouter"  ? (currentKey || currentOpenrouterKey) : currentOpenrouterKey,
       longTermMemoryEnabled,
+      useLanggraph,
       // Keep other settings unchanged (use original values from props)
       voiceAccent: currentVoiceAccent,
       voiceSpeed: currentVoiceSpeed,
@@ -338,6 +343,7 @@ export function SettingsView({
       groqKey:       provider === "groq"        ? (currentKey || currentGroqKey)        : currentGroqKey,
       openrouterKey: provider === "openrouter"  ? (currentKey || currentOpenrouterKey) : openrouterKey,
       longTermMemoryEnabled,
+      useLanggraph,
       // Save all modified state values
       voiceAccent,
       voiceSpeed,
@@ -582,6 +588,17 @@ export function SettingsView({
                   onChange={setLongTermMemoryEnabled}
                   label="LONG-TERM SEMANTIC MEMORY"
                   sublabel="Uses embeddings to remember preferences (turn off for faster execution)"
+                />
+              </div>
+
+              {/* LangGraph Toggle */}
+              <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px dashed rgba(255,255,255,0.07)" }}>
+                <Toggle
+                  id="use-langgraph-toggle"
+                  checked={useLanggraph}
+                  onChange={setUseLanggraph}
+                  label="USE NATIVE LANGGRAPH FLOW"
+                  sublabel="Enables stateful multi-step tasks, sub-agent orchestration, and task recovery"
                 />
               </div>
 

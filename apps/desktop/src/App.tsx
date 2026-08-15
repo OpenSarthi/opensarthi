@@ -49,6 +49,8 @@ export default function App() {
     wakeWordEnabled,
     wakeWordThreshold,
     longTermMemoryEnabled,
+    useLanggraph,
+    setUseLanggraph,
     setVoiceSettings,
     setWakeWordSettings,
     setActiveTheme,
@@ -198,6 +200,7 @@ export default function App() {
     soundEnabled: boolean;
     soundVolume: number;
     longTermMemoryEnabled: boolean;
+    useLanggraph: boolean;
   }) => {
     setActiveModels(settings.localModel, settings.cloudModel);
     setActiveProvider(settings.provider);
@@ -213,6 +216,7 @@ export default function App() {
     setActiveTheme(settings.theme);
     setSoundSettings(settings.soundEnabled, settings.soundVolume);
     setLongTermMemoryEnabled(settings.longTermMemoryEnabled);
+    setUseLanggraph(settings.useLanggraph);
 
     wsClient.send("update_settings", {
       local_model: settings.localModel,
@@ -231,6 +235,7 @@ export default function App() {
       wake_word_enabled: settings.wakeWordEnabled,
       wake_word_threshold: settings.wakeWordThreshold,
       long_term_memory_enabled: settings.longTermMemoryEnabled,
+      use_langgraph: settings.useLanggraph,
     });
   };
 
@@ -368,6 +373,7 @@ export default function App() {
             currentSoundEnabled={soundEnabled}
             currentSoundVolume={soundVolume}
             currentLongTermMemoryEnabled={longTermMemoryEnabled}
+            currentUseLanggraph={useLanggraph}
             runtimePort={runtimePort}
             onSave={handleSaveSettings}
           />

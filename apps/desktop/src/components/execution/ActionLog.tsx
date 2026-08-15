@@ -604,7 +604,7 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
           }
 
           const hasResult = !!action.result;
-          const isExpanded = expandedIndex === idx;
+          const isExpanded = expandedIndex === idx || isRunning;
           const isShell = action.tool?.toLowerCase() === "shell";
 
           return (
@@ -616,9 +616,7 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
               exit={{ opacity: 0, scale: 0.95, y: 12 }}
               transition={{ type: "spring", damping: 26, stiffness: 360 }}
               onClick={() => {
-                if (hasResult) {
-                  setExpandedIndex(isExpanded ? null : idx);
-                }
+                setExpandedIndex(expandedIndex === idx ? null : idx);
               }}
               style={{
                 padding: "10px 12px",
@@ -629,7 +627,7 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
                 display: "flex",
                 flexDirection: "column",
                 gap: "6px",
-                cursor: hasResult ? "pointer" : "default",
+                cursor: "pointer",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
@@ -648,11 +646,9 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
                   <div style={{ display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>
                     {isHeal ? "🩹 " : ""}{getActionTitle(action)}
                   </div>
-                  {hasResult && (
-                    <span style={{ fontSize: "8px", opacity: 0.5, fontWeight: "normal" }}>
-                      {isExpanded ? "▼ Click to collapse" : "▶ Click to view output"}
-                    </span>
-                  )}
+                  <span style={{ fontSize: "8px", opacity: 0.5, fontWeight: "normal" }}>
+                    {isExpanded ? "▼ Click to collapse" : "▶ Click to expand details"}
+                  </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
                   <span style={{ fontSize: "9px", color: statusColor, fontWeight: "bold", letterSpacing: "0.05em" }}>
@@ -665,10 +661,15 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
                   )}
                 </div>
               </div>
-              <div style={{ fontSize: "11px", color: "var(--text-secondary)", lineHeight: "1.4", fontFamily: "var(--font-mono)" }}>
-                {action.description}
-              </div>
-              {renderActionDetails(action)}
+              
+              {isExpanded && (
+                <>
+                  <div style={{ fontSize: "11px", color: "var(--text-secondary)", lineHeight: "1.4", fontFamily: "var(--font-mono)", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "6px", marginTop: "2px" }}>
+                    {action.description}
+                  </div>
+                  {renderActionDetails(action)}
+                </>
+              )}
 
               {/* Streaming Output for Running Shell OR Collapsible Result for Finished Tool */}
               {((isRunning && isShell && shellOutputLines.length > 0) || (hasResult && isExpanded)) && (

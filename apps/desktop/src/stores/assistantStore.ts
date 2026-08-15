@@ -124,6 +124,7 @@ interface AssistantState {
   wakeWordThreshold: number;
   longTermMemoryEnabled: boolean;
   longTermMemories: any[];
+  useLanggraph: boolean;
   nodeStatuses: Record<string, "idle" | "running" | "done">;
   
   // Remote dashboard pairing state
@@ -147,6 +148,7 @@ interface AssistantState {
   setConnected: (connected: boolean) => void;
   setLongTermMemoryEnabled: (enabled: boolean) => void;
   setLongTermMemories: (memories: any[]) => void;
+  setUseLanggraph: (enabled: boolean) => void;
   setNodeStatus: (node: string, status: "idle" | "running" | "done", thread_id?: string) => void;
   setTranscript: (text: string | null) => void;
   
@@ -208,6 +210,13 @@ interface AssistantState {
   sidecarLogs: string[];
   addSidecarLogs: (lines: string[]) => void;
   clearSidecarLogs: () => void;
+  // Activity Logs
+  activityLogs: { id: string; text: string; timestamp: number }[];
+  addActivityLog: (text: string) => void;
+  clearActivityLogs: () => void;
+  // Content Panel (morning briefing, screen analysis, etc.)
+  contentPanel: { contentType: string | null; contentData: any | null };
+  setContentPanel: (contentType: string | null, contentData: any | null) => void;
   // Custom accent color
   customAccent: string | null;
   setCustomAccent: (color: string | null) => void;
@@ -295,8 +304,9 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   soundVolume: typeof window !== "undefined"
     ? parseInt(localStorage.getItem("opensarthi_sound_volume") || "60", 10)
     : 60,
-  longTermMemoryEnabled: true,
+  longTermMemoryEnabled: false,
   longTermMemories: [],
+  useLanggraph: true,
   nodeStatuses: {},
   planReasonings: {},
   remoteDashboardEnabled: false,
@@ -308,6 +318,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   setRemoteDashboardEnabled: (remoteDashboardEnabled) => set({ remoteDashboardEnabled }),
   setMobilePairing: (mobilePairing) => set({ mobilePairing }),
   setLongTermMemories: (longTermMemories) => set({ longTermMemories }),
+  setUseLanggraph: (useLanggraph) => set({ useLanggraph }),
   setNodeStatus: (node, status, _thread_id) => set((s) => ({
     nodeStatuses: { ...s.nodeStatuses, [node]: status }
   })),
@@ -815,6 +826,16 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     };
   }),
   clearSidecarLogs: () => set({ sidecarLogs: [] }),
+  activityLogs: [{ id: crypto.randomUUID(), text: "SYS: OpenSarthi online.", timestamp: Date.now() }],
+  addActivityLog: (text) => set((state) => {
+    const newLog = { id: crypto.randomUUID(), text, timestamp: Date.now() };
+    return {
+      activityLogs: [...state.activityLogs, newLog].slice(-100)
+    };
+  }),
+  clearActivityLogs: () => set({ activityLogs: [] }),
+  contentPanel: { contentType: null, contentData: null },
+  setContentPanel: (contentType, contentData) => set({ contentPanel: { contentType, contentData } }),
   customAccent: typeof window !== "undefined" ? localStorage.getItem("opensarthi_custom_accent") : null,
   setCustomAccent: (color) => {
     if (typeof window !== "undefined") {
