@@ -14,6 +14,7 @@ import secrets
 import socket
 import string
 import time
+import uuid
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -98,6 +99,8 @@ class DashboardServer:
         self._aes_cache: dict[str, bytes] = {}  # session_key -> AES bytes
         self._clients: set[WebSocket] = set()
         self._device_info: dict[WebSocket, str] = {}
+        # Track thread_id per client for proper routing
+        self._client_threads: dict[WebSocket, str] = {}
         self._pending_keys: dict[str, float] = {}  # key -> expiry
         self._device_sessions: dict[str, dict] = {}  # device_token -> {session_key}
         self._history: list[dict] = []
@@ -164,6 +167,13 @@ class DashboardServer:
             except Exception:
                 dead.add(ws)
         self._clients -= dead
+
+    async def broadcast_from_main(self, msg_type: str, payload: dict, thread_id: str = None):
+        """Broadcast a message from the main desktop WebSocket to all dashboard clients."""
+        # Add thread_id to payload if provided
+        if thread_id:
+            payload = {**payload, "thread_id": thread_id}
+        await self.broadcast(msg_type, payload)
 
     def _build_app(self) -> FastAPI:
         app = FastAPI(docs_url=None, redoc_url=None)
@@ -254,7 +264,7 @@ class DashboardServer:
                 return
             await websocket.accept()
             self._clients.add(websocket)
-            
+
             # Extract client metadata
             ua = websocket.headers.get("user-agent", "Unknown Browser")
             device = "Mobile Device"
@@ -264,22 +274,24 @@ class DashboardServer:
                 device = "Android Device"
             elif "iPad" in ua:
                 device = "iPad"
-            
+
             ip = websocket.client.host if websocket.client else "Unknown IP"
             self._device_info[websocket] = f"{device} ({ip})"
-            
+
             # Send initial history
             for entry in self._history[-50:]:
                 try:
                     await websocket.send_json(entry)
                 except Exception:
                     break
-            
+
             try:
                 from api.websocket import manager as ws_manager
                 while True:
                     data = await websocket.receive_json()
-                    if data.get("type") == "command":
+                    msg_type = data.get("type")
+
+                    if msg_type == "command":
                         enc = data.get("enc", "")
                         t = self._decrypt(tok, enc) if enc else (data.get("text") or "").strip()
                         if t:
@@ -289,17 +301,65 @@ class DashboardServer:
                             asyncio.create_task(self.broadcast("user_echo", {"text": t}))
 
                             # Forward command to the active desktop session
+                            # Use the thread_id associated with this specific client
+                            thread_id = self._client_threads.get(websocket)
                             if ws_manager.sessions:
-                                # Get first active session
-                                active_session = list(ws_manager.sessions.values())[0]
+                                # Find the session that owns this thread, or use first session as fallback
+                                active_session = None
+                                if thread_id:
+                                    for sess in ws_manager.sessions.values():
+                                        # Check if this session has the thread_id or is active
+                                        if sess.thread_id == thread_id:
+                                            active_session = sess
+                                            break
+
+                                if not active_session:
+                                    # Fallback to first active session
+                                    active_session = list(ws_manager.sessions.values())[0]
+
+                                # Update client's thread_id to the session's current thread
+                                self._client_threads[websocket] = active_session.thread_id
+
                                 asyncio.create_task(
                                     active_session.handle_user_message(t, source="remote", thread_id=active_session.thread_id)
                                 )
+
+                    elif msg_type == "new_chat":
+                        # Create new thread on desktop
+                        if ws_manager.sessions:
+                            active_session = list(ws_manager.sessions.values())[0]
+                            # Send new_chat to the session - it will create a new thread
+                            new_tid = str(uuid.uuid4())
+                            # Actually let the session handle it properly
+                            asyncio.create_task(
+                                active_session.process_incoming({"type": "new_chat", "payload": {}})
+                            )
+                            # The session will update its thread_id and broadcast thread info
+                            # We'll just wait for the thread_loaded event
+
+                    elif msg_type == "load_thread":
+                        # Load a specific thread
+                        thread_id = data.get("payload", {}).get("thread_id")
+                        if thread_id and ws_manager.sessions:
+                            active_session = list(ws_manager.sessions.values())[0]
+                            self._client_threads[websocket] = thread_id
+                            asyncio.create_task(
+                                active_session.process_incoming({"type": "load_thread", "payload": {"thread_id": thread_id}})
+                            )
+
+                    elif msg_type == "get_history":
+                        # Request thread list from desktop
+                        if ws_manager.sessions:
+                            active_session = list(ws_manager.sessions.values())[0]
+                            asyncio.create_task(
+                                active_session.process_incoming({"type": "get_history", "payload": {}})
+                            )
             except WebSocketDisconnect:
                 pass
             finally:
                 self._clients.discard(websocket)
                 self._device_info.pop(websocket, None)
+                self._client_threads.pop(websocket, None)
 
         @app.websocket("/ws/phone-audio")
         async def phone_audio_ws(websocket: WebSocket, token: str = ""):

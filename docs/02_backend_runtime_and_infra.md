@@ -1,6 +1,6 @@
 # OpenSarthi — Backend Runtime & Infrastructure
 
-> **Updated:** August 2026 — Dual execution engine (AgentRuntime + LangGraph), SileroVAD ONNX (no PyTorch), 32-tool registry, long-term memory toggle, DevLogger structured run logs, smart overlay minimize, cancellation/pause architecture, token tracking, Android Chaquopy path, Mobile Control Dashboard Server with auto-boot lifecycle and connection telemetry.
+> **Updated:** August 2026 — Dual execution engine (AgentRuntime + LangGraph), SileroVAD ONNX (no PyTorch), 32-tool registry, long-term memory toggle, DevLogger structured run logs, smart overlay minimize, cancellation/pause architecture, token tracking, Android Chaquopy path, Mobile Control Dashboard Server with auto-boot lifecycle and connection telemetry, **Native Audio Pipeline (Gemini Live/OpenAI Realtime), Multi-Agent Supervisor, Browser Automation (Playwright), Google OAuth (Calendar/Gmail), Two-Phase Morning Briefing, Content Panel, Session Memory (consumed after use), Parallel Search**.
 
 ---
 
@@ -211,6 +211,8 @@ Converts the flat `Plan.steps` list into parallel execution groups using **topol
 
 ## 6. Tool System (`tools/`)
 
+> **Current Registry:** 32 tools. **Target (after generalization):** 60+ tools spanning desktop, system, web, calendar, gmail, browser, music, social, file, code, and monitoring domains.
+
 ### BaseTool (`tools/base.py`)
 
 ```python
@@ -266,6 +268,60 @@ Key registry functions:
 **Media (1):** `media_control` (play/pause/next/previous via D-Bus/playerctl)
 
 ---
+
+### Planned Tool Categories (Generalization Roadmap)
+
+**Google Integration (4 tools, read-only OAuth2):**
+- `calendar_read` — upcoming events, free/busy (`calendar.readonly`)
+- `gmail_read` — unread subjects/snippets, search (`gmail.readonly`)
+- `calendar_search` — find events by query
+- `gmail_search` — find emails by query
+
+**Browser Automation (15+ tools, Playwright backend):**
+- Navigation: `browser_go_to`, `browser_back`, `browser_forward`, `browser_reload`, `browser_get_url`
+- Interaction: `browser_click`, `browser_type`, `browser_press`, `browser_scroll`, `browser_fill_form`, `browser_smart_click`
+- Extraction: `browser_get_text`, `browser_screenshot`
+- Tab Management: `browser_new_tab`, `browser_close_tab`, `browser_switch_tab`, `browser_list_tabs`
+- Session: `browser_close`, `browser_close_all`
+- **Security**: Runs in sandboxed browser context; no access to user profiles by default
+
+**Music / YouTube (3 tools):**
+- `youtube_search` — search and play YouTube videos
+- `youtube_control` — play/pause/next/previous/volume/seek
+- `music_play` — local music file playback (MP3, FLAC via system player)
+
+**Social Media Posting (6+ tools):**
+- `twitter_post` — post tweet / reply / delete
+- `linkedin_post` — post to LinkedIn
+- `telegram_send` — send to channel/group/DM
+- `whatsapp_send` — send via WhatsApp Web automation
+- `discord_send` — send via webhook or bot
+- `email_send` — send via SMTP
+
+**System Monitoring & Control (7 tools):**
+- `system_status` — CPU, RAM, disk, GPU, network, battery
+- `weather_report` — current + forecast (OpenWeatherMap / wttr.in)
+- `flight_finder` — flight search (Duffel/Amadeus / scraping)
+- `reminder_set` / `reminder_cancel` — persisted via APScheduler
+- `monitor_control` — brightness, resolution, multi-monitor layout
+- `agent_shutdown` — graceful agent shutdown
+
+**File Processing (1 tool):**
+- `file_processor` — read/summarize PDF, DOCX, XLSX, CSV, images (OCR); extract text/tables/metadata; convert formats
+
+**Code / Developer (2 tools):**
+- `dev_agent` — multi-file project builder (spawns `claude-code` subprocess)
+- `code_helper` — write/edit/explain/run/build code snippets
+
+---
+
+### Tool Registry Expansion Strategy
+
+To support 60+ tools without token bloat:
+
+1. **RAG-Based Dynamic Tool Injection** (Tier 1.8): Embed all tool descriptions → at plan time, retrieve top 6-8 most relevant tools by cosine similarity
+2. **Multi-Agent Supervisor** (Tier 2.11): Sub-agents only see their domain-specific tool subset (ShellAgent, DesktopUIAgent, WebAgent, CalendarAgent, MusicAgent, SocialAgent, BrowserAgent)
+3. **Tool Groups in System Prompt**: Tools organized into logical groups; LLM first selects group, then specific tool
 
 ## 7. Memory System (`memory/`)
 
@@ -323,7 +379,74 @@ If `sentence-transformers` is not installed:
 
 ---
 
-## 8. Voice Pipeline (`voice/`)
+## 8. Native Audio Pipeline (Speed Feature)
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Native Audio Loop                        │
+│  ┌─────────────┐    ┌──────────────────┐    ┌─────────────┐ │
+│  │ Microphone  │───▶│  Native Audio    │───▶│  Speaker    │ │
+│  │  (16kHz)    │    │  Streaming API   │    │  (16/24kHz) │ │
+│  └─────────────┘    │  (Gemini Live /  │    └─────────────┘ │
+│                     │   OpenAI Realtime)│                 │
+│                     └──────────────────┘                 │
+│                          ▲                               │
+│                          │ Function Calling               │
+│                     ┌────┴────┐                          │
+│                     │  Tools  │                          │
+│                     └─────────┘                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Implementation Options
+
+| Pipeline | Latency | Offline | Provider | Status |
+|----------|---------|---------|----------|--------|
+| **Current: STT→LLM→TTS** | ~2-3s | ✅ Yes | Any | Active |
+| **Gemini Live API** | <500ms | ❌ Cloud | Google | Planned (Tier 1.1) |
+| **OpenAI Realtime API** | <500ms | ❌ Cloud | OpenAI | Planned (Tier 1.1) |
+| **Local Native (Future)** | ~1s | ✅ Yes | Local VLM | Research |
+
+### VoicePipeline Extensions for Native Audio
+
+```python
+class VoicePipeline:
+    # ... existing fields ...
+    native_audio_mode: str = "offline"  # "offline" | "gemini-live" | "openai-realtime"
+    native_audio_session: Any = None
+    native_audio_connected: bool = False
+    
+    async def initialize_native_audio(self, mode: str):
+        """Initialize native audio streaming session."""
+        if mode == "gemini-live":
+            # Connect to Gemini Live API via WebSocket
+            # Enable function calling for all tools
+            pass
+        elif mode == "openai-realtime":
+            # Connect to OpenAI Realtime API via WebRTC
+            pass
+    
+    async def native_audio_loop(self):
+        """Main loop for native audio streaming."""
+        # 1. Capture audio chunks from microphone
+        # 2. Stream to provider WebSocket/WebRTC
+        # 3. Receive audio chunks + function calls
+        # 4. Execute function calls → stream results back
+        # 5. Play received audio chunks immediately
+        pass
+```
+
+### Fallback Strategy
+
+- **Auto mode**: Try Gemini Live → OpenAI Realtime → Offline pipeline
+- **Settings**: User can force specific pipeline in Settings → Voice → Native Audio Pipeline
+- **Seamless switch**: Can switch pipelines mid-session without losing context
+
+---
+
+## 9. Voice Pipeline (`voice/`) — Current Offline Implementation
 
 ### Pipeline Stages
 
@@ -438,16 +561,39 @@ class Settings(BaseSettings):
     voice_accent: str = "ie"
     voice_speed: float = 1.35
     continuous_listening: bool = False
+    # Native Audio Pipeline (Mark-L speed)
+    native_audio_pipeline: str = "auto"  # "auto" | "gemini-live" | "openai-realtime" | "offline"
     # UI
     active_theme: str = "theme-green-black"
+    show_content_panel: bool = True
+    content_panel_position: str = "right"  # "right" | "bottom-drawer"
+    enable_3d_visualizer: bool = False
     # Personalization
     user_name: str = ""
     user_skills: list[str] = ["general", "desktop_automation", "developer", "home_user"]
     long_term_memory_enabled: bool = True
     custom_prompt: str = ""
+    # Session Memory (Mark-L style: consumed after use)
+    session_memory_enabled: bool = True
+    session_memory_turns: int = 40  # turns to summarize
+    session_memory_model: str = "gemini-2.5-flash"  # fast model for summarization
     # Sound (stored in localStorage on frontend; backend receives via update_settings)
     sound_enabled: bool = True
     sound_volume: int = 60
+    # Google OAuth (read-only)
+    google_oauth_enabled: bool = False
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = "http://localhost:8765/oauth2callback"
+    google_scopes: list[str] = ["https://www.googleapis.com/auth/calendar.readonly", "https://www.googleapis.com/auth/gmail.readonly"]
+    # Parallel Search
+    parallel_search_enabled: bool = True
+    search_engines: list[str] = ["duckduckgo", "gemini", "brave"]
+    # Background Monitoring
+    background_monitoring_enabled: bool = False
+    monitoring_interval_minutes: int = 30
+    proactive_enabled: bool = False
+    proactive_cooldown_minutes: int = 20
 ```
 
 ### `save_settings_to_env(kwargs)`
@@ -510,13 +656,84 @@ CREATE TABLE long_term_memories (
     importance REAL DEFAULT 0.5,
     created_at REAL NOT NULL
 );
+
+-- Session Memory (Mark-L style: consumed after use)
+CREATE TABLE session_memories (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL,
+    summary TEXT NOT NULL,        -- 1-2 sentence summary of last N turns
+    turns_covered INTEGER,        -- number of turns this summary covers
+    model_used TEXT,              -- model used for summarization
+    created_at REAL NOT NULL,
+    consumed BOOLEAN DEFAULT FALSE -- consumed after use, never re-summarized
+);
 ```
 
 ### Sliding Window
 
 Only the last **20 messages per thread** are sent to the LLM. Older messages remain in the DB for history loading but are excluded from the active context.
 
+### Session Memory (Mark-L Style: Consumed After Use)
+
+Replaces the simple sliding window with a more efficient approach inspired by Mark-L:
+
+```python
+class SessionMemoryManager:
+    def __init__(self, db, settings):
+        self.db = db
+        self.settings = settings
+        self.turns_since_summary = 0
+        
+    async def maybe_summarize(self, thread_id: str, new_messages: list):
+        """Check if we should create a new session summary."""
+        self.turns_since_summary += len(new_messages)
+        
+        if self.turns_since_summary >= self.settings.session_memory_turns:
+            await self.create_session_summary(thread_id)
+            self.turns_since_summary = 0
+    
+    async def create_session_summary(self, thread_id: str):
+        """Summarize last N turns using fast flash model."""
+        # 1. Fetch last N messages from DB
+        messages = await self.db.get_recent_messages(thread_id, self.settings.session_memory_turns)
+        
+        # 2. Format for summarization
+        conversation = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+        
+        # 3. Call fast model (gemini-2.5-flash or local equivalent)
+        summary = await self.summarize_with_flash_model(conversation)
+        
+        # 4. Store in session_memories table with consumed=FALSE
+        await self.db.store_session_memory(
+            thread_id=thread_id,
+            summary=summary,
+            turns_covered=self.settings.session_memory_turns,
+            model_used=self.settings.session_memory_model
+        )
+        
+        # 5. Mark previous summary as consumed
+        await self.db.mark_previous_consumed(thread_id)
+    
+    async def get_active_summary(self, thread_id: str) -> str | None:
+        """Get the latest unconsumed summary for context injection."""
+        return await self.db.get_latest_unconsumed_summary(thread_id)
+    
+    async def summarize_with_flash_model(self, text: str) -> str:
+        """Use fast model to create 1-2 sentence summary."""
+        prompt = f"Summarize this conversation in 1-2 sentences, focusing on key facts and decisions:\n{text}"
+        # Call fast model API
+        return await call_fast_model(prompt)
+```
+
+**Key Properties (Mark-L Pattern):**
+- **Consumed after use**: Once a summary is injected into context, it's marked `consumed=TRUE` and never re-summarized
+- **Never repeats**: Each summary covers only new turns since the last summary
+- **Fast model**: Uses `gemini-2.5-flash` or equivalent for near-instant summarization
+- **Replaces context compaction**: More efficient than rolling LLM summaries
+
 ---
+
+## 12. State Machine (`state_machine.py`)
 
 ## 12. State Machine (`state_machine.py`)
 

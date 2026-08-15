@@ -2,6 +2,8 @@
 
 > How the Android app works, how to build it, and how the Python runtime runs inside an APK.
 
+> **Updated:** August 2026 — Added native audio pipeline support, phone audio relay (Mark-L style), Content Panel, Two-Phase Morning Briefing, Google OAuth readiness.
+
 ---
 
 ## Table of Contents
@@ -232,6 +234,26 @@ This flag disables desktop-only dependencies (`PyAudio`, `faster_whisper`, acces
 
 Wake words are stored in `assistantStore` and checked in the React `useWakeWord` hook against live partial transcripts from the `transcript_update` WebSocket event.
 
+### Phone Audio Relay (Mark-L Style Native Audio)
+
+For users who want sub-second voice interaction on mobile, OpenSarthi supports a **phone audio relay** pattern:
+
+```
+┌──────────────┐    mic audio     ┌──────────────────┐    WebSocket     ┌──────────────────┐
+│  Android    │ ───────────────▶ │  Local Runtime   │ ────────────────▶ │  Gemini Live    │
+│  (mic)      │                  │  (8765)          │                   │  / OpenAI RT    │
+│             │ ◀─────────────── │                  │ ◀──────────────── │                  │
+└──────────────┘    audio out    └──────────────────┘    audio frames   └──────────────────┘
+```
+
+1. User taps mic → React sends `native_audio_start` over WebSocket
+2. Python voice manager opens native audio stream to provider (Gemini Live / OpenAI Realtime)
+3. Android captures mic → streams PCM chunks via WebSocket → Python forwards to provider
+4. Provider returns audio chunks → Python streams to Android → played via AudioTrack
+5. Function calls routed through existing tool system
+
+**Benefit:** Mobile voice latency drops from ~2-3s to <500ms (native audio).
+
 ---
 
 ## WebSocket Protocol
@@ -251,8 +273,17 @@ Android-specific messages:
 | `manual_voice_trigger` | Client→Server | User tapped mic — start STT |
 | `speak_text` | Client→Server | Speak response text via TTS |
 | `stop_speech` | Client→Server | Stop TTS immediately |
-| `voice_state` | Server→Client | `listening` / `speaking` / `idle` |
+| `voice_state` | Server→Client | `listening` / `speaking` / `idle` / `looking` / `native_connected` |
 | `transcript_update` | Server→Client | Partial/final STT text |
+| `native_audio_start` | Client→Server | Start native audio relay session |
+| `native_audio_stop` | Client→Server | Stop native audio relay session |
+| `native_audio_chunk` | Client→Server | Stream PCM audio chunks |
+| `native_audio_chunk` | Server→Client | Stream PCM audio chunks from provider |
+| `content_update` | Server→Client | Rich content for Content Panel |
+| `briefing_phase1` | Server→Client | Instant morning greeting |
+| `briefing_phase2` | Server→Client | Full briefing + Content Panel |
+| `screen_analysis` | Server→Client | Screen analysis result |
+| `browser_result` | Server→Client | Browser automation result |
 
 ---
 

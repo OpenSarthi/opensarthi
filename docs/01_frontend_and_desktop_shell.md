@@ -1,6 +1,6 @@
 # OpenSarthi — Frontend & Desktop Shell
 
-> **Updated:** August 2026 — Multi-tab threads, smart overlay mode + edge snapping, OverlayIdleView, audio cues engine, full markdown rendering, separate AI/all settings save, Long-Term Memory toggle, 8 themes, Settings Cog dropdown menu integrations, Custom Color Picker, dynamic connection uptime tracker, real-time client connection telemetry.
+> **Updated:** August 2026 — Multi-tab threads, smart overlay mode + edge snapping, OverlayIdleView, audio cues engine, full markdown rendering, separate AI/all settings save, Long-Term Memory toggle, 8 themes, Settings Cog dropdown menu integrations, Custom Color Picker, dynamic connection uptime tracker, real-time client connection telemetry, **Live Plan/Activity Content Panel (Mark-L style), Two-Phase Morning Briefing UI, Reactive 3D Visualizer, Native Audio Pipeline Support**.
 
 ---
 
@@ -62,11 +62,21 @@ App.tsx  (Root: modal state, tab management, onboarding gate)
 │   ├── VoiceButton          (mic toggle + Waveform animation)
 │   ├── TranscriptView       (live STT overlay)
 │   ├── RuntimeConsole.tsx   (Sidecar log terminal)
-│   └── OverlayIdleView      (compact 280×560 strip in overlay mode)
+│   ├── OverlayIdleView      (compact 280×560 strip in overlay mode)
+│   ├── ContentPanel         (4th panel: Morning Briefing, Screen Analysis, Browser, Code, File, System, Music, Map)
+│   │   ├── BriefingView     (Phase 1 instant + Phase 2 full briefing with calendar/weather/news)
+│   │   ├── ScreenAnalysisView  (Screenshot + AI description + UI element highlights)
+│   │   ├── BrowserPreviewView  (Rendered web preview + extracted text/tables)
+│   │   ├── CodeOutputView   (Syntax-highlighted code + terminal output)
+│   │   ├── FilePreviewView  (PDF/DOCX/CSV preview with extracted content)
+│   │   ├── SystemStatusView (Real-time CPU/RAM/GPU charts via WebGL)
+│   │   ├── MusicPlayerView  (Album art + playback controls + progress bar)
+│   │   └── MapView          (Interactive map + flight/weather cards)
+│   └── ParticleVisualizer   (3D Three.js reactive orb synced to TTS RMS)
 │
 ├── PermissionDialog         (tool approval popup with permanent grant option)
 ├── InputDialog              (agent user-input request popup)
-├── SettingsView             (4-tab settings: AI · Voice · UI · Memory)
+├── SettingsView             (5-tab settings: AI · Voice · UI · Memory · Content)
 └── HistoryView              (past threads + token restore)
 ```
 
@@ -92,6 +102,40 @@ Three-panel grid with draggable resize handles. To provide a consistent user exp
 | Left | 260px | `TaskList` — multi-tab thread management + JSON import |
 | Centre | flex-1 | Chat messages + voice input + streaming response + transcript |
 | Right | 240px | `ActionLog` — tool calls + plan steps + token stats |
+
+### 3.3 Content Panel (Mark-L Style Live Plan/Activity)
+
+Inspired by Mark-L's PyQt6 HUD content panel, a **fourth panel** can be enabled (Settings → UI → "Show Content Panel") that displays rich visual content:
+
+```
+┌────────────────┬───────────────────────────┬────────────────┬─────────────────┐
+│  AGENT TASKS   │    CHAT / MAIN VIEW       │  LIVE PLAN &   │  CONTENT PANEL  │
+│                │                           │    ACTIVITY    │                 │
+│  Multi-tab     │  Messages + streaming     │  Tool log +    │  Morning       │
+│  thread list   │  responses + voice input  │  cumulative    │  Briefing      │
+│  + JSON import │  + transcript overlay     │  plan steps +  │  Screen        │
+│                │                           │  token stats   │  Analysis      │
+├────────────────┴───────────────────────────┴────────────────┴─────────────────┤
+│  Provider · Model · Token Usage · Session Total · Version                       │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Content Panel Capabilities:**
+
+| Content Type | Source | Display |
+|--------------|--------|---------|
+| **Morning Briefing** | Two-phase briefing (Phase 2) | Formatted text + calendar events + weather + news headlines |
+| **Screen Analysis** | Vision tool results | Screenshot + AI description + highlighted UI elements |
+| **Browser Results** | `browser_control` tool | Rendered web page preview + extracted text/tables |
+| **Code Output** | `dev_agent` / `code_helper` / `claude-code` | Syntax-highlighted code + terminal output |
+| **File Preview** | `file_processor` tool | PDF/DOCX/CSV preview with extracted content |
+| **System Status** | `system_status` tool | Real-time CPU/RAM/GPU charts (WebGL) |
+| **Music/YouTube** | `youtube_video` / `music_control` | Album art + playback controls + progress bar |
+| **Map/Flight** | `flight_finder` / weather | Interactive map + flight cards |
+
+**Real-time Updates:** Content panel receives WebSocket events (`content_update`, `briefing_ready`, `screen_analysis`, `browser_result`) and renders incrementally without full reload. Uses React Suspense for progressive loading.
+
+**Responsive:** In overlay mode, content panel collapses to a bottom drawer (280×200) accessible via swipe/click.
 
 ---
 
@@ -247,6 +291,10 @@ All toggles use custom animated Toggle switch components.
 |---------|---------|
 | Sound Effects | Animated Toggle |
 | Sound Volume | Slider (0–100) |
+| Show Content Panel | Animated Toggle (enables 4th panel with Morning Briefing, Screen Analysis, Browser Results, etc.) |
+| Content Panel Position | Dropdown: Right (default) / Bottom Drawer (overlay mode) |
+| 3D Particle Visualizer | Animated Toggle (WebGL/Three.js reactive orb synced to TTS RMS) |
+| Native Audio Pipeline | Dropdown: Auto / Gemini Live / OpenAI Realtime / Offline (STT→LLM→TTS) |
 
 *(Note: Theme Selection, Custom Color Picker, Mobile Remote Control, and Desktop Shortcut options are located directly in the header Settings Cog Dropdown Menu)*
 
@@ -285,6 +333,11 @@ Exported as both:
 | `speech_end` | TTS finishes | Falling sign-off 540→360 Hz |
 | `error` | Error state | Sawtooth two-tone alarm |
 | `task_done` | Task completes | Three-note chime C5→E5→G5 |
+| `vision_start` | Screen capture started ("looking at screen") | Quick ascending trill 800→1200 Hz |
+| `briefing_phase1` | Morning briefing Phase 1 (instant greeting) | Gentle major chord arpeggio |
+| `briefing_phase2` | Morning briefing Phase 2 (full content ready) | Warm resolved chord |
+| `native_audio_connect` | Native audio pipeline connected | Smooth descending glide 1000→400 Hz |
+| `native_audio_disconnect` | Native audio pipeline disconnected | Soft descending glide 400→100 Hz |
 
 Uses a shared, lazily-created `AudioContext` singleton reused across all cues.
 
@@ -329,9 +382,16 @@ continuousListening: boolean
 wakeWords: string[]
 wakeWordEnabled: boolean
 wakeWordThreshold: number
+nativeAudioPipeline: 'auto' | 'gemini-live' | 'openai-realtime' | 'offline'
+nativeAudioConnected: boolean
 
 // Memory
 longTermMemoryEnabled: boolean
+
+// Content Panel (Mark-L style)
+showContentPanel: boolean
+contentPanelPosition: 'right' | 'bottom-drawer'
+contentPanelContent: 'briefing' | 'screen' | 'browser' | 'code' | 'file' | 'system' | 'music' | 'map'
 
 // Token Tracking
 tokenUsage: TokenUsage           // active thread
@@ -403,6 +463,12 @@ Auto-connects to the Python runtime on the dynamically negotiated port. Handles 
 | `input_request` | Shows `InputDialog` |
 | `shell_output` | `appendShellOutputLine()` |
 | `transcript_update` | `setTranscript()` |
+| `content_update` | `setContentPanelContent()` — renders rich content in Content Panel |
+| `briefing_phase1` | `showBriefingPhase1()` — displays instant greeting immediately |
+| `briefing_phase2` | `showBriefingPhase2()` — displays full briefing on Content Panel |
+| `screen_analysis` | `showScreenAnalysis()` — screenshot + AI description |
+| `browser_result` | `showBrowserResult()` — rendered preview + extracted data |
+| `native_audio_state` | `setNativeAudioConnected()` — updates native audio pipeline status |
 
 **Permanent permission grants:** Once a user grants permanent permission for a tool, it's stored in a `permanentGrants: Set<string>` in the hook closure. Future requests for the same tool auto-approve without showing a dialog.
 

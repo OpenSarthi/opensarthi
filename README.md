@@ -30,15 +30,21 @@
 
 ## 🤖 &nbsp;What is OpenSarthi?
 
-OpenSarthi is an **agentic AI assistant** that executes local commands, automates workflows, and intercepts hardware events:
+OpenSarthi is an **agentic AI assistant** that executes local commands, automates workflows, and intercepts hardware events — built for speed, extensibility, and true multi-modal desktop + mobile automation.
 
-- 🗣️ **Speak and listen** — Full voice pipeline with wake word detection, local STT, and TTS voice synthesis.
-- 🖥️ **Automate your desktop** — Cursor clicking, keyboard emulation, screen snapshots, shell command parsing, and app launching.
-- 📱 **Run on Android** — Integrated mobile agent packages powered by Capacitor + Chaquopy in-process environments.
+- 🗣️ **Speak and listen** — Full voice pipeline with wake word detection, local STT (FasterWhisper), TTS (Kokoro), and **native audio streaming** (Gemini Live / OpenAI Realtime) for sub-500ms latency.
+- 🖥️ **Automate your desktop** — Cursor clicking, keyboard emulation, screen snapshots, shell command parsing, app launching, **browser automation (15+ actions)**, **command execution**, **social media posting**, **music playback**, and **coding agent** (Claude Code subprocess).
+- 📱 **Run on Android** — Integrated mobile agent powered by Capacitor + Chaquopy with **phone audio relay** for native audio on mobile.
 - 🦾 **Flexible LLM Backend** — Model-agnostic configuration supporting Gemini, Claude, GPT, Groq, OpenRouter, and Ollama.
 - 🪙 **Token Accounting** — Real-time tracking separating requests and active model session aggregates.
 - 🔧 **Customizable Skills** — Gated capability sets mapped to specific user authorization groups.
 - 🔀 **LangGraph Orchestration** — Advanced stateful graph scheduling with transaction-level crash-healing loops.
+- 🧠 **Multi-Agent Supervisor** — Routes to WebAgent, CalendarAgent, MailAgent, CodeAgent, BrowserAgent, MusicAgent, SocialAgent.
+- 📅 **Two-Phase Morning Briefing** — Instant greeting (<1s) + background fetch (calendar, weather, news, memories) → full briefing + Content Panel.
+- ⚡ **Instant Vision Acknowledgment** — Immediate "looking" response while screen analysis runs in background.
+- 🔍 **Parallel Search** — Multi-engine (DuckDuckGo, Gemini, Brave) first-wins pattern for instant answers.
+- 🧠 **Session Memory** — Consumed after use (1-2 sentence summary via flash model) for context efficiency.
+- 🔐 **Google OAuth (Read-Only)** — Calendar.readonly + Gmail.readonly for briefing data, no write access.
 
 <br/>
 
@@ -68,7 +74,7 @@ opensarthi/
 <td width="50%">
 
 ### 🖥️ <a href="apps/desktop">apps/desktop</a>
-Tauri v2 core hosting borderless HUD overlays. Integrates system trays, WebSocket telemetry streams, snapping layouts, and task timeline logs.
+Tauri v2 core hosting borderless HUD overlays. Integrates system trays, WebSocket telemetry streams, snapping layouts, task timeline logs, **Content Panel (4th panel)**, 3D visualizer, and native audio pipeline.
 <br/>
 → [Desktop README](apps/desktop/README.md)
 
@@ -76,7 +82,7 @@ Tauri v2 core hosting borderless HUD overlays. Integrates system trays, WebSocke
 <td width="50%">
 
 ### 📱 <a href="apps/android">apps/android</a>
-Capacitor-based hand-held client. Embeds the Python backend directly into the APK via Chaquopy for fully local offline execution.
+Capacitor-based hand-held client. Embeds the Python backend directly into the APK via Chaquopy for fully local offline execution with **phone audio relay** for native audio streaming.
 <br/>
 → [Android README](apps/android/README.md)
 
@@ -86,7 +92,7 @@ Capacitor-based hand-held client. Embeds the Python backend directly into the AP
 <td width="100%" colspan="2" align="center">
 
 ### ⚙️ <a href="runtime">runtime/</a>
-Core AI logic server. Executes intent classifiers, schedules tool calls, manages SQLite memory, and implements self-healing terminal rollbacks.
+Core AI logic server. Executes intent classifiers, schedules tool calls, manages SQLite memory, implements self-healing terminal rollbacks, **Native Audio Pipeline**, **Multi-Agent Supervisor**, **Session Memory Manager**, **Parallel Search**, **Two-Phase Morning Briefing**, **Instant Vision Acknowledgment**.
 <br/>
 → [Runtime README](runtime/README.md)
 
@@ -257,8 +263,8 @@ graph TD
 
 | Provider | Supported Models | Performance Notes |
 |----------|------------------|-------------------|
-| **Google Gemini** | 2.5 Flash, 2.5 Pro, 2.0 Flash, 1.5 Pro | Recommended default (lowest latency structured logs) |
-| **OpenAI** | GPT-4o, GPT-4o Mini, GPT-4 Turbo | High reliability structured plans |
+| **Google Gemini** | 2.5 Flash, 2.5 Pro, 2.0 Flash, 1.5 Pro, **gemini-2.5-flash-native-audio-preview** | Recommended default (lowest latency structured logs) + **Native Audio Streaming** |
+| **OpenAI** | GPT-4o, GPT-4o Mini, GPT-4 Turbo, **gpt-4o-realtime-preview** | High reliability structured plans + **Realtime Audio API** |
 | **Anthropic** | Claude Opus 4.5, Claude Sonnet 4.5, Claude Haiku 3.5 | Complex multi-step reasoning capabilities |
 | **Groq** | Llama 3.3 70B, Llama 3.1 8B, Qwen3 32B, Llama 4 Scout | Ultra-high inference velocity |
 | **OpenRouter** | DeepSeek Chat, Mistral Large, etc. | Aggregated multi-endpoint routing |
@@ -279,6 +285,10 @@ Before making code edits, check **[SKILLS.md](SKILLS.md)** — the single source
 - **Dual Process Invariant**: Desktop runs Tauri + Python separately (linked via WebSocket); Android hosts Python inside Tauri/Capacitor in-process.
 - **Safety Gating**: Modifying, deleting, or shell operations require user authorization unless marked as `SAFE`.
 - **Typing Animations**: Word-by-word streaming must use the `Session.stream_text()` websocket protocol.
+- **Speed-First Architecture**: Native audio streaming (<500ms), two-phase briefing (instant greeting), instant vision ack, parallel search (first-wins), session memory consumed after use.
+- **Read-Only OAuth**: Google Calendar.readonly + Gmail.readonly for briefing data — no write scopes.
+- **Multi-Agent Supervisor**: Routes to WebAgent, CalendarAgent, MailAgent, CodeAgent, BrowserAgent, MusicAgent, SocialAgent.
+- **Content Panel**: 4th panel for rich content (briefing, screen analysis, browser results, code output, file preview, system status, music, map).
 
 <br/>
 

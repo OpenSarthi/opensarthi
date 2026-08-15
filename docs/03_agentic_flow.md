@@ -2,7 +2,7 @@
 
 This document describes the complete execution lifecycle of OpenSarthi from user input to final response.
 
-> **Updated:** July 2026 — LangGraph dual-engine, SileroVAD ONNX, self-healing cap, smart overlay minimize, conversational settings tool, 32-tool registry, audio cues, multi-tab threads, and full markdown response rendering.
+> **Updated:** August 2026 — LangGraph dual-engine, SileroVAD ONNX, self-healing cap, smart overlay minimize, conversational settings tool, 32-tool registry, audio cues, multi-tab threads, full markdown response rendering, **Native Audio Pipeline (Gemini Live/OpenAI Realtime), Multi-Agent Supervisor, Browser Automation, Google OAuth (Calendar/Gmail), Two-Phase Morning Briefing, Content Panel, Session Memory (consumed after use), Parallel Search**.
 
 ---
 
@@ -292,6 +292,206 @@ flowchart TD
 - Model resolution order: `faster-whisper` assets → `openwakeword` resources → `~/.config/opensarthi/models/`
 - Falls back to RMS energy threshold if ONNX session fails to load
 - Maintains recurrent LSTM state (`h`, `c`, `context`) across 512-sample chunks — pure CPU
+
+---
+
+## 9. Native Audio Pipeline Flow (Mark-L Speed)
+
+```mermaid
+flowchart TD
+    START([User enables Native Audio in Settings]) --> CHECK{Provider Available?}
+    CHECK -->|Gemini API Key| GEMINI[Connect to Gemini Live API\nWebSocket: wss://generativelanguage.googleapis.com]
+    CHECK -->|OpenAI API Key| OPENAI[Connect to OpenAI Realtime API\nWebRTC: wss://api.openai.com/v1/realtime]
+    CHECK -->|Neither| FALLBACK[Use Offline Pipeline\nSTT→LLM→TTS]
+    
+    GEMINI --> SESSION[Create Session\nEnable Function Calling for ALL tools]
+    OPENAI --> SESSION
+    
+    SESSION --> LOOP[Native Audio Loop]
+    
+    LOOP --> CAPTURE[Capture Audio Chunks\n16kHz mono from microphone]
+    CAPTURE --> STREAM[Stream to Provider\nBidirectional audio frames]
+    
+    STREAM --> RECEIVE{Receive Type?}
+    RECEIVE -->|Audio Chunks| PLAY[Play Immediately\nSub-100ms latency]
+    RECEIVE -->|Function Call| EXEC_TOOL[Execute Tool\nAsync parallel if multiple]
+    RECEIVE -->|Transcript| SHOW[Display on Frontend\ntranscript_update WS event]
+    RECEIVE -->|Turn Complete| CONTINUE[Continue Loop]
+    
+    EXEC_TOOL --> RESULT[Stream Result Back\nFunction Response to Provider]
+    RESULT --> CONTINUE
+    
+    PLAY --> CONTINUE
+    SHOW --> CONTINUE
+    CONTINUE --> LOOP
+    
+    LOOP --> USER_STOP[User disables or error] --> CLEANUP[Close WebSocket/WebRTC\nResume Offline Pipeline]
+```
+
+**Key Differences from Offline Pipeline:**
+
+| Aspect | Offline (STT→LLM→TTS) | Native Audio (Gemini Live) |
+|--------|----------------------|---------------------------|
+| Latency | ~2-3 seconds | <500ms voice-to-voice |
+| Architecture | Sequential pipeline | Single bidirectional stream |
+| Turn-taking | VAD + silence detection | Model-native (no VAD needed) |
+| Function Calling | Separate LLM call | Built into audio stream |
+| Interruption | Stop TTS + wait | Native barge-in support |
+| Offline | ✅ Yes | ❌ Cloud required |
+
+---
+
+## 9.1 Two-Phase Morning Briefing Flow (Mark-L Style)
+
+```mermaid
+flowchart TD
+    TRIGGER[Trigger: "Good morning" or Scheduled time] --> PHASE1[Phase 1: Instant Greeting\n<1 second, NO tool calls]
+    
+    PHASE1 --> SPEAK1[Speak: "Good morning! I'm compiling your briefing..."]
+    PHASE1 --> BG_FETCH[BACKGROUND: Start parallel fetch\n- Calendar events (calendar_read)\n- Unread emails (gmail_read)\n- Vector memories (recall)\n- News headlines (parallel_search: DDG + Gemini)]
+    
+    BG_FETCH --> WAIT{All fetches complete?}
+    WAIT -->|No| WAIT
+    WAIT -->|Yes| PHASE2[Phase 2: Full Briefing Ready]
+    
+    PHASE2 --> FORMAT[Format for TTS + Content Panel\nEar-optimized: no markdown, spoken URLs]
+    FORMAT --> SPEAK2[Stream Full Briefing via TTS]
+    FORMAT --> PANEL[Send to Content Panel\nbriefing_phase2 WS event\nCalendar cards + Weather + News + Memories]
+    
+    SPEAK2 --> DONE([Briefing Complete])
+    PANEL --> DONE
+```
+
+**Phase 1 Characteristics:**
+- **Instant**: No tool calls, pure LLM greeting
+- **Sets expectation**: "I'm compiling your briefing..."
+- **Parallel start**: All fetches begin immediately
+
+**Phase 2 Characteristics:**
+- **Complete data**: Calendar + Gmail + Memories + News
+- **Ear-optimized**: Formatted for TTS (no markdown bullets/tables/URLs)
+- **Visual**: Rich Content Panel with cards, charts, previews
+- **Parallel search**: DDG + Gemini race (first-wins) for news
+
+---
+
+## 9.2 Session Memory Flow (Mark-L: Consumed After Use)
+
+```mermaid
+flowchart TD
+    MSG[New message added to thread] --> COUNT[Increment turns_since_summary]
+    COUNT --> CHECK{turns_since_summary >= session_memory_turns (40)?}
+    
+    CHECK -->|No| CONTINUE[Continue normal flow]
+    CHECK -->|Yes| SUMMARIZE[Create Session Summary]
+    
+    SUMMARIZE --> FETCH[Fetch last 40 messages from DB]
+    FETCH --> FLASH[Call fast model\ngemini-2.5-flash for 1-2 sentence summary]
+    FLASH --> STORE[Store in session_memories table\nconsumed=FALSE]
+    STORE --> MARK[Mark previous summary consumed=TRUE]
+    MARK --> RESET[turns_since_summary = 0]
+    RESET --> CONTINUE
+    
+    CONTINUE --> PLANNING[Next planning call]
+    PLANNING --> INJECT[Inject latest unconsumed summary\nas "Previous session context"]
+    INJECT --> MARK_USED[Mark injected summary consumed=TRUE]
+    MARK_USED --> NEVER_REPEAT[Never re-summarized / never repeated]
+```
+
+**Properties (Mark-L Pattern):**
+- **Consumed after use**: Once injected → `consumed=TRUE` → never used again
+- **Never repeats**: Each summary covers only new turns since last summary
+- **Fast model**: Uses `gemini-2.5-flash` for near-instant summarization
+- **Replaces sliding window**: More efficient than 20-message window + context compaction
+
+---
+
+## 9.3 Parallel Search Flow (First-Wins Pattern)
+
+```mermaid
+flowchart TD
+    QUERY[Search query from user/tool] --> PARALLEL[Launch parallel searches]
+    
+    PARALLEL --> DDG[DuckDuckGo HTML scrape]
+    PARALLEL --> GEMINI[Gemini Web Search API]
+    PARALLEL --> BRAVE[Brave Search API if key available]
+    
+    DDG --> RACE{Race Condition:\nFirst completed wins}
+    GEMINI --> RACE
+    BRAVE --> RACE
+    
+    RACE -->|DDG wins| USE_DDG[Use DDG results\nCancel others]
+    RACE -->|Gemini wins| USE_GEMINI[Use Gemini results\nCancel others]
+    RACE -->|Brave wins| USE_BRAVE[Use Brave results\nCancel others]
+    
+    USE_DDG --> RETURN[Return results to caller]
+    USE_GEMINI --> RETURN
+    USE_BRAVE --> RETURN
+```
+
+**Benefit**: Reduces search latency from slowest engine to fastest engine.
+
+---
+
+## 9.4 Instant Vision Acknowledgment Flow
+
+```mermaid
+flowchart TD
+    USER_Q[User asks: "What's on my screen?"] --> INSTANT[Immediate TTS: "Looking at your screen..."]
+    INSTANT --> VOICE_STATE[Emit voice_state: "looking"]
+    VOICE_STATE --> BG_CAPTURE[Background: Capture screenshot\nobservation.py]
+    BG_CAPTURE --> ANALYZE[Analyze with VLM / OCR]
+    ANALYZE --> RESULT[Full description ready]
+    RESULT --> FOLLOWUP[Speak: "I can see..." + show on Content Panel]
+    RESULT --> PANEL[screen_analysis WS event\nScreenshot + AI description + UI highlights]
+    
+    INSTANT -.->|Perceived latency: <100ms| USER
+    FOLLOWUP -.->|Full result: ~500ms-2s| USER
+```
+
+**Eliminates perceived latency** for vision queries by responding instantly while processing in background.
+
+---
+
+## 9.5 Multi-Agent Supervisor Flow (LangGraph)
+
+```mermaid
+flowchart TD
+    GOAL[User goal received] --> SUPER[Supervisor Node]
+    
+    SUPER --> CLASSIFY[Classify domain(s)\nDesktop, Web, Calendar, Music, Social, Browser, Code, System]
+    CLASSIFY --> DISPATCH[Dispatch to sub-agents\nLangGraph Send API]
+    
+    DISPATCH --> DESKTOP[DesktopUIAgent\nTools: click, type, open_app, observe]
+    DISPATCH --> WEB[WebAgent\nTools: web_search, browser_*]
+    DISPATCH --> CAL[CalendarAgent\nTools: calendar_read, gmail_read]
+    DISPATCH --> MUSIC[MusicAgent\nTools: youtube_*, music_play]
+    DISPATCH --> SOCIAL[SocialAgent\nTools: twitter_post, linkedin_post, telegram_send, whatsapp_send, discord_send, email_send]
+    DISPATCH --> BROWSER[BrowserAgent\nTools: browser_control (15+ actions)]
+    DISPATCH --> CODE[CodeAgent\nTools: dev_agent, code_helper, shell]
+    DISPATCH --> SYSTEM[SystemAgent\nTools: system_status, weather, flight_finder, reminder, monitor_control]
+    DISPATCH --> MEMORY[MemoryAgent\nTools: remember, recall, forget]
+    DISPATCH --> SETTINGS[SettingsAgent\nTools: update_settings]
+    
+    DESKTOP --> FANIN[Fan-in: Collect results]
+    WEB --> FANIN
+    CAL --> FANIN
+    MUSIC --> FANIN
+    SOCIAL --> FANIN
+    BROWSER --> FANIN
+    CODE --> FANIN
+    SYSTEM --> FANIN
+    MEMORY --> FANIN
+    SETTINGS --> FANIN
+    
+    FANIN --> SYNTHESIZE[Supervisor synthesizes\nFinal response + Content Panel updates]
+    SYNTHESIZE --> RESPOND[Stream response + emit content_update]
+```
+
+**Each sub-agent has:**
+- Small, domain-specific system prompt
+- Restricted tool set (only their domain)
+- Parallel execution via LangGraph `Send` API
 
 ---
 

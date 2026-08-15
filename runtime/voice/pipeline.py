@@ -203,6 +203,10 @@ class VoicePipeline:
     async def start_listening(self) -> AsyncGenerator[str, None]:
         self.is_listening = True
         logger.info("Started native Python VAD listening")
+        # Broadcast voice_state to dashboard
+        from dashboard.server import dashboard_server
+        if getattr(dashboard_server, "_running", False):
+            asyncio.create_task(dashboard_server.broadcast("voice_state", {"state": "listening"}))
         
         # Clear queue on startup
         while not self.audio_queue.empty():
@@ -249,6 +253,12 @@ class VoicePipeline:
                                 logger.debug(f"STT [{engine}] rejected short noise: '{text}'")
                                 continue
                             logger.info(f"STT [{engine}] transcribed: {text}")
+                            # Broadcast transcript to dashboard clients (phone shows STT result)
+                            from dashboard.server import dashboard_server
+                            if getattr(dashboard_server, "_running", False):
+                                asyncio.create_task(
+                                    dashboard_server.broadcast("transcript_update", {"text": text, "engine": engine, "is_final": True})
+                                )
                             yield {"text": text, "source": source}
                     except Exception as e:
                         logger.error(f"STT processing failed: {e}")
@@ -262,6 +272,10 @@ class VoicePipeline:
     def stop_listening(self):
         self.is_listening = False
         logger.info("Stopped native Python listening")
+        # Broadcast voice_state to dashboard
+        from dashboard.server import dashboard_server
+        if getattr(dashboard_server, "_running", False):
+            asyncio.create_task(dashboard_server.broadcast("voice_state", {"state": "idle"}))
 
     def stop_speaking(self):
         """Immediately interrupt any active speech playback."""
@@ -324,14 +338,22 @@ class VoicePipeline:
         import shutil
         import os
         import threading
-        
+
         self.is_speaking = True
+        # Broadcast speech_started to dashboard
+        from dashboard.server import dashboard_server
+        if getattr(dashboard_server, "_running", False):
+            asyncio.create_task(dashboard_server.broadcast("speech_started", {}))
+
         try:
             logger.info("Synthesizing speech", text=text)
-            
+
             # Clean text from emojis or problematic characters
             cleaned_text = "".join(c for c in text if c.isalnum() or c.isspace() or c in ".,!?;:'\"-")
             if not cleaned_text.strip():
+                # Broadcast speech_completed for empty text
+                if getattr(dashboard_server, "_running", False):
+                    asyncio.create_task(dashboard_server.broadcast("speech_completed", {"was_manual": False}))
                 return "none"
 
             # Check and self-install gtts if missing
@@ -535,6 +557,10 @@ class VoicePipeline:
         finally:
             self.is_speaking = False
             self.last_speech_stop_time = time.time()
+            # Broadcast speech_completed to dashboard
+            from dashboard.server import dashboard_server
+            if getattr(dashboard_server, "_running", False):
+                asyncio.create_task(dashboard_server.broadcast("speech_completed", {"was_manual": False}))
             # Drain any audio that was queued during speech
             while not self.audio_queue.empty():
                 try:

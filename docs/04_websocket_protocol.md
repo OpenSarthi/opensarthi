@@ -2,7 +2,7 @@
 
 This document is the canonical reference for all WebSocket messages exchanged between the frontend (Tauri WebView) and the Python runtime (FastAPI sidecar).
 
-> **Updated:** July 2026 — conversational settings tool, long-term memory toggle, streaming chunks, window control events, multi-tab thread support, audio cue triggers, and permanent permission grants.
+> **Updated:** August 2026 — conversational settings tool, long-term memory toggle, streaming chunks, window control events, multi-tab thread support, audio cue triggers, permanent permission grants, **Native Audio Pipeline, Content Panel, Two-Phase Morning Briefing, Session Memory, Parallel Search, Instant Vision Acknowledgment, Multi-Agent Supervisor**.
 
 ---
 
@@ -384,7 +384,12 @@ Voice pipeline state change.
 }
 ```
 
-`state` values: `"idle"` | `"listening"` | `"processing"` | `"speaking"` | `"error"`
+`state` values: `"idle"` | `"listening"` | `"processing"` | `"speaking"` | `"error"` | `"looking"` | `"native_connected"` | `"native_disconnected"`
+
+**New States:**
+- `"looking"` — Instant vision acknowledgment (screen capture in progress)
+- `"native_connected"` — Native audio pipeline connected
+- `"native_disconnected"` — Native audio pipeline disconnected
 
 ### `session_state`
 
@@ -423,7 +428,24 @@ Full settings state pushed to frontend on connect or after any update.
     "long_term_memory_enabled": true,
     "user_name": "Kartik",
     "user_skills": ["general", "developer"],
-    "custom_prompt": "I prefer concise answers."
+    "custom_prompt": "I prefer concise answers.",
+    "native_audio_pipeline": "auto",
+    "native_audio_connected": false,
+    "show_content_panel": true,
+    "content_panel_position": "right",
+    "enable_3d_visualizer": false,
+    "session_memory_enabled": true,
+    "session_memory_turns": 40,
+    "session_memory_model": "gemini-2.5-flash",
+    "sound_enabled": true,
+    "sound_volume": 60,
+    "google_oauth_enabled": false,
+    "parallel_search_enabled": true,
+    "search_engines": ["duckduckgo", "gemini", "brave"],
+    "background_monitoring_enabled": false,
+    "monitoring_interval_minutes": 30,
+    "proactive_enabled": false,
+    "proactive_cooldown_minutes": 20
   }
 }
 ```
@@ -646,6 +668,142 @@ Server response containing pairing details: QR code image (base64 PNG) and deriv
   "payload": {
     "key": "A8X9K3",
     "qr": "iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAD9Ff36AAAACXBIWXMA..."
+  }
+}
+```
+
+### `content_update`
+
+Rich content for the Content Panel (Mark-L style).
+
+```json
+{
+  "type": "content_update",
+  "payload": {
+    "content_type": "briefing",
+    "data": {
+      "title": "Morning Briefing",
+      "calendar_events": [...],
+      "weather": {...},
+      "news_headlines": [...],
+      "memories": [...]
+    },
+    "thread_id": "8558d1f1-..."
+  }
+}
+```
+
+**Content Types:** `"briefing"` | `"screen_analysis"` | `"browser_result"` | `"code_output"` | `"file_preview"` | `"system_status"` | `"music"` | `"map"`
+
+### `briefing_phase1`
+
+Phase 1 of two-phase morning briefing — instant greeting (no tools).
+
+```json
+{
+  "type": "briefing_phase1",
+  "payload": {
+    "text": "Good morning! I'm compiling your briefing...",
+    "thread_id": "8558d1f1-..."
+  }
+}
+```
+
+### `briefing_phase2`
+
+Phase 2 of two-phase morning briefing — full content ready.
+
+```json
+{
+  "type": "briefing_phase2",
+  "payload": {
+    "text": "Here's your full briefing...",
+    "thread_id": "8558d1f1-...",
+    "content_panel_data": {...}
+  }
+}
+```
+
+### `screen_analysis`
+
+Screen analysis result (instant vision acknowledgment follow-up).
+
+```json
+{
+  "type": "screen_analysis",
+  "payload": {
+    "screenshot_b64": "...",
+    "description": "You have Firefox open on GitHub, and a terminal running htop.",
+    "ui_elements": [
+      {"type": "button", "text": "Sign in", "bounds": [100, 200, 80, 30]},
+      {"type": "link", "text": "Repository", "bounds": [300, 150, 120, 20]}
+    ],
+    "thread_id": "8558d1f1-..."
+  }
+}
+```
+
+### `browser_result`
+
+Browser automation result for Content Panel.
+
+```json
+{
+  "type": "browser_result",
+  "payload": {
+    "action": "get_text",
+    "url": "https://github.com",
+    "title": "GitHub",
+    "extracted_text": "Repository content...",
+    "screenshot_b64": "...",
+    "thread_id": "8558d1f1-..."
+  }
+}
+```
+
+### `native_audio_state`
+
+Native audio pipeline connection state.
+
+```json
+{
+  "type": "native_audio_state",
+  "payload": {
+    "connected": true,
+    "provider": "gemini-live",
+    "latency_ms": 120,
+    "thread_id": "8558d1f1-..."
+  }
+}
+```
+
+### `session_memory_update`
+
+Session memory summary created or consumed.
+
+```json
+{
+  "type": "session_memory_update",
+  "payload": {
+    "action": "created" | "consumed",
+    "summary": "User asked about weather, opened Firefox, checked GitHub.",
+    "turns_covered": 40,
+    "thread_id": "8558d1f1-..."
+  }
+}
+```
+
+### `multi_agent_dispatch`
+
+Multi-agent supervisor dispatch event.
+
+```json
+{
+  "type": "multi_agent_dispatch",
+  "payload": {
+    "supervisor_decision": "Dispatching to WebAgent and CalendarAgent",
+    "sub_agents": ["WebAgent", "CalendarAgent"],
+    "thread_id": "8558d1f1-..."
   }
 }
 ```

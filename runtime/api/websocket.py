@@ -76,7 +76,7 @@ class Session:
             await self.ws.send_json(msg)
             from dashboard.server import dashboard_server
             if getattr(dashboard_server, "_running", False):
-                asyncio.create_task(dashboard_server.broadcast(msg_type, payload))
+                asyncio.create_task(dashboard_server.broadcast_from_main(msg_type, payload, tid))
         except Exception as e:
             logger.warning("Failed to send websocket message (client probably disconnected)", error=str(e), msg_type=msg_type)
 
@@ -652,6 +652,12 @@ class Session:
             self.thread_id = new_tid
             self._orchestrators.pop(old_tid, None)
             logger.info("Created new chat thread", thread_id=new_tid)
+            # Broadcast new thread info to dashboard
+            await self.send_message("thread_loaded", {
+                "thread_id": new_tid,
+                "messages": [],
+                "token_totals": {"request_tokens": 0, "response_tokens": 0, "total_tokens": 0}
+            })
         elif msg_type == "cancel_execution":
             thread_id = payload.get("thread_id") or self.thread_id
             # Cancel legacy AgentRuntime path

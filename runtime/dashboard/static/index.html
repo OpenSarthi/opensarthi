@@ -110,6 +110,15 @@
       background: var(--surface); border-top: 1px solid var(--border);
       display: flex; align-items: center; gap: 8px;
     }
+    #new-thread-btn {
+      flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%;
+      background: var(--surface2); border: 1.5px solid var(--border);
+      color: var(--text-muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s; font-size: 18px;
+    }
+    #new-thread-btn:active { transform: scale(0.92); }
+    #new-thread-btn:hover { border-color: var(--accent); color: var(--accent); }
     #mic-btn {
       flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%;
       background: var(--surface2); border: 1.5px solid var(--border);
@@ -222,6 +231,7 @@
   <div id="input-bar">
     <button id="mic-btn" title="Voice input">🎤</button>
     <textarea id="text-input" placeholder="Message OpenSarthi…" rows="1"></textarea>
+    <button id="new-thread-btn" title="New Thread">➕</button>
     <button id="send-btn" title="Send">➤</button>
   </div>
 </div>
@@ -414,23 +424,79 @@
   // ── Message handling ──
   async function handleMessage(msg) {
     const type = msg.type || msg.msg_type;
+    const payload = msg.payload || {};
     if (type === "assistant_response") {
       removeTyping();
-      const content = msg.content || msg.payload?.content || "";
+      const content = msg.content || payload?.content || "";
       addBubble("assistant", renderMd(content));
     } else if (type === "user_echo") {
-      const text = msg.text || msg.payload?.text || "";
+      const text = msg.text || payload?.text || "";
       addBubble("user", escHtml(text));
     } else if (type === "sys") {
-      const text = msg.text || msg.payload?.text || "";
+      const text = msg.text || payload?.text || "";
       addBubble("sys", escHtml(text));
     } else if (type === "voice_state") {
-      const state = msg.state || msg.payload?.state;
-      if (state === "processing") showTyping();
-      else removeTyping();
+      const state = msg.state || payload?.state;
+      if (state === "processing" || state === "listening") showTyping();
+      else if (state === "idle" || state === "speaking") removeTyping();
+    } else if (type === "transcript_update") {
+      // Show STT result as a temporary indicator
+      const text = msg.text || payload?.text || "";
+      showTranscript(text, payload?.is_final || false);
+    } else if (type === "speech_started") {
+      addBubble("sys", "🔊 OpenSarthi is speaking...");
+    } else if (type === "speech_completed") {
+      // Clean up any speech indicator
+    } else if (type === "thread_loaded") {
+      // Clear chat and load thread messages
+      loadThreadMessages(payload?.messages || []);
+    } else if (type === "history_response") {
+      // Store thread list for potential thread switcher
+      storeThreads(payload?.threads || []);
     } else if (type === "streaming_token") {
       // Could add streaming support here
     }
+  }
+
+  // ── Transcript indicator ──
+  let _transcriptEl = null;
+  function showTranscript(text, isFinal) {
+    if (!_transcriptEl) {
+      _transcriptEl = document.createElement("div");
+      _transcriptEl.className = "bubble sys";
+      _transcriptEl.style.cssText = "align-self:center; max-width:90%; font-style:italic; font-size:12px;";
+      chat.insertBefore(_transcriptEl, typingEl);
+    }
+    _transcriptEl.textContent = (isFinal ? "🎙 " : "🎙 … ") + text;
+    scrollBottom();
+    if (isFinal) {
+      setTimeout(() => {
+        if (_transcriptEl && _transcriptEl.parentNode) {
+          _transcriptEl.parentNode.removeChild(_transcriptEl);
+        }
+        _transcriptEl = null;
+      }, 1500);
+    }
+  }
+
+  // ── Thread management ──
+  let _threads = [];
+  function storeThreads(threads) {
+    _threads = threads;
+  }
+
+  function loadThreadMessages(messages) {
+    // Clear chat
+    while (chat.firstChild) {
+      chat.removeChild(chat.firstChild);
+    }
+    chat.appendChild(typingEl);
+    for (const m of messages) {
+      const role = m.role === "user" ? "user" : m.role === "assistant" ? "assistant" : "sys";
+      const content = m.content || "";
+      addBubble(role, role === "assistant" ? renderMd(content) : escHtml(content));
+    }
+    scrollBottom();
   }
 
   function escHtml(s) {
@@ -643,6 +709,20 @@
     textInput.style.height = "auto";
     sendBtn.classList.remove("active");
   }
+
+  // ── New Thread ─
+  const newThreadBtn = document.getElementById("new-thread-btn");
+  newThreadBtn.addEventListener("click", () => {
+    if (!ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: "new_chat" }));
+    // Clear local chat UI immediately
+    while (chat.firstChild) {
+      chat.removeChild(chat.firstChild);
+    }
+    chat.appendChild(typingEl);
+    addBubble("sys", "✨ New thread started");
+    scrollBottom();
+  });
 
   // ── Pairing screen ──
   keyInput.addEventListener("input", () => {

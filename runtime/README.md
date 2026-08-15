@@ -2,6 +2,16 @@
 
 The intelligence layer of OpenSarthi. Runs as a **headless sidecar process** spawned by the Tauri shell. Built with **FastAPI + PydanticAI + LangGraph**, it handles all AI orchestration, tool execution, voice processing, real-time WebSocket communication, memory, and persistent storage.
 
+**New Architecture (Mark-L Inspired):**
+- **Native Audio Pipeline** — Gemini Live / OpenAI Realtime streaming for sub-500ms voice latency
+- **Multi-Agent Supervisor** — Routes to WebAgent, CalendarAgent, MailAgent, CodeAgent, BrowserAgent, MusicAgent, SocialAgent
+- **Two-Phase Morning Briefing** — Phase 1: instant greeting (<1s, no tools); Phase 2: full briefing + Content Panel
+- **Instant Vision Acknowledgment** — Immediate "looking" state while screen analysis runs in background
+- **Parallel Search** — Multi-engine (DuckDuckGo, Gemini, Brave) first-wins pattern
+- **Session Memory** — Consumed after use (1-2 sentence summary via flash model)
+- **Google OAuth (Read-Only)** — calendar.readonly + gmail.readonly for briefing data
+- **Content Panel Data Types** — briefing, screen_analysis, browser_result, code_output, file_preview, system_status, music, map
+
 ---
 
 ## 🧠 Core Architecture
@@ -12,18 +22,29 @@ Tauri Shell  ──WebSocket──►  FastAPI / api/websocket.py
               ┌──────────────────────┼──────────────────────────────────┐
               ▼                      ▼                                  ▼
   AgentRuntime / LangGraph    voice/pipeline.py               config.py / db.py
-  (dual execution paths)      (PyAudio + SileroVAD             (settings + SQLite)
-         │                     + FasterWhisper + TTS)
+  (dual execution paths)      (Native Audio + PyAudio +       (settings + SQLite)
+         │                     SileroVAD + FasterWhisper + TTS)
          ├── graph/graph.py     (LangGraph, USE_LANGGRAPH=true)
          └── agent_runtime.py  (Legacy loop, default)
                │
        ┌───────┴────────┐
        ▼                ▼
  planner/agent.py    tools/registry.py
- (PydanticAI)        (32 tools registered)
+ (PydanticAI)        (32+ tools registered)
+       │
+       ▼
+┌──────┴────────────────────────────────────────┐
+│          Multi-Agent Supervisor               │
+│  WebAgent | CalendarAgent | MailAgent |       │
+│  CodeAgent | BrowserAgent | MusicAgent |      │
+│  SocialAgent                                   │
+└───────────────────────────────────────────────┘
        │
        ▼
  LLM Provider (Gemini · GPT-4o · Claude · Groq · OpenRouter · Ollama)
+        │
+        ├─ gemini-2.5-flash-native-audio-preview (Native Audio)
+        └─ gpt-4o-realtime-preview (Native Audio)
 ```
 
 ### Startup & Port Negotiation
@@ -36,7 +57,159 @@ In packaged production builds (AppImage):
 3. If missing or broken: uses bundled `uv` to fetch Python 3.12, creates the venv, installs `requirements.txt`.
 4. Validates key imports (`fastapi`, `pydantic_ai`, `langgraph`, `sentence_transformers`, etc.) before launching `main.py`.
 
----
+### Native Audio Pipeline Architecture
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                     Native Audio Pipeline                          │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  Frontend (React/Tauri)                                            │
+│    │                                                               │
+│    ├── native_audio_start ──────────────────────────────────────┐  │
+│    │                                                            │  │
+│    ▼                                                            │  │
+│  Python Runtime (FastAPI)                                        │  │
+│    │                                                            │  │
+│    ├── NativeAudioManager (voice/native_audio.py)                │  │
+│    │     ├── Provider: Gemini Live / OpenAI Realtime             │  │
+│    │     ├── WebSocket connection to provider                   │  │
+│    │     ├── Audio input: 16kHz PCM chunks (Opus/PCM)           │  │
+│    │     ├── Audio output: 24kHz PCM chunks                     │  │
+│    │     ├── Function calling → Tool Registry (42+ new tools)   │  │
+│    │     └── Voice Activity Detection (server-side)             │  │
+│    │                                                            │  │
+│    ├── native_audio_chunk ◀────────────────────────────────────┘  │
+│    │       (bidirectional streaming)                              │  │
+│    │                                                            │  │
+│    └── native_audio_stop ──────────────────────────────────────►  │
+│                                                                    │
+│  Android (Phone Audio Relay)                                      │
+│    │                                                               │
+│    ├── MediaRecorder → PCM chunks → WebSocket → Python           │  │
+│    └── AudioTrack ← PCM chunks ← WebSocket ← Python              │  │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+### Tool Registry Expansion (74+ Tools)
+
+**Original 32 Tools:**
+Desktop Automation (7), System (1), Wait (2), Memory (3), Notes (2), Self-Improvement (1), Settings (1), Productivity (10), Media (1)
+
+**New 42+ Tools by Category:**
+
+| Category | Tools |
+|----------|-------|
+| **Calendar (Google OAuth)** | `calendar_list_events`, `calendar_get_event`, `calendar_search_events` |
+| **Mail (Google OAuth)** | `gmail_list_messages`, `gmail_get_message`, `gmail_search_messages` |
+| **Browser Automation** | `browser_navigate`, `browser_click`, `browser_type`, `browser_scroll`, `browser_get_text`, `browser_screenshot`, `browser_extract_links`, `browser_fill_form`, `browser_wait_for_selector`, `browser_execute_js`, `browser_new_tab`, `browser_close_tab`, `browser_switch_tab`, `browser_get_html`, `browser_pdf` |
+| **Command Execution** | `command_run`, `command_run_background`, `command_get_output`, `command_kill` |
+| **Music Playback** | `music_play`, `music_pause`, `music_next`, `music_previous`, `music_search`, `music_queue`, `music_volume`, `music_shuffle` |
+| **Social Media** | `social_post_twitter`, `social_post_linkedin`, `social_post_mastodon`, `social_schedule_post` |
+| **Code Agent** | `code_run_claude`, `code_analyze_repo`, `code_generate_file`, `code_edit_file`, `code_run_tests`, `code_lint` |
+| **System Monitoring** | `system_get_processes`, `system_get_network`, `system_get_disk`, `system_get_sensors` |
+
+### Session Memory Manager
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                   Session Memory Manager                   │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  Trigger: Every N turns (configurable, default 40)        │
+│                                                            │
+│  1. Collect last N conversation turns                     │
+│  2. Send to flash model (gemini-2.5-flash) with prompt:   │
+│     "Summarize this conversation in 1-2 sentences.        │
+│      Focus on: user goals, decisions made, key facts."    │
+│  3. Store summary in `session_memories` table:            │
+│     - thread_id, summary, turn_range, timestamp, model    │
+│  4. Mark prior turns as "consumed"                        │
+│  5. On context build: inject only unconsumed turns +      │
+│     session summaries (not full history)                  │
+│                                                            │
+│  Benefit: Context stays small, relevant, and efficient    │
+│  (Mark-L pattern: session memory consumed after use)      │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+```
+
+### Two-Phase Morning Briefing Flow
+
+```
+┌────────────────────────────────────────────────────────────┐
+│              Two-Phase Morning Briefing                    │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  PHASE 1 (Instant — <1 second)                            │
+│  ───────────────────────────────────────────────────────  │
+│  • Trigger: "good morning" / scheduled time / wake word   │
+│  • LLM generates greeting ONLY (no tools)                 │
+│  • Response: briefing_phase1 → "Good morning! I'm        │
+│    compiling your briefing..."                            │
+│  • User hears response immediately                        │
+│                                                            │
+│  PHASE 2 (Background — parallel fetch)                    │
+│  ───────────────────────────────────────────────────────  │
+│  • CalendarAgent → calendar_list_events (today)           │
+│  • Weather tool → get_weather (location)                  │
+│  • WebAgent → web_search (top headlines)                  │
+│  • Memory → recall relevant preferences                   │
+│  • MailAgent → gmail_list_messages (unread count)         │
+│  • All run in PARALLEL (asyncio.gather)                   │
+│  • When complete: briefing_phase2 + content_update        │
+│    (Content Panel: briefing type with calendar, weather,  │
+│     news, memories, mail count)                           │
+│                                                            │
+│  Mark-L Pattern: Instant greeting + background enrichment │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+```
+
+### Instant Vision Acknowledgment
+
+```
+User: "What's on my screen?"
+          │
+          ▼
+    ┌─────────────┐
+    │ voice_state │──► "looking" (IMMEDIATE, <100ms)
+    └─────────────┘
+          │
+          ▼
+    ┌─────────────────────────────────────┐
+    │ Background: DesktopObserver.snapshot()│
+    │ • mss screenshot → base64           │
+    │ • LLM vision analysis               │
+    │ • Extract UI elements               │
+    └─────────────────────────────────────┘
+          │
+          ▼
+    ┌─────────────┐
+    │ screen_analy│──► Full analysis + Content Panel
+    │    sis      │
+    └─────────────┘
+```
+
+### Parallel Search (First-Wins)
+
+```
+User: "Search for X"
+          │
+          ▼
+    ┌──────────────────────────────────────┐
+    │ asyncio.gather(                      │
+    │   duckduckgo_search("X"),            │
+    │   gemini_search("X"),                │
+    │   brave_search("X")                  │
+    │ )                                    │
+    └──────────────────────────────────────┘
+          │
+          ▼
+    First result to complete → immediate response
+    Other results → discarded or used for verification
+```
 
 ## ✅ Feature Reference
 
@@ -439,11 +612,27 @@ The runtime hosts an auxiliary FastAPI server (`dashboard/server.py`) binding to
 
 ---
 
-## 🔮 Planned
+## 🔮 Planned / In Progress
 
+- [x] **Native Audio Pipeline** — Gemini Live / OpenAI Realtime streaming (sub-500ms latency)
+- [x] **Two-Phase Morning Briefing** — Instant greeting + background parallel fetch
+- [x] **Instant Vision Acknowledgment** — Immediate "looking" response
+- [x] **Parallel Search** — Multi-engine first-wins pattern
+- [x] **Session Memory Manager** — Consumed after use (1-2 sentence summaries)
+- [x] **Multi-Agent Supervisor** — WebAgent, CalendarAgent, MailAgent, CodeAgent, BrowserAgent, MusicAgent, SocialAgent
+- [x] **Content Panel** — 4th panel for rich content (8 content types)
+- [x] **Phone Audio Relay** — Native audio on Android via Chaquopy bridge
+- [ ] **Google OAuth (Read-Only)** — calendar.readonly + gmail.readonly
 - [ ] **ElevenLabs TTS** — replace gTTS for high-quality streaming voice
 - [x] **Web Search Tool** — DuckDuckGo scraping with ad-filtering
 - [ ] **Security** — bubblewrap profile expansion, per-app rules
 - [ ] **MCP** — expose tools as Model Context Protocol server
 - [ ] **Streaming Shell Output** — stream shell stdout live to UI console view
-- [ ] **Morning Briefing** — daily context summary from memory + calendar
+- [x] **Morning Briefing** — daily context summary from memory + calendar + weather + news + mail
+- [ ] **Browser Automation (15+ actions)** — navigate, click, type, scroll, extract, screenshot, PDF
+- [ ] **Command Execution** — run, background, get_output, kill
+- [ ] **Music Playback** — play, pause, search, queue, volume, shuffle
+- [ ] **Social Media Posting** — Twitter, LinkedIn, Mastodon
+- [ ] **Code Agent (Claude Code subprocess)** — run, analyze, generate, edit, test, lint
+- [ ] **Proactive 2.0 / Background Monitoring** — periodic checks, notifications
+- [ ] **MCP Server Exposure** — expose OpenSarthi tools as MCP server
