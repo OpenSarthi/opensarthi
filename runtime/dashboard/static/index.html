@@ -400,7 +400,7 @@
   function connectWs() {
     loadingScreen.style.display = "flex";
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(`${proto}//${location.host}/ws/stream?token=${authToken}`);
+    ws = new WebSocket(`${proto}//${location.host}/ws?token=${authToken}`);
     ws.onopen = () => {
       loadingScreen.style.display = "none";
       loginScreen.style.display = "none";
