@@ -8,8 +8,8 @@ from tools.memory import RememberTool, RecallTool, ForgetMemoryTool
 from tools.notes import SaveNoteTool, GetNotesTool
 from tools.self_fix import SelfFixTool
 from tools.settings_tool import UpdateSettingsTool
+from tools.web_search import WebSearchTool
 from tools.productivity import (
-    WebSearchTool,
     WeatherTool,
     SetTimerTool,
     ListTimersTool,
@@ -20,6 +20,55 @@ from tools.productivity import (
     VolumeControlTool,
     BatteryTool,
     NetworkControlTool,
+)
+from tools.google_tools import (
+    calendar_read_tool,
+    gmail_read_tool,
+    calendar_search_tool,
+    gmail_search_tool,
+)
+from tools.browser import (
+    browser_go_to,
+    browser_back,
+    browser_forward,
+    browser_reload,
+    browser_get_url,
+    browser_click,
+    browser_type,
+    browser_press,
+    browser_scroll,
+    browser_fill_form,
+    browser_smart_click,
+    browser_get_text,
+    browser_screenshot,
+    browser_new_tab,
+    browser_close_tab,
+    browser_switch_tab,
+    browser_list_tabs,
+    browser_close,
+    browser_close_all,
+)
+from tools.music import (
+    youtube_search_tool,
+    youtube_control_tool,
+    music_play_tool,
+)
+from tools.social import (
+    twitter_post_tool,
+    linkedin_post_tool,
+    telegram_send_tool,
+    whatsapp_send_tool,
+    discord_send_tool,
+    email_send_tool,
+)
+from tools.system_monitor import (
+    system_status_tool,
+    weather_report_tool,
+    flight_finder_tool,
+    reminder_set_tool,
+    reminder_cancel_tool,
+    monitor_control_tool,
+    agent_shutdown_tool,
 )
 
 _registry: dict[str, BaseTool] = {}
@@ -68,6 +117,50 @@ _register(
     VolumeControlTool(),
     BatteryTool(),
     NetworkControlTool(),
+    # Google Integration (read-only OAuth)
+    calendar_read_tool,
+    gmail_read_tool,
+    calendar_search_tool,
+    gmail_search_tool,
+    # Browser Automation (Playwright)
+    browser_go_to,
+    browser_back,
+    browser_forward,
+    browser_reload,
+    browser_get_url,
+    browser_click,
+    browser_type,
+    browser_press,
+    browser_scroll,
+    browser_fill_form,
+    browser_smart_click,
+    browser_get_text,
+    browser_screenshot,
+    browser_new_tab,
+    browser_close_tab,
+    browser_switch_tab,
+    browser_list_tabs,
+    browser_close,
+    browser_close_all,
+    # Music / YouTube
+    youtube_search_tool,
+    youtube_control_tool,
+    music_play_tool,
+    # Social Media
+    twitter_post_tool,
+    linkedin_post_tool,
+    telegram_send_tool,
+    whatsapp_send_tool,
+    discord_send_tool,
+    email_send_tool,
+    # System Monitoring & Control
+    system_status_tool,
+    weather_report_tool,
+    flight_finder_tool,
+    reminder_set_tool,
+    reminder_cancel_tool,
+    monitor_control_tool,
+    agent_shutdown_tool,
 )
 
 
