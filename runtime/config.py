@@ -40,13 +40,43 @@ class Settings(BaseSettings):
     voice_accent: str = "ie"
     voice_speed: float = 1.35
     continuous_listening: bool = False
-    active_theme: str = "theme-red-black"
+    active_theme: str = "theme-green-black"
 
     # User personalization
     user_name: str = ""
     user_skills: list[str] = ["general", "desktop_automation", "developer", "home_user"]
     custom_prompt: str = ""
-    long_term_memory_enabled: bool = True
+    long_term_memory_enabled: bool = False
+    use_langgraph: bool = True
+
+    # Native Audio Pipeline (Mark-L speed feature)
+    native_audio_pipeline: str = "auto"  # "auto" | "gemini-live" | "openai-realtime" | "offline"
+
+    # Session Memory (Mark-L style: consumed after use)
+    session_memory_enabled: bool = True
+    session_memory_turns: int = 40  # turns to summarize
+    session_memory_model: str = "gemini-2.5-flash"  # fast model for summarization
+
+    # Sound (stored in localStorage on frontend; backend receives via update_settings)
+    sound_enabled: bool = True
+    sound_volume: int = 60
+
+    # Google OAuth (read-only)
+    google_oauth_enabled: bool = False
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = "http://localhost:8765/oauth2callback"
+    google_scopes: list[str] = ["https://www.googleapis.com/auth/calendar.readonly", "https://www.googleapis.com/auth/gmail.readonly"]
+
+    # Parallel Search
+    parallel_search_enabled: bool = True
+    search_engines: list[str] = ["duckduckgo", "gemini", "brave"]
+
+    # Background Monitoring
+    background_monitoring_enabled: bool = False
+    monitoring_interval_minutes: int = 30
+    proactive_enabled: bool = False
+    proactive_cooldown_minutes: int = 20
 
     # Remote control dashboard settings
     remote_dashboard_enabled: bool = False
@@ -74,8 +104,24 @@ def save_settings_to_env(
     user_name: str = "",
     user_skills: list[str] = None,
     custom_prompt: str = "",
-    long_term_memory_enabled: bool = True,
+    long_term_memory_enabled: bool = False,
     remote_dashboard_enabled: bool = False,
+    native_audio_pipeline: str = "auto",
+    session_memory_enabled: bool = True,
+    session_memory_turns: int = 40,
+    session_memory_model: str = "gemini-2.5-flash",
+    sound_enabled: bool = True,
+    sound_volume: int = 60,
+    google_oauth_enabled: bool = False,
+    google_client_id: str | None = None,
+    google_client_secret: str | None = None,
+    parallel_search_enabled: bool = True,
+    search_engines: list[str] = None,
+    background_monitoring_enabled: bool = False,
+    monitoring_interval_minutes: int = 30,
+    proactive_enabled: bool = False,
+    proactive_cooldown_minutes: int = 20,
+    use_langgraph: bool = True,
 ):
     import json
     # Always write to the writable user's home configuration directory (safe for read-only AppImage filesystems!)
@@ -102,6 +148,25 @@ def save_settings_to_env(
         f.write(f"WAKE_WORD_THRESHOLD={wake_word_threshold}\n")
         f.write(f"LONG_TERM_MEMORY_ENABLED={'True' if long_term_memory_enabled else 'False'}\n")
         f.write(f"REMOTE_DASHBOARD_ENABLED={'True' if remote_dashboard_enabled else 'False'}\n")
+        f.write(f"NATIVE_AUDIO_PIPELINE={native_audio_pipeline}\n")
+        f.write(f"SESSION_MEMORY_ENABLED={'True' if session_memory_enabled else 'False'}\n")
+        f.write(f"SESSION_MEMORY_TURNS={session_memory_turns}\n")
+        f.write(f"SESSION_MEMORY_MODEL={session_memory_model}\n")
+        f.write(f"SOUND_ENABLED={'True' if sound_enabled else 'False'}\n")
+        f.write(f"SOUND_VOLUME={sound_volume}\n")
+        f.write(f"GOOGLE_OAUTH_ENABLED={'True' if google_oauth_enabled else 'False'}\n")
+        if google_client_id:
+            f.write(f"GOOGLE_CLIENT_ID={google_client_id}\n")
+        if google_client_secret:
+            f.write(f"GOOGLE_CLIENT_SECRET={google_client_secret}\n")
+        f.write(f"PARALLEL_SEARCH_ENABLED={'True' if parallel_search_enabled else 'False'}\n")
+        if search_engines:
+            f.write(f"SEARCH_ENGINES={json.dumps(search_engines)}\n")
+        f.write(f"BACKGROUND_MONITORING_ENABLED={'True' if background_monitoring_enabled else 'False'}\n")
+        f.write(f"MONITORING_INTERVAL_MINUTES={monitoring_interval_minutes}\n")
+        f.write(f"PROACTIVE_ENABLED={'True' if proactive_enabled else 'False'}\n")
+        f.write(f"PROACTIVE_COOLDOWN_MINUTES={proactive_cooldown_minutes}\n")
+        f.write(f"USE_LANGGRAPH={'True' if use_langgraph else 'False'}\n")
         if user_name:
             f.write(f"USER_NAME={user_name}\n")
         if user_skills:
