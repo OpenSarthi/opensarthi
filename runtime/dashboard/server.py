@@ -279,6 +279,11 @@ class DashboardServer:
                         enc = data.get("enc", "")
                         t = self._decrypt(tok, enc) if enc else (data.get("text") or "").strip()
                         if t:
+                            # Echo prompt back to ALL dashboard clients (phone sees its own message)
+                            echo_msg = {"type": "user_echo", "text": t}
+                            self._history.append(echo_msg)
+                            asyncio.create_task(self.broadcast("user_echo", {"text": t}))
+
                             # Forward command to the active desktop session
                             if ws_manager.sessions:
                                 # Get first active session
