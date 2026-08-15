@@ -201,13 +201,13 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
           : vs === "processing" ? 1.0
             : vs === "speaking" ? 0.75
               : /* error */                   0.3;
-      intensity += (targetIntensity - intensity) * 0.04;
+      intensity += (targetIntensity - intensity) * 0.03;
 
       // Base rendering density / visual brightness scaling
       const visualIntensity = 0.35 + intensity * 0.65;
 
-      // Sweep: gentle idle, picks up noticeably when agent is active
-      const sweepSpeed = 0.014 + intensity * 0.055;
+      // Sweep: gentle idle, picks up moderately when agent is active
+      const sweepSpeed = 0.014 + intensity * 0.025;
       sweepAngle += sweepSpeed;
 
       const [r, g, b] = parseAccent();
@@ -495,8 +495,8 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
       for (let ri = 0; ri < RINGS.length; ri++) {
         const ring = RINGS[ri];
 
-        // Ring spin — visible rotation, active states noticeably faster
-        const spinSpeed = ring.speed * 0.85 * (1 + intensity * 2.5);
+        // Ring spin — visible rotation, active states moderately faster
+        const spinSpeed = ring.speed * 0.85 * (1 + intensity * 1.0);
         const ringAngle = globalRotY * spinSpeed + ring.phase;
 
         // Tilt precession — visible axis wobble every ~30s

@@ -8,7 +8,7 @@ interface WaveformProps {
   level?: number;
 }
 
-const BAR_COUNT = 20;
+const BAR_COUNT = 40;
 
 export function Waveform({ voiceState }: WaveformProps) {
   const isListening = voiceState === "listening";
@@ -19,7 +19,7 @@ export function Waveform({ voiceState }: WaveformProps) {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number>(0);
-  const [bars, setBars] = useState<number[]>(Array(BAR_COUNT).fill(0.12));
+  const [bars, setBars] = useState<number[]>(Array(BAR_COUNT).fill(0.08));
 
   useEffect(() => {
     if (!isListening) {
@@ -36,7 +36,7 @@ export function Waveform({ voiceState }: WaveformProps) {
           )
         );
       } else {
-        setBars(Array(BAR_COUNT).fill(0.12));
+        setBars(Array(BAR_COUNT).fill(0.08));
       }
       return;
     }
@@ -51,8 +51,8 @@ export function Waveform({ voiceState }: WaveformProps) {
         const ctx = new AudioContext();
         const src = ctx.createMediaStreamSource(stream);
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 64;
-        analyser.smoothingTimeConstant = 0.78;
+        analyser.fftSize = 128;
+        analyser.smoothingTimeConstant = 0.80;
         src.connect(analyser);
         analyserRef.current = analyser;
 
@@ -64,8 +64,8 @@ export function Waveform({ voiceState }: WaveformProps) {
           const step = Math.floor(data.length / BAR_COUNT);
           const newBars = Array.from({ length: BAR_COUNT }, (_, i) => {
             const bin = data[Math.min(i * step, data.length - 1)] / 255;
-            // Taper: make center bars slightly taller for a natural shape
-            const taper = 1 - Math.abs((i / (BAR_COUNT - 1)) - 0.5) * 0.4;
+            // Bell-curve taper so center bars are taller
+            const taper = 1 - Math.abs((i / (BAR_COUNT - 1)) - 0.5) * 0.5;
             return Math.max(0.06, bin * taper);
           });
           setBars(newBars);
@@ -78,10 +78,10 @@ export function Waveform({ voiceState }: WaveformProps) {
         if (!mounted) return;
         let t = 0;
         const tick = () => {
-          t += 0.08;
+          t += 0.07;
           setBars(
             Array.from({ length: BAR_COUNT }, (_, i) =>
-              Math.max(0.1, 0.45 + Math.sin(t + i * 0.6) * 0.4)
+              Math.max(0.06, 0.42 + Math.sin(t + i * 0.5) * 0.38)
             )
           );
           rafRef.current = requestAnimationFrame(tick);
@@ -106,52 +106,82 @@ export function Waveform({ voiceState }: WaveformProps) {
     : voiceState === "speaking" ? "var(--success)"
     : "var(--accent)";
 
+  const halfCount = Math.ceil(BAR_COUNT / 2);
+
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
+        justifyContent: "center",
         gap: "2px",
-        height: "36px",
-        padding: "0 4px",
+        height: "52px",
+        width: "100%",
+        padding: "0 8px",
       }}
       aria-label={`Voice waveform — ${voiceState}`}
     >
-      {bars.map((h, i) => (
-        <motion.div
-          key={i}
-          animate={
-            speakBars
-              ? {
-                  scaleY: [
-                    Math.max(0.12, 0.3 + Math.sin(i * 1.1) * 0.2),
-                    Math.max(0.12, 0.6 + Math.sin(i * 1.1 + 1.5) * 0.35),
-                    Math.max(0.12, 0.3 + Math.sin(i * 1.1) * 0.2),
-                  ],
-                }
-              : { scaleY: Math.max(0.06, h) }
-          }
-          transition={
-            speakBars
-              ? {
-                  duration: 0.65 + (i % 4) * 0.08,
-                  delay: (i / BAR_COUNT) * 0.3,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }
-              : { duration: 0.07, ease: "linear" }
-          }
-          style={{
-            width: "3px",
-            height: "100%",
-            borderRadius: "2px",
-            background: barColor,
-            transformOrigin: "center",
-            opacity: isActive ? 0.9 : 0.25,
-            boxShadow: isActive ? `0 0 4px ${barColor}` : "none",
-          }}
-        />
-      ))}
+      {/* Upper + lower mirrored bars */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px", width: "100%" }}>
+        {/* Upper half */}
+        <div style={{ display: "flex", alignItems: "flex-end", gap: "2px", height: "24px", width: "100%", justifyContent: "center" }}>
+          {bars.slice(0, halfCount).map((h, i) => (
+            <motion.div
+              key={`u-${i}`}
+              animate={
+                speakBars
+                  ? { scaleY: [Math.max(0.08, 0.28 + Math.sin(i * 1.1) * 0.2), Math.max(0.08, 0.65 + Math.sin(i * 1.1 + 1.5) * 0.3), Math.max(0.08, 0.28 + Math.sin(i * 1.1) * 0.2)] }
+                  : { scaleY: Math.max(0.06, h) }
+              }
+              transition={
+                speakBars
+                  ? { duration: 0.6 + (i % 4) * 0.09, delay: (i / halfCount) * 0.25, repeat: Infinity, ease: "easeInOut" }
+                  : { duration: 0.07, ease: "linear" }
+              }
+              style={{
+                flex: 1,
+                maxWidth: "5px",
+                height: "100%",
+                borderRadius: "2px 2px 0 0",
+                background: `linear-gradient(to top, ${barColor}, rgba(255,255,255,0.85))`,
+                transformOrigin: "bottom",
+                opacity: isActive ? 0.9 : 0.15,
+                boxShadow: isActive ? `0 0 5px ${barColor}88` : "none",
+              }}
+            />
+          ))}
+        </div>
+        {/* Center line */}
+        <div style={{ height: "1px", width: "100%", background: isActive ? `${barColor}55` : "transparent" }} />
+        {/* Lower mirror half */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "2px", height: "24px", width: "100%", justifyContent: "center" }}>
+          {bars.slice(0, halfCount).map((h, i) => (
+            <motion.div
+              key={`d-${i}`}
+              animate={
+                speakBars
+                  ? { scaleY: [Math.max(0.08, 0.28 + Math.sin(i * 1.1) * 0.2), Math.max(0.08, 0.65 + Math.sin(i * 1.1 + 1.5) * 0.3), Math.max(0.08, 0.28 + Math.sin(i * 1.1) * 0.2)] }
+                  : { scaleY: Math.max(0.06, h) }
+              }
+              transition={
+                speakBars
+                  ? { duration: 0.6 + (i % 4) * 0.09, delay: (i / halfCount) * 0.25, repeat: Infinity, ease: "easeInOut" }
+                  : { duration: 0.07, ease: "linear" }
+              }
+              style={{
+                flex: 1,
+                maxWidth: "5px",
+                height: "100%",
+                borderRadius: "0 0 2px 2px",
+                background: `linear-gradient(to bottom, ${barColor}, rgba(255,255,255,0.4))`,
+                transformOrigin: "top",
+                opacity: isActive ? 0.5 : 0.08,
+                boxShadow: isActive ? `0 0 3px ${barColor}44` : "none",
+              }}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
