@@ -204,6 +204,17 @@ export function useWebSocket(port: number | null) {
         setExecutingStep(null, thread_id);
       }),
 
+      wsClient.on("user_message", (msg) => {
+        const message = MessageSchema.parse(msg.payload);
+        const { thread_id } = msg.payload as { thread_id?: string };
+        const tid = thread_id || useAssistantStore.getState().activeThreadId;
+        const activeTab = useAssistantStore.getState().tabs.find(t => t.id === tid);
+        if (activeTab?.messages.some(m => m.id === message.id)) {
+          return;
+        }
+        addMessage(message, thread_id);
+      }),
+
 
 
       wsClient.on("speech_started", () => {
