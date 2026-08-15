@@ -83,6 +83,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const remoteRef = useRef<HTMLDivElement | null>(null);
   const wheelRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dragCounter = useRef(0);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -1031,6 +1032,37 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
   return (
     <div
+      onDragEnter={(e) => {
+        e.preventDefault();
+        dragCounter.current++;
+        if (dragCounter.current === 1) {
+          setIsDragOver(true);
+        }
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        dragCounter.current--;
+        if (dragCounter.current === 0) {
+          setIsDragOver(false);
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragCounter.current = 0;
+        setIsDragOver(false);
+        const files = Array.from(e.dataTransfer.files || []);
+        if (files.length === 0) return;
+        setAttachedFiles((prev) => {
+          const combined = [...prev, ...files];
+          if (combined.length > 5) {
+            alert("You can attach at most 5 files.");
+          }
+          return combined.slice(0, 5);
+        });
+      }}
       style={{
         width: "100vw", height: "100vh",
         display: "flex", flexDirection: "column",
@@ -1041,6 +1073,31 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         overflow: "hidden",
       }}
     >
+      {isDragOver && (
+        <div style={{
+          position: "absolute",
+          inset: "12px",
+          zIndex: 1000,
+          border: "2px dashed var(--accent)",
+          borderRadius: "8px",
+          background: "rgba(0,0,0,0.75)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "none",
+          backdropFilter: "blur(4px)",
+        }}>
+          <Paperclip size={48} style={{ color: "var(--accent)" }} />
+          <div style={{ color: "var(--accent)", fontSize: "18px", fontWeight: "bold", letterSpacing: "0.05em" }}>
+            DROP FILES TO ATTACH
+          </div>
+          <div style={{ color: "var(--text-muted)", fontSize: "12px" }}>
+            Up to 5 files can be attached
+          </div>
+        </div>
+      )}
       {/* ─── Top Bar ─── */}
       <div
         style={{
@@ -1872,39 +1929,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               className="chat-scroll-container"
               style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 16px 40px", zIndex: 1, position: "relative" }}
               ref={chatScrollRef}
-              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false); }}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDragOver(false);
-                const files = Array.from(e.dataTransfer.files || []);
-                if (files.length === 0) return;
-                setAttachedFiles((prev) => {
-                  const combined = [...prev, ...files];
-                  if (combined.length > 5) {
-                    alert("You can attach at most 5 files.");
-                  }
-                  return combined.slice(0, 5);
-                });
-              }}
             >
-              {/* Drag-over overlay */}
-              {isDragOver && (
-                <div style={{
-                  position: "absolute", inset: 0, zIndex: 100,
-                  border: "2px dashed var(--accent)",
-                  borderRadius: "8px",
-                  background: "rgba(0,0,0,0.55)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  pointerEvents: "none",
-                  backdropFilter: "blur(4px)",
-                }}>
-                  <div style={{ textAlign: "center", color: "var(--accent)", fontFamily: "var(--font-mono)", fontSize: "13px" }}>
-                    <Paperclip size={28} style={{ marginBottom: "8px", opacity: 0.85 }} />
-                    <div>DROP FILE TO ATTACH</div>
-                  </div>
-                </div>
-              )}
               {messages.length === 0 && (
                 <div style={{
                   height: "100%", display: "flex", flexDirection: "column",
