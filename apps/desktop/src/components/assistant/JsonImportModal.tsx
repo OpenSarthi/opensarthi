@@ -1,8 +1,31 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Play, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { X, Play, AlertCircle, ChevronDown, ChevronUp, Book } from "lucide-react";
 import { wsClient } from "../../lib/ws";
 import { useAssistantStore } from "../../stores/assistantStore";
+
+const KNOWN_TOOLS = [
+  { name: "click",           args: "x, y" },
+  { name: "type_text",       args: "text" },
+  { name: "press_key",       args: "key" },
+  { name: "open_app",        args: "app" },
+  { name: "focus_window",    args: "title" },
+  { name: "click_element",   args: "role, name" },
+  { name: "observe_desktop", args: "(none)" },
+  { name: "search_web",      args: "query" },
+  { name: "get_weather",     args: "location" },
+  { name: "set_timer",       args: "duration_seconds, label" },
+  { name: "list_timers",     args: "(none)" },
+  { name: "cancel_timer",    args: "label" },
+  { name: "list_files",      args: "path" },
+  { name: "open_path",       args: "path" },
+  { name: "read_file",       args: "path" },
+  { name: "set_volume",      args: "level" },
+  { name: "get_battery",     args: "(none)" },
+  { name: "toggle_wifi",     args: "(none)" },
+  { name: "update_settings", args: "updates (object)" },
+];
+const KNOWN_TOOL_NAMES = new Set(KNOWN_TOOLS.map(t => t.name));
 
 interface JsonImportModalProps {
   isOpen: boolean;
@@ -12,15 +35,16 @@ interface JsonImportModalProps {
 export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
   const [jsonInput, setJsonInput] = useState("");
   const [jsonError, setJsonError] = useState("");
+  const [jsonWarning, setJsonWarning] = useState("");
   const [parsedSteps, setParsedSteps] = useState<any[] | null>(null);
   const [goalInput, setGoalInput] = useState("Custom JSON Task");
   const [showPreview, setShowPreview] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   const addMessage = useAssistantStore((s) => s.addMessage);
 
   const validateJson = (raw: string) => {
     if (!raw.trim()) {
-      setJsonError("");
-      setParsedSteps(null);
+      setJsonError(""); setJsonWarning(""); setParsedSteps(null);
       return;
     }
     try {
@@ -29,13 +53,21 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
       const bad = arr.find((s: any) => !s.tool);
       if (bad) {
         setJsonError('Each step must have a "tool" field.');
+        setJsonWarning("");
         setParsedSteps(null);
         return;
+      }
+      const unknown = arr.filter((s: any) => !KNOWN_TOOL_NAMES.has(s.tool)).map((s: any) => s.tool);
+      if (unknown.length > 0) {
+        setJsonWarning(`Unknown tool(s): ${[...new Set(unknown)].join(", ")}. These may fail at runtime.`);
+      } else {
+        setJsonWarning("");
       }
       setParsedSteps(arr);
       setJsonError("");
     } catch (e: any) {
       setJsonError(e.message);
+      setJsonWarning("");
       setParsedSteps(null);
     }
   };
@@ -166,9 +198,7 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
                   setJsonInput(e.target.value);
                   validateJson(e.target.value);
                 }}
-                placeholder={
-                  '[\n  {"tool": "open_app", "args": {"app": "firefox"}, "description": "Open Firefox"},\n  {"tool": "wait_for_window", "args": {"title": "Firefox"}, "description": "Wait for Firefox"}\n]'
-                }
+                placeholder={'[\n  {"tool": "open_app", "args": {"app": "firefox"}, "description": "Open Firefox"},\n  {"tool": "type_text", "args": {"text": "hello world"}, "description": "Type text"},\n  {"tool": "press_key", "args": {"key": "Return"}, "description": "Press Enter"}\n]'}
                 rows={8}
                 style={{
                   width: "100%",
@@ -193,24 +223,46 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
                 }}
               />
               {jsonError && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 6,
-                    marginTop: 6,
-                    padding: "7px 10px",
-                    background: "rgba(255,80,80,0.08)",
-                    border: "1px solid rgba(255,80,80,0.2)",
-                    borderRadius: 6,
-                  }}
-                >
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 6, padding: "7px 10px", background: "rgba(255,80,80,0.08)", border: "1px solid rgba(255,80,80,0.2)", borderRadius: 6 }}>
                   <AlertCircle size={12} color="rgba(255,100,100,1)" style={{ flexShrink: 0, marginTop: 1 }} />
-                  <span style={{ fontSize: 10, color: "rgba(255,120,120,1)", lineHeight: 1.5 }}>
-                    {jsonError}
-                  </span>
+                  <span style={{ fontSize: 10, color: "rgba(255,120,120,1)", lineHeight: 1.5 }}>{jsonError}</span>
                 </div>
               )}
+              {jsonWarning && !jsonError && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 6, padding: "7px 10px", background: "rgba(255,200,0,0.07)", border: "1px solid rgba(255,200,0,0.2)", borderRadius: 6 }}>
+                  <AlertCircle size={12} color="rgba(255,200,0,0.9)" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span style={{ fontSize: 10, color: "rgba(255,200,80,0.9)", lineHeight: 1.5 }}>{jsonWarning}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Available Tools Reference */}
+            <div>
+              <button
+                onClick={() => setShowTools(p => !p)}
+                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.4)", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", width: "100%" }}
+              >
+                <Book size={11} />
+                {showTools ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                AVAILABLE TOOLS REFERENCE
+              </button>
+              <AnimatePresence>
+                {showTools && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                    style={{ overflow: "hidden" }}
+                  >
+                    <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3, maxHeight: 180, overflowY: "auto", padding: "4px 0" }}>
+                      {KNOWN_TOOLS.map(t => (
+                        <div key={t.name} style={{ padding: "4px 8px", borderRadius: 4, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                          <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--accent)", fontWeight: 600 }}>{t.name}</div>
+                          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", marginTop: 1 }}>{t.args}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Preview toggle */}
