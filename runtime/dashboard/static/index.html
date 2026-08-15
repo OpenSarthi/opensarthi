@@ -257,8 +257,10 @@
   let sessionKey = null;
   let aesKey = null;
   let isRecording = false;
-  let mediaRecorder = null;
-  let audioChunks = [];
+  let _voiceWs = null;
+  let _audioCtx = null;
+  let _micStm = null;
+  let _audioNd = null;
   let agentTyping = false;
 
   // ── DOM ──
@@ -479,46 +481,144 @@
   }
 
   // ── Mic ──
+  function _showVoiceSetup() {
+    if (document.getElementById('voice-setup-card')) return;
+    const card = document.createElement('div');
+    card.id = 'voice-setup-card';
+    card.className = 'bubble assistant';
+    card.style.cssText = 'align-self:stretch; background:rgba(255,255,255,0.03); border:1.5px dashed var(--border); border-radius:14px; padding:16px 18px; font-size:13px; line-height:1.8;';
+    card.innerHTML =
+      '<div style="font-weight:700;color:var(--accent);letter-spacing:.5px;margin-bottom:10px">🎤 One-time voice setup</div>' +
+      '<ol style="padding-left:18px;color:var(--text-muted);margin:0;display:flex;flex-direction:column;gap:4px">' +
+      '<li>Open a new tab → go to <span style="background:rgba(255,255,255,0.07);padding:1px 6px;border-radius:4px;font-family:monospace;font-size:12px">chrome://flags</span></li>' +
+      '<li>Search: <strong style="color:var(--text)">Insecure origins treated as secure</strong></li>' +
+      '<li>Paste this URL into the box:<br><span id="flags-url" style="background:rgba(255,255,255,0.07);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:11px;user-select:all;cursor:pointer">' + location.origin + '</span></li>' +
+      '<li>Set to <strong style="color:var(--accent)">Enabled</strong> → tap <strong style="color:var(--text)">Relaunch</strong></li>' +
+      '<li>Return here and tap 🎤</li>' +
+      '</ol>';
+    chat.insertBefore(card, typingEl);
+    requestAnimationFrame(() => chat.scrollTop = chat.scrollHeight);
+    card.querySelector('#flags-url').addEventListener('click', () => {
+      navigator.clipboard?.writeText(location.origin).then(() => {
+        addBubble("sys", "URL copied to clipboard!");
+      }).catch(() => {});
+    });
+  }
+
   micBtn.addEventListener("click", async () => {
-    if (isRecording) {
+    if (_voiceWs) {
       stopRecording();
       return;
     }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      _showVoiceSetup();
+      return;
+    }
+
+    let stream;
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Microphone API is disabled over insecure HTTP. To enable, open this page via an HTTPS tunnel (e.g. ngrok) or add 'http://" + location.host + "' to chrome://flags/#unsafely-treat-insecure-origin-as-secure in Chrome.");
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      startRecording(stream);
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
+      });
     } catch (err) {
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
         micModal.classList.add("show");
       } else {
-        addBubble("sys", "⚠️ Microphone unavailable: " + escHtml(err.message));
+        addBubble("sys", "⚠️ Microphone error: " + escHtml(err.message));
       }
+      return;
     }
+
+    let ctx;
+    try { ctx = new AudioContext({ sampleRate: 16000 }); }
+    catch (_) { ctx = new AudioContext(); }
+    if (ctx.state === 'suspended') await ctx.resume();
+
+    const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${wsProto}://${location.host}/ws/phone-audio?token=${encodeURIComponent(authToken)}`;
+    _voiceWs = new WebSocket(wsUrl);
+    _voiceWs.binaryType = 'arraybuffer';
+
+    _voiceWs.onopen = async () => {
+      const rate = ctx.sampleRate;
+      const src = ctx.createMediaStreamSource(stream);
+
+      // AudioWorklet processor logic
+      const wCode = `class J extends AudioWorkletProcessor{process(i){const c=i[0]?.[0];if(c)this.port.postMessage(c.slice());return true;}}registerProcessor('j',J);`;
+      try {
+        const burl = URL.createObjectURL(new Blob([wCode], { type: 'application/javascript' }));
+        await ctx.audioWorklet.addModule(burl);
+        URL.revokeObjectURL(burl);
+        const nd = new AudioWorkletNode(ctx, 'j');
+        let _pbuf = [], _plen = 0;
+        nd.port.onmessage = e => {
+          const chunk = new Int16Array(_f32toPcm16(e.data, rate));
+          _pbuf.push(chunk); _plen += chunk.length;
+          if (_plen >= 1024) {
+            const out = new Int16Array(_plen); let off = 0;
+            for (const c of _pbuf) { out.set(c, off); off += c.length; }
+            if (_voiceWs && _voiceWs.readyState === 1) _voiceWs.send(out.buffer);
+            _pbuf = []; _plen = 0;
+          }
+        };
+        src.connect(nd);
+        _audioNd = nd;
+      } catch (_) {
+        // ScriptProcessor fallback
+        const sp = ctx.createScriptProcessor(4096, 1, 1);
+        sp.onaudioprocess = e => {
+          if (_voiceWs && _voiceWs.readyState === 1) {
+            _voiceWs.send(_f32toPcm16(e.inputBuffer.getChannelData(0), rate));
+          }
+        };
+        src.connect(sp); sp.connect(ctx.destination);
+        _audioNd = sp;
+      }
+
+      isRecording = true;
+      micBtn.classList.add("recording");
+      micBtn.textContent = "⏹";
+      addBubble("sys", "🎤 Microphone active — speak now.");
+    };
+
+    _voiceWs.onclose = () => { stopRecording(); };
+    _voiceWs.onerror = () => { addBubble("sys", "⚠️ Voice stream connection failed."); stopRecording(); };
+
+    _audioCtx = ctx;
+    _micStm = stream;
   });
+
   micModalClose.addEventListener("click", () => micModal.classList.remove("show"));
 
-  function startRecording(stream) {
-    isRecording = true;
-    micBtn.classList.add("recording");
-    micBtn.textContent = "⏹";
-    audioChunks = [];
-    mediaRecorder = new MediaRecorder(stream);
-    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-    mediaRecorder.onstop = () => {
-      stream.getTracks().forEach(t => t.stop());
-      // For now: inform user recording is done but transcription isn't implemented in browser
-      addBubble("sys", "🎙️ Voice recorded — transcription not yet supported in browser. Please type your message.");
-    };
-    mediaRecorder.start();
-  }
   function stopRecording() {
+    if (_audioNd) { try { _audioNd.disconnect(); } catch (_) {} _audioNd = null; }
+    if (_audioCtx) { try { _audioCtx.close(); } catch (_) {} _audioCtx = null; }
+    if (_micStm) { _micStm.getTracks().forEach(t => t.stop()); _micStm = null; }
+    if (_voiceWs) {
+      const w = _voiceWs; _voiceWs = null;
+      if (w.readyState < 2) w.close();
+    }
     isRecording = false;
     micBtn.classList.remove("recording");
     micBtn.textContent = "🎤";
-    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  }
+
+  function _f32toPcm16(f32, srcRate) {
+    let s = f32;
+    if (srcRate !== 16000) {
+      const ratio = srcRate / 16000;
+      const len = Math.round(f32.length / ratio);
+      s = new Float32Array(len);
+      for (let i = 0; i < len; i++) {
+        s[i] = f32[Math.min(Math.round(i * ratio), f32.length - 1)];
+      }
+    }
+    const out = new Int16Array(s.length);
+    for (let i = 0; i < s.length; i++) {
+      out[i] = Math.max(-32768, Math.min(32767, Math.round(s[i] * 32768)));
+    }
+    return out.buffer;
   }
 
   // ── Text input ──
