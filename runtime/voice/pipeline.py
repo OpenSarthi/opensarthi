@@ -179,7 +179,7 @@ class VoicePipeline:
                         if silence_frames >= SILENCE_LIMIT:
                             logger.debug("VAD: Speech ended, yielding audio")
                             audio_data = np.concatenate(voiced_frames)
-                            self.audio_queue.put(audio_data)
+                            self.audio_queue.put({"audio": audio_data, "source": "desktop"})
 
                             voiced_frames = []
                             is_speaking = False
@@ -221,7 +221,14 @@ class VoicePipeline:
         try:
             while self.is_listening:
                 while not self.audio_queue.empty():
-                    audio_array = self.audio_queue.get()
+                    item = self.audio_queue.get()
+                    if isinstance(item, dict):
+                        audio_array = item["audio"]
+                        source = item["source"]
+                    else:
+                        audio_array = item
+                        source = "desktop"
+
                     if self.is_speaking or (time.time() - getattr(self, 'last_speech_stop_time', 0.0) < 1.5):
                         continue
                     try:
@@ -242,7 +249,7 @@ class VoicePipeline:
                                 logger.debug(f"STT [{engine}] rejected short noise: '{text}'")
                                 continue
                             logger.info(f"STT [{engine}] transcribed: {text}")
-                            yield text
+                            yield {"text": text, "source": source}
                     except Exception as e:
                         logger.error(f"STT processing failed: {e}")
                 
