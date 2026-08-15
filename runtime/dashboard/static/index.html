@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>OpenSarthi Remote</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     :root {
@@ -277,37 +278,23 @@
   const micModal      = document.getElementById("mic-modal");
   const micModalClose = document.getElementById("mic-modal-close");
 
-  // ── AES helpers (browser SubtleCrypto) ──
-  async function importKey(hexKey) {
-    const raw = hexToBytes(hexKey);
-    return crypto.subtle.importKey("raw", raw, { name: "AES-CBC" }, false, ["encrypt", "decrypt"]);
+  // ── AES helpers (CryptoJS fallback for non-localhost HTTP) ──
+  function deriveAesKey(sessionKeyStr) {
+    const salt = "OPENSARTHI-DASHBOARD-v1";
+    // Derived key is the SHA-256 hash of sessionKey + salt
+    return CryptoJS.SHA256(sessionKeyStr + salt);
   }
-  async function encryptCbc(cryptoKey, plaintext) {
-    const iv = crypto.getRandomValues(new Uint8Array(16));
-    const data = new TextEncoder().encode(plaintext);
-    const padded = pkcs7Pad(data);
-    const ct = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, cryptoKey, padded);
-    const combined = new Uint8Array(iv.byteLength + ct.byteLength);
-    combined.set(iv); combined.set(new Uint8Array(ct), iv.byteLength);
-    return btoa(String.fromCharCode(...combined));
+
+  function encryptCbc(keyWordArray, plaintext) {
+    const iv = CryptoJS.lib.WordArray.random(16);
+    const encrypted = CryptoJS.AES.encrypt(plaintext, keyWordArray, {
+      iv: iv,
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7
+    });
+    const combined = iv.clone().concat(encrypted.ciphertext);
+    return CryptoJS.enc.Base64.stringify(combined);
   }
-  async function deriveAesKey(sessionKeyStr) {
-    const salt = new TextEncoder().encode("OPENSARTHI-DASHBOARD-v1");
-    const keyData = new TextEncoder().encode(sessionKeyStr);
-    const combined = new Uint8Array(keyData.byteLength + salt.byteLength);
-    combined.set(keyData); combined.set(salt, keyData.byteLength);
-    const digest = await crypto.subtle.digest("SHA-256", combined);
-    return importKey(bytesToHex(new Uint8Array(digest)));
-  }
-  function pkcs7Pad(data) {
-    const bs = 16, pad = bs - (data.length % bs);
-    const out = new Uint8Array(data.length + pad);
-    out.set(data);
-    for (let i = data.length; i < out.length; i++) out[i] = pad;
-    return out;
-  }
-  function hexToBytes(h) { const b = new Uint8Array(h.length/2); for(let i=0;i<b.length;i++) b[i]=parseInt(h.substr(i*2,2),16); return b; }
-  function bytesToHex(b) { return Array.from(b).map(x=>x.toString(16).padStart(2,"0")).join(""); }
 
   // ── Auto-login and Session Restore ──
   async function tryAutoLogin() {
@@ -326,7 +313,7 @@
     if (storedToken && storedKey) {
       authToken = storedToken;
       sessionKey = storedKey;
-      aesKey = await deriveAesKey(sessionKey);
+      aesKey = deriveAesKey(sessionKey);
       connectWs();
       return;
     }
@@ -348,7 +335,7 @@
           sessionStorage.setItem('os_remote_token', authToken);
           sessionStorage.setItem('os_remote_key', sessionKey);
           
-          aesKey = await deriveAesKey(sessionKey);
+          aesKey = deriveAesKey(sessionKey);
           connectWs();
           return;
         }
@@ -388,7 +375,7 @@
         localStorage.setItem('os_remote_device_token', data.device_token);
       }
 
-      aesKey = await deriveAesKey(sessionKey);
+      aesKey = deriveAesKey(sessionKey);
       connectWs();
     } catch (e) {
       loadingScreen.style.display = "none";
@@ -498,6 +485,9 @@
       return;
     }
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Microphone API is disabled over insecure HTTP. To enable, open this page via an HTTPS tunnel (e.g. ngrok) or add 'http://" + location.host + "' to chrome://flags/#unsafely-treat-insecure-origin-as-secure in Chrome.");
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       startRecording(stream);
     } catch (err) {
