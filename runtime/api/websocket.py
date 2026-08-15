@@ -1,8 +1,12 @@
 import asyncio
 import uuid
+import base64
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Any
+
+# Instant Vision
+from vision import get_instant_vision
 
 try:
     from tools.system_monitor import metrics_push_loop as _metrics_push_loop
@@ -16,6 +20,9 @@ if os.environ.get("OPENSARTHI_PLATFORM") == "android":
     from voice.android_bridge import AndroidVoicePipeline as VoicePipeline
 else:
     from voice.pipeline import VoicePipeline
+
+# Native audio imports
+from voice.native_audio import NativeAudioState, get_native_audio_pipeline
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -194,22 +201,22 @@ class Session:
         remaining_words = total_words
         tick = 0
         i = 0
-        
+
         while i < total_words:
             remaining_ticks = max(1, max_chunks - tick)
             target_chunk = (remaining_words + remaining_ticks - 1) // remaining_ticks
-            
+
             # Start small (word-by-word / 2-3 words) to immediately show typing, then accelerate
             if tick < 10:
                 chunk_len = min(2 + tick, target_chunk)
             else:
                 chunk_len = target_chunk
-                
+
             chunk_len = max(1, chunk_len)
             chunk_words = words[i:i+chunk_len]
             i += chunk_len
             remaining_words -= chunk_len
-            
+
             await self.send_message("stream_chunk", {
                 "chunk": " ".join(chunk_words) + (" " if i < total_words else ""),
             }, thread_id=tid)
@@ -236,6 +243,23 @@ class Session:
                 from config import settings
                 if getattr(settings, "continuous_listening", False):
                     self.start_listen_loop()
+
+    async def _handle_native_function_call(self, function_name: str, arguments: dict) -> dict:
+        """Handle function calls from native audio provider (Gemini Live / OpenAI Realtime)."""
+        from tools.registry import get
+        tool = get(function_name)
+        if tool is None:
+            return {"error": f"Unknown tool: {function_name}"}
+
+        try:
+            result = await tool.safe_execute(arguments, permission_manager=self)
+            if result.success:
+                return {"result": result.observation}
+            else:
+                return {"error": result.error or "Tool execution failed"}
+        except Exception as e:
+            logger.error(f"Native audio function call {function_name} failed", error=str(e))
+            return {"error": str(e)}
 
     async def handle_json_plan(self, steps: list, goal: str):
         """Execute a pre-built JSON plan directly (JSON import feature)."""
@@ -460,8 +484,8 @@ class Session:
                 from memory import MemoryManager
                 memory_manager = MemoryManager(tid)
 
-                import os as _os
-                use_graph = _os.environ.get("USE_LANGGRAPH", "true").lower() in ("1", "true", "yes")
+                from config import settings
+                use_graph = getattr(settings, "use_langgraph", True)
 
                 if use_graph:
                     # ── LangGraph path ──────────────────────────────────────────
@@ -777,6 +801,75 @@ class Session:
                 self.voice_pipeline.stop_speaking()
             await self.send_message("speech_completed", {"was_manual": self._manual_tts})
             self._manual_tts = False
+        elif msg_type == "native_audio_start":
+            # Start native audio pipeline (Gemini Live / OpenAI Realtime)
+            provider = payload.get("provider", "auto")
+            logger.info(f"Starting native audio pipeline", provider=provider)
+            try:
+                from voice.native_audio import initialize_native_audio, get_native_audio_pipeline
+                from config import settings
+                success = await initialize_native_audio(provider, settings)
+                if success:
+                    pipeline = get_native_audio_pipeline(settings)
+                    # Set up callbacks for audio streaming to frontend
+                    pipeline.session.on_audio_chunk = lambda chunk: asyncio.create_task(
+                        self.send_message("native_audio_chunk", {"audio": base64.b64encode(chunk).decode('utf-8')})
+                    )
+                    pipeline.session.on_transcript = lambda text, is_final: asyncio.create_task(
+                        self.send_message("transcript_update", {"text": text, "is_final": is_final, "engine": "native"})
+                    )
+                    pipeline.session.on_function_call = self._handle_native_function_call
+                    pipeline.session.on_state_change = lambda state: asyncio.create_task(
+                        self.send_message("native_audio_state", {
+                            "connected": state == NativeAudioState.CONNECTED,
+                            "provider": pipeline.session.provider.value,
+                            "state": state.value
+                        })
+                    )
+                    await self.send_message("native_audio_state", {
+                        "connected": True,
+                        "provider": pipeline.session.provider.value,
+                        "state": "connected"
+                    })
+                else:
+                    await self.send_message("native_audio_state", {
+                        "connected": False,
+                        "provider": provider,
+                        "state": "error",
+                        "error": "Failed to initialize native audio, falling back to offline"
+                    })
+            except Exception as e:
+                logger.error("Failed to start native audio", error=str(e))
+                await self.send_message("native_audio_state", {
+                    "connected": False,
+                    "provider": provider,
+                    "state": "error",
+                    "error": str(e)
+                })
+        elif msg_type == "native_audio_stop":
+            # Stop native audio pipeline
+            logger.info("Stopping native audio pipeline")
+            try:
+                from voice.native_audio import stop_native_audio
+                await stop_native_audio()
+                await self.send_message("native_audio_state", {
+                    "connected": False,
+                    "state": "disconnected"
+                })
+            except Exception as e:
+                logger.error("Failed to stop native audio", error=str(e))
+        elif msg_type == "native_audio_chunk":
+            # Receive audio chunk from client (phone relay)
+            logger.debug("Received native audio chunk from client")
+            try:
+                from voice.native_audio import get_native_audio_pipeline
+                pipeline = get_native_audio_pipeline()
+                if pipeline and pipeline.is_connected():
+                    audio_b64 = payload.get("audio", "")
+                    audio_bytes = base64.b64decode(audio_b64)
+                    await pipeline.send_audio(audio_bytes)
+            except Exception as e:
+                logger.error("Failed to process native audio chunk", error=str(e))
         elif msg_type == "load_thread":
             import db
             thread_id = payload.get("thread_id")
@@ -788,6 +881,13 @@ class Session:
                 "messages": messages,
                 "token_totals": tokens,
             })
+        elif msg_type == "vision_analysis_request":
+            # Instant Vision Acknowledgment: capture & acknowledge immediately
+            prompt = payload.get("prompt", "What's on my screen?")
+            thread_id = payload.get("thread_id") or self.thread_id
+            from config import settings
+            vision = get_instant_vision(self, settings, thread_id)
+            asyncio.create_task(vision.acknowledge_and_analyze(prompt))
         elif msg_type == "update_settings":
             from config import settings, save_settings_to_env
             import os
@@ -813,6 +913,7 @@ class Session:
             settings.continuous_listening = bool(payload.get("continuous_listening", settings.continuous_listening))
             settings.active_theme = payload.get("active_theme", settings.active_theme)
             settings.long_term_memory_enabled = bool(payload.get("long_term_memory_enabled", settings.long_term_memory_enabled))
+            settings.use_langgraph = bool(payload.get("use_langgraph", settings.use_langgraph))
             
             # Wake word settings
             raw_wake = payload.get("wake_words")
@@ -871,6 +972,22 @@ class Session:
                 settings.custom_prompt,
                 settings.long_term_memory_enabled,
                 settings.remote_dashboard_enabled,
+                settings.native_audio_pipeline,
+                settings.session_memory_enabled,
+                settings.session_memory_turns,
+                settings.session_memory_model,
+                settings.sound_enabled,
+                settings.sound_volume,
+                settings.google_oauth_enabled,
+                settings.google_client_id,
+                settings.google_client_secret,
+                settings.parallel_search_enabled,
+                settings.search_engines,
+                settings.background_monitoring_enabled,
+                settings.monitoring_interval_minutes,
+                settings.proactive_enabled,
+                settings.proactive_cooldown_minutes,
+                settings.use_langgraph,
             )
 
             # Propagate to running voice pipeline
@@ -913,6 +1030,7 @@ class Session:
                 "user_skills": settings.user_skills,
                 "custom_prompt": settings.custom_prompt,
                 "long_term_memory_enabled": settings.long_term_memory_enabled,
+                "use_langgraph": settings.use_langgraph,
             })
 
             if getattr(self, "_session_active", False):
