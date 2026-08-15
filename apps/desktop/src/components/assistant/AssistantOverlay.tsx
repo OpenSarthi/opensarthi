@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop, Paperclip } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
@@ -51,6 +51,15 @@ const THEMES = [
   { value: "theme-multicolor-light", label: "🌈 Vivid Rainbow" },
 ];
 
+/** Returns a traffic-light color based on percentage (0-100). */
+function metricColor(pct: number): string {
+  if (pct < 40) return "#38bdf8"; // sky blue
+  if (pct < 60) return "#22c55e"; // green
+  if (pct < 75) return "#facc15"; // yellow
+  if (pct < 87) return "#f97316"; // orange
+  return "#ef4444";               // red
+}
+
 export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomizer, onOpenMcpSettings, onOpenJsonImport, onOpenContext, onNewChat }: AssistantOverlayProps) {
   const [textInput, setTextInput] = useState("");
   const [statusIdx, setStatusIdx] = useState(0);
@@ -67,10 +76,13 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const [isDragging, setIsDragging] = useState(false);
   const [shortcutStatus, setShortcutStatus] = useState<string | null>(null);
   const [onlineSince, setOnlineSince] = useState<number | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
 
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const remoteRef = useRef<HTMLDivElement | null>(null);
   const wheelRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -139,19 +151,29 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   };
 
   // Color picker helper functions
-  const hexToHue = (hex: string): number => {
-    if (!hex || !hex.startsWith("#")) return 120; // default Matrix green
-    let cleanedHex = hex;
-    if (hex.length === 4) {
-      cleanedHex = "#" + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+  /** Convert any CSS color (hex #rgb, #rrggbb, or rgb(r,g,b)) to a 0-360 hue. */
+  const anyColorToHue = (color: string): number => {
+    if (!color) return 120;
+    let r = 0, g = 0, b = 0;
+    // Handle rgb(...) / rgba(...)
+    const rgbMatch = color.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (rgbMatch) {
+      r = parseInt(rgbMatch[1]) / 255;
+      g = parseInt(rgbMatch[2]) / 255;
+      b = parseInt(rgbMatch[3]) / 255;
+    } else {
+      // Handle #rgb or #rrggbb
+      let hex = color.trim();
+      if (!hex.startsWith("#")) return 120;
+      if (hex.length === 4) hex = "#" + hex[1]+hex[1]+hex[2]+hex[2]+hex[3]+hex[3];
+      r = parseInt(hex.slice(1,3),16)/255;
+      g = parseInt(hex.slice(3,5),16)/255;
+      b = parseInt(hex.slice(5,7),16)/255;
     }
-    let r = parseInt(cleanedHex.slice(1, 3), 16) / 255;
-    let g = parseInt(cleanedHex.slice(3, 5), 16) / 255;
-    let b = parseInt(cleanedHex.slice(5, 7), 16) / 255;
-    let max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const max = Math.max(r,g,b), min = Math.min(r,g,b);
     let h = 0;
     if (max !== min) {
-      let d = max - min;
+      const d = max - min;
       switch (max) {
         case r: h = (g - b) / d + (g < b ? 6 : 0); break;
         case g: h = (b - r) / d + 2; break;
@@ -161,6 +183,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     }
     return Math.round(h * 360);
   };
+
+  const hexToHue = (hex: string): number => anyColorToHue(hex);
 
   const hslToHex = (h: number, s: number, l: number): string => {
     l /= 100;
@@ -215,17 +239,20 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   }, [isDragging]);
 
   const handleOpenColorPicker = () => {
-    // Read the actual computed accent from CSS so we start on the correct color
-    // for whatever theme is active (e.g. red, purple, blue), not hardcoded green
+    // Read the actual computed accent from CSS — returns rgb(r,g,b) in browsers
     const computedAccent = getComputedStyle(document.documentElement)
       .getPropertyValue("--accent")
       .trim();
+    // Prefer customAccent (already a hex string) → computed accent → default green
     const startColor = customAccent || (computedAccent ? computedAccent : "#1aff1a");
     setPreviousColor(customAccent);
     setPendingColor(startColor);
     if (!customAccent) {
-      // Temporarily apply to keep UI consistent while picker is open
-      setCustomAccent(startColor);
+      // Convert computed rgb(...) to hex so we have a clean value to work with
+      const hue = anyColorToHue(startColor);
+      const hexStart = hslToHex(hue, 100, 50);
+      setCustomAccent(hexStart);
+      setPendingColor(hexStart);
     }
     setShowColorPicker(true);
   };
@@ -473,15 +500,42 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     setTranscript(null);
   }, [isConnected, setVoiceState, addMessage, activeThreadId, setTranscript]);
 
-  const handleTextSend = useCallback(() => {
+  const handleTextSend = useCallback(async () => {
     const msg = textInput.trim();
-    if (!msg || !isConnected) return;
+    if (!msg && attachedFiles.length === 0) return;
+    if (!isConnected) return;
     lastSentSourceRef.current = "text";
-    addMessage({ id: crypto.randomUUID(), role: "user", content: msg, timestamp: Date.now() });
-    wsClient.send("user_message", { text: msg, source: "text", thread_id: activeThreadId });
-    setTextInput("");
     setVoiceState("processing");
-  }, [textInput, isConnected, setVoiceState, addMessage, activeThreadId]);
+
+    let finalMsg = msg;
+    if (attachedFiles.length > 0) {
+      const filePromises = attachedFiles.map(file => {
+        return new Promise<string>((resolve) => {
+          if (file.type.startsWith("text/") || /\.(md|json|py|js|ts|tsx|jsx|csv|txt|log)$/.test(file.name)) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const content = ev.target?.result as string;
+              resolve(`\n\n--- Attached File: ${file.name} (${(file.size / 1024).toFixed(1)} KB) ---\n${content}`);
+            };
+            reader.onerror = () => {
+              resolve(`\n\n--- Attached File: ${file.name} (Error reading file) ---`);
+            };
+            reader.readAsText(file);
+          } else {
+            resolve(`\n\n--- Attached File: ${file.name} (${(file.size / 1024).toFixed(1)} KB, binary file) ---`);
+          }
+        });
+      });
+
+      const fileContents = await Promise.all(filePromises);
+      finalMsg = (msg + fileContents.join("")).trim();
+    }
+
+    addMessage({ id: crypto.randomUUID(), role: "user", content: finalMsg, timestamp: Date.now() });
+    wsClient.send("user_message", { text: finalMsg, source: "text", thread_id: activeThreadId });
+    setTextInput("");
+    setAttachedFiles([]);
+  }, [textInput, attachedFiles, isConnected, setVoiceState, addMessage, activeThreadId]);
 
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1526,10 +1580,10 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                     <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>CPU:</span>
-                        <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{systemMetrics.cpu}%</span>
+                        <span style={{ color: metricColor(systemMetrics.cpu), fontFamily: "var(--font-mono)" }}>{systemMetrics.cpu}%</span>
                       </div>
                       <div style={{ height: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "2px", overflow: "hidden" }}>
-                        <div style={{ width: `${systemMetrics.cpu}%`, height: "100%", background: "var(--accent)", transition: "width 1s ease-out" }} />
+                        <div style={{ width: `${systemMetrics.cpu}%`, height: "100%", background: metricColor(systemMetrics.cpu), transition: "width 1s ease-out, background 1s ease-out" }} />
                       </div>
                     </div>
 
@@ -1537,37 +1591,51 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                     <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>RAM:</span>
-                        <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{systemMetrics.mem}%</span>
+                        <span style={{ color: metricColor(systemMetrics.mem), fontFamily: "var(--font-mono)" }}>{systemMetrics.mem}%</span>
                       </div>
                       <div style={{ height: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "2px", overflow: "hidden" }}>
-                        <div style={{ width: `${systemMetrics.mem}%`, height: "100%", background: "var(--accent)", transition: "width 1s ease-out" }} />
+                        <div style={{ width: `${systemMetrics.mem}%`, height: "100%", background: metricColor(systemMetrics.mem), transition: "width 1s ease-out, background 1s ease-out" }} />
                       </div>
                     </div>
 
                     {/* GPU */}
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>GPU:</span>
-                      <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-                        {typeof systemMetrics.gpu === "number" ? `${systemMetrics.gpu}%` : systemMetrics.gpu}
-                      </span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>GPU:</span>
+                        <span style={{ color: typeof systemMetrics.gpu === "number" ? metricColor(systemMetrics.gpu) : "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
+                          {typeof systemMetrics.gpu === "number" ? `${systemMetrics.gpu}%` : systemMetrics.gpu}
+                        </span>
+                      </div>
+                      {typeof systemMetrics.gpu === "number" && (
+                        <div style={{ height: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "2px", overflow: "hidden" }}>
+                          <div style={{ width: `${systemMetrics.gpu}%`, height: "100%", background: metricColor(systemMetrics.gpu), transition: "width 1s ease-out, background 1s ease-out" }} />
+                        </div>
+                      )}
                     </div>
 
                     {/* NET Speed */}
                     <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>
                       <span>NET SPEED:</span>
                       <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-                        {systemMetrics.net_kbps >= 1024 
+                        {systemMetrics.net_kbps >= 1024
                           ? `${(systemMetrics.net_kbps / 1024).toFixed(1)} MB/s`
                           : `${systemMetrics.net_kbps.toFixed(0)} KB/s`}
                       </span>
                     </div>
 
                     {/* TEMP */}
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>CORE TEMP:</span>
-                      <span style={{ color: typeof systemMetrics.temp === "number" && systemMetrics.temp > 75 ? "var(--danger)" : "var(--accent)", fontFamily: "var(--font-mono)" }}>
-                        {typeof systemMetrics.temp === "number" ? `${systemMetrics.temp}°C` : systemMetrics.temp}
-                      </span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>CORE TEMP:</span>
+                        <span style={{ color: typeof systemMetrics.temp === "number" ? metricColor((systemMetrics.temp / 95) * 100) : "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
+                          {typeof systemMetrics.temp === "number" ? `${systemMetrics.temp}°C` : systemMetrics.temp}
+                        </span>
+                      </div>
+                      {typeof systemMetrics.temp === "number" && (
+                        <div style={{ height: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "2px", overflow: "hidden" }}>
+                          <div style={{ width: `${Math.min(100, (systemMetrics.temp / 95) * 100)}%`, height: "100%", background: metricColor((systemMetrics.temp / 95) * 100), transition: "width 1s ease-out, background 1s ease-out" }} />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1800,7 +1868,43 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             {/* Slow scan line sweep across the panel */}
             <div className="os-scan-line" />
 
-            <div className="chat-scroll-container" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 16px 40px", zIndex: 1 }} ref={chatScrollRef}>
+            <div
+              className="chat-scroll-container"
+              style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 16px 40px", zIndex: 1, position: "relative" }}
+              ref={chatScrollRef}
+              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                const files = Array.from(e.dataTransfer.files || []);
+                if (files.length === 0) return;
+                setAttachedFiles((prev) => {
+                  const combined = [...prev, ...files];
+                  if (combined.length > 5) {
+                    alert("You can attach at most 5 files.");
+                  }
+                  return combined.slice(0, 5);
+                });
+              }}
+            >
+              {/* Drag-over overlay */}
+              {isDragOver && (
+                <div style={{
+                  position: "absolute", inset: 0, zIndex: 100,
+                  border: "2px dashed var(--accent)",
+                  borderRadius: "8px",
+                  background: "rgba(0,0,0,0.55)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  pointerEvents: "none",
+                  backdropFilter: "blur(4px)",
+                }}>
+                  <div style={{ textAlign: "center", color: "var(--accent)", fontFamily: "var(--font-mono)", fontSize: "13px" }}>
+                    <Paperclip size={28} style={{ marginBottom: "8px", opacity: 0.85 }} />
+                    <div>DROP FILE TO ATTACH</div>
+                  </div>
+                </div>
+              )}
               {messages.length === 0 && (
                 <div style={{
                   height: "100%", display: "flex", flexDirection: "column",
@@ -2017,8 +2121,32 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               padding: "16px", borderTop: "1px solid var(--border)",
               display: "flex", flexDirection: "column", gap: "0px",
               background: "rgba(0,0,0,0.4)", zIndex: 1,
-              position: "relative", overflow: "hidden",
+              position: "relative", overflow: "visible",
             }}>
+              {/* Floating waveform — appears above input bar when active */}
+              <AnimatePresence>
+                {(voiceState === "listening" || voiceState === "speaking") && (
+                  <motion.div
+                    key="floating-waveform"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    transition={{ duration: 0.3 }}
+                    style={{
+                      position: "absolute",
+                      bottom: "calc(100% + 4px)",
+                      left: "16px",
+                      right: "16px",
+                      height: "52px",
+                      pointerEvents: "none",
+                      zIndex: 5,
+                    }}
+                  >
+                    <Waveform voiceState={voiceState} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Google-style animated color glow background */}
               {(() => {
                 const isActive = voiceState === "listening" || voiceState === "speaking" || voiceState === "processing";
@@ -2065,9 +2193,61 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   </div>
                 );
               })()}
+              {/* Attached files chips */}
+              {attachedFiles.length > 0 && (
+                <div style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "8px",
+                  marginBottom: "12px",
+                  position: "relative",
+                  zIndex: 2
+                }}>
+                  {attachedFiles.map((file, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        background: "rgba(255, 255, 255, 0.05)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "14px",
+                        padding: "4px 10px",
+                        fontSize: "11px",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      <span style={{
+                        maxWidth: "120px",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap"
+                      }}>
+                        {file.name}
+                      </span>
+                      <button
+                        onClick={() => setAttachedFiles(prev => prev.filter((_, idx) => idx !== index))}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--text-muted)",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "2px",
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div style={{ display: "flex", alignItems: "center", gap: "16px", position: "relative", zIndex: 1 }}>
                 <VoiceButton voiceState={voiceState} onClick={handleVoiceClick} disabled={!isConnected} />
-                <Waveform voiceState={voiceState} />
                 <input
                   id="sarthi-text-input"
                   value={isTaskRunning ? "" : textInput}
@@ -2109,38 +2289,80 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                     <Square size={14} fill="#ff4444" />
                   </motion.button>
                 ) : (
-                  // SEND button — shown normally
-                  <motion.button
-                    id="sarthi-send-btn"
-                    onClick={handleTextSend}
-                    disabled={!textInput.trim() || !isConnected}
-                    whileHover={textInput.trim() && isConnected ? { scale: 1.08, boxShadow: "0 0 10px var(--accent)" } : {}}
-                    whileTap={textInput.trim() && isConnected ? { scale: 0.94 } : {}}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: "38px",
-                      height: "38px",
-                      borderRadius: "50%",
-                      background: textInput.trim() && isConnected ? "var(--accent)" : "rgba(255,255,255,0.05)",
-                      color: textInput.trim() && isConnected ? "#000" : "var(--text-muted)",
-                      border: `1.5px solid ${textInput.trim() && isConnected ? "var(--accent)" : "var(--border)"}`,
-                      transition: "background 0.2s, color 0.2s, border-color 0.2s",
-                      cursor: (!textInput.trim() || !isConnected) ? "not-allowed" : "pointer",
-                      position: "relative",
-                      overflow: "hidden",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <motion.div
-                      animate={textInput.trim() && isConnected ? { x: [0, 2, 0], y: [0, -2, 0] } : {}}
-                      transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+                  <>
+                    {/* Hidden file input */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      style={{ display: "none" }}
+                      accept="text/*,.md,.json,.py,.js,.ts,.tsx,.jsx,.csv,.txt,.log"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (files.length === 0) return;
+                        setAttachedFiles((prev) => {
+                          const combined = [...prev, ...files];
+                          if (combined.length > 5) {
+                            alert("You can attach at most 5 files.");
+                          }
+                          return combined.slice(0, 5);
+                        });
+                        e.target.value = "";
+                      }}
+                    />
+                    {/* File upload button */}
+                    <motion.button
+                      id="sarthi-attach-btn"
+                      onClick={() => fileInputRef.current?.click()}
+                      title="Attach File"
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        width: "32px", height: "32px", borderRadius: "50%",
+                        background: "transparent",
+                        color: "var(--text-muted)",
+                        border: "none",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                        transition: "color 0.2s",
+                      }}
                     >
-                      <Send size={15} style={{ transform: "rotate(-15deg)" }} />
-                    </motion.div>
-                  </motion.button>
+                      <Paperclip size={16} />
+                    </motion.button>
+                    {/* SEND button */}
+                    <motion.button
+                      id="sarthi-send-btn"
+                      onClick={handleTextSend}
+                      disabled={(!textInput.trim() && attachedFiles.length === 0) || !isConnected}
+                      whileHover={(textInput.trim() || attachedFiles.length > 0) && isConnected ? { scale: 1.08, boxShadow: "0 0 10px var(--accent)" } : {}}
+                      whileTap={(textInput.trim() || attachedFiles.length > 0) && isConnected ? { scale: 0.94 } : {}}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "38px",
+                        height: "38px",
+                        borderRadius: "50%",
+                        background: (textInput.trim() || attachedFiles.length > 0) && isConnected ? "var(--accent)" : "rgba(255,255,255,0.05)",
+                        color: (textInput.trim() || attachedFiles.length > 0) && isConnected ? "#000" : "var(--text-muted)",
+                        border: `1.5px solid ${(textInput.trim() || attachedFiles.length > 0) && isConnected ? "var(--accent)" : "var(--border)"}`,
+                        transition: "background 0.2s, color 0.2s, border-color 0.2s",
+                        cursor: ((!textInput.trim() && attachedFiles.length === 0) || !isConnected) ? "not-allowed" : "pointer",
+                        position: "relative",
+                        overflow: "hidden",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <motion.div
+                        animate={(textInput.trim() || attachedFiles.length > 0) && isConnected ? { x: [0, 2, 0], y: [0, -2, 0] } : {}}
+                        transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+                      >
+                        <Send size={15} style={{ transform: "rotate(-15deg)" }} />
+                      </motion.div>
+                    </motion.button>
+                  </>
                 )}
               </div>
             </div>
@@ -2208,7 +2430,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                       {isConnected ? "ONLINE" : "OFFLINE"}
                     </span>
                     {isConnected && (
-                      <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.01em" }}>
+                      <span style={{ fontSize: "9px", color: "var(--text-muted)", fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', sans-serif", letterSpacing: "0.01em", opacity: 0.65 }}>
                         UP: {getUptimeString()}
                       </span>
                     )}
@@ -2217,7 +2439,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                     <span style={{ fontSize: "14px", color: "var(--text-primary)", fontWeight: "bold", fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
                       {getFormattedTime()}
                     </span>
-                    <span style={{ fontSize: "11px", color: "var(--text-muted)", letterSpacing: "0.012em" }}>
+                    <span style={{ fontSize: "9px", color: "var(--text-muted)", letterSpacing: "0.01em", fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', sans-serif", opacity: 0.65 }}>
                       {getFormattedDate().toUpperCase()}
                     </span>
                   </div>
