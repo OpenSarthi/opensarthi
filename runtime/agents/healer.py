@@ -46,6 +46,7 @@ class HealerAgent:
         description: str,
         error: str,
         screen_summary: str,
+        allowed_tools: Optional[list] = None,
     ) -> Optional[dict]:
         """
         Returns a corrected step dict `{tool, args, description}`, or None.
@@ -74,6 +75,11 @@ class HealerAgent:
 
             from tools.registry import all_tools
             tool_names = [t.name for t in all_tools()]
+
+            # Filter available tools by allowed_tools if supervisor is active
+            if allowed_tools is not None:
+                allowed_set = set(allowed_tools)
+                tool_names = [t.name for t in all_tools() if t.name in allowed_set]
 
             prompt = f"""You are a desktop-automation self-healing module.
 A step in an automation task failed. Your job is to propose a corrected version of that step.

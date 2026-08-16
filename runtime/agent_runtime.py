@@ -69,7 +69,13 @@ def _cleanup_step(s: dict) -> dict:
         s["args"] = {}
     elif isinstance(s["args"], list):
         tool_name = s.get("tool", "")
-        arg_keys = TOOL_ARG_ORDER.get(tool_name, [])
+        from tools.registry import get as get_tool
+        t = get_tool(tool_name)
+        arg_keys = []
+        if t and hasattr(t, "schema") and isinstance(t.schema, dict):
+            arg_keys = list(t.schema.get("properties", {}).keys())
+        if not arg_keys:
+            arg_keys = TOOL_ARG_ORDER.get(tool_name, [])
         s["args"] = {k: v for k, v in zip(arg_keys, s["args"])}
     reserved_step_keys = {"tool", "action", "args", "description",
                           "comment", "params", "arguments",
@@ -382,6 +388,8 @@ class AgentRuntime:
                     recalled_memories=recalled,
                     summarized_context=summarized_context,
                     auto_recalled_memories=auto_recalled if auto_recalled else None,
+                    # Legacy engine: supervisor sandboxing disabled (allowed_tools=None = unrestricted)
+                    allowed_tools=None,
                 )
 
                 if getattr(self, "logger", None):
@@ -579,6 +587,8 @@ class AgentRuntime:
                                                 description=step.description or step.tool,
                                                 error=err_msg,
                                                 screen_summary=screen_text,
+                                                # Legacy engine: no supervisor sandboxing (all tools available to healer)
+                                                allowed_tools=None,
                                             )
                                             if healer.last_usage:
                                                 await self.ws.accumulate_and_update_tokens(healer.last_usage)
