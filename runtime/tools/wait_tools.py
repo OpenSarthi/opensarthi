@@ -1,4 +1,4 @@
-from tools.base import BaseTool, RiskLevel
+from tools.base import BaseTool, RiskLevel, ToolDomain
 from planner.schemas import ToolResult, ToolResultConfidence
 from sync_primitives import wait_for_window, wait_for_text_visible, TimeoutError
 
@@ -6,6 +6,7 @@ class WaitForWindowTool(BaseTool):
     name = "wait_for_window"
     description = "Wait until a window with the given title appears, then pin it as the target for future type/click actions."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.DESKTOP_UI
     schema = {
         "type": "object",
         "properties": {
@@ -60,6 +61,7 @@ class WaitForTextTool(BaseTool):
     name = "wait_for_text"
     description = "Wait until specific text becomes visible on screen."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.DESKTOP_UI
     schema = {
         "type": "object",
         "properties": {

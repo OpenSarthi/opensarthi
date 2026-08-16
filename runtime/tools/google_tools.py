@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from tools.base import BaseTool, RiskLevel, ToolResult
+from tools.base import BaseTool, RiskLevel, ToolResult, ToolDomain
 
 logger = structlog.get_logger()
 
@@ -144,6 +144,7 @@ class CalendarReadTool(BaseTool):
         "required": [],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.CALENDAR
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         import httpx
@@ -216,6 +217,7 @@ class GmailReadTool(BaseTool):
         "required": [],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.MAIL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         import httpx
@@ -295,6 +297,7 @@ class CalendarSearchTool(BaseTool):
         "required": ["query"],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.CALENDAR
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         # Reuse calendar_read with broader time range
@@ -319,6 +322,7 @@ class GmailSearchTool(BaseTool):
         "required": ["query"],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.MAIL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         tool = GmailReadTool()

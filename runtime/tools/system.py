@@ -2,7 +2,7 @@ import asyncio
 import re
 import platform
 from typing import Optional, Callable, Awaitable
-from tools.base import BaseTool, RiskLevel
+from tools.base import BaseTool, RiskLevel, ToolDomain
 from planner.schemas import ToolResult, ToolResultConfidence
 from security import is_blocked, sandboxed_execute
 
@@ -10,6 +10,7 @@ class ShellTool(BaseTool):
     name = "shell"
     description = "Execute a shell command. For read-only operations and system tasks. Sandboxed — destructive commands are blocked."
     risk_level = RiskLevel.DANGEROUS
+    domain = ToolDomain.SHELL
     schema = {
         "type": "object",
         "properties": {

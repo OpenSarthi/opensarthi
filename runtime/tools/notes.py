@@ -1,6 +1,6 @@
 import os
 import glob
-from tools.base import BaseTool, RiskLevel
+from tools.base import BaseTool, RiskLevel, ToolDomain
 from planner.schemas import ToolResult, ToolResultConfidence
 
 NOTES_DIR = os.path.expanduser("~/opensarthi_notes")
@@ -9,6 +9,7 @@ class SaveNoteTool(BaseTool):
     name = "save_note"
     description = "Create or update a markdown note in the user's local notes folder."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {
@@ -50,6 +51,7 @@ class GetNotesTool(BaseTool):
     name = "get_notes"
     description = "Search and retrieve markdown notes by keyword, or list all notes if no query given."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {

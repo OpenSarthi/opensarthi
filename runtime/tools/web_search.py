@@ -5,7 +5,7 @@ Replaces the existing WebSearchTool with parallel search capability.
 """
 import structlog
 from typing import Dict, Any, Optional, List
-from tools.base import BaseTool, RiskLevel, ToolResult
+from tools.base import BaseTool, RiskLevel, ToolResult, ToolDomain
 from tools.parallel_search import get_parallel_search
 
 logger = structlog.get_logger()
@@ -25,6 +25,7 @@ class WebSearchTool(BaseTool):
         "required": ["query"],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.WEB
 
     def __init__(self):
         self.parallel = get_parallel_search()

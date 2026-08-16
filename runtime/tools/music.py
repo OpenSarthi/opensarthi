@@ -12,7 +12,7 @@ import platform
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
-from tools.base import BaseTool, RiskLevel, ToolResult
+from tools.base import BaseTool, RiskLevel, ToolResult, ToolDomain
 
 logger = structlog.get_logger()
 
@@ -32,6 +32,7 @@ class YouTubeSearchTool(BaseTool):
         "required": ["query"],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.MUSIC
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         query = args["query"]
@@ -147,6 +148,7 @@ class YouTubeControlTool(BaseTool):
         "required": ["action"],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.MUSIC
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         action = args["action"]
@@ -218,6 +220,7 @@ class MusicPlayTool(BaseTool):
         "required": ["path"],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.MUSIC
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         path = args["path"]

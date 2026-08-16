@@ -1,5 +1,5 @@
-from typing import Optional
-from tools.base import BaseTool
+from typing import Optional, List
+from tools.base import BaseTool, ToolDomain
 from tools.desktop import ClickTool, TypeTextTool, PressKeyTool, OpenAppTool, ClickElementTool, FocusWindowTool, ObserveDesktopTool
 from tools.system import ShellTool
 from tools.wait_tools import WaitForWindowTool, WaitForTextTool
@@ -180,6 +180,19 @@ def get_schemas() -> list[dict]:
         }
         for t in _registry.values()
     ]
+
+
+def get_tools_by_domain(domain: ToolDomain) -> List[BaseTool]:
+    """Return all tools belonging to a domain, plus tools marked GENERAL."""
+    return [
+        t for t in _registry.values()
+        if t.domain == domain or t.domain == ToolDomain.GENERAL
+    ]
+
+
+def get_tool_names_by_domain(domain: ToolDomain) -> List[str]:
+    """Return names of all tools belonging to a domain (including GENERAL tools)."""
+    return [t.name for t in get_tools_by_domain(domain)]
 
 def validate_registry():
     """Boot-time sanity check — every tool must have a non-empty schema."""

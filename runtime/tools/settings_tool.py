@@ -13,7 +13,7 @@ After saving, emits settings_sync back to the frontend so the UI updates live.
 """
 from __future__ import annotations
 from typing import Any, Optional
-from tools.base import BaseTool, RiskLevel
+from tools.base import BaseTool, RiskLevel, ToolDomain
 from planner.schemas import ToolResult
 
 
@@ -25,6 +25,7 @@ class UpdateSettingsTool(BaseTool):
         "voice speed, wake words, accent, language, continuous listening, or any other setting."
     )
     risk_level = RiskLevel.SAFE  # overridden per-field at runtime
+    domain = ToolDomain.GENERAL
 
     schema = {
         "type": "object",
@@ -117,6 +118,10 @@ class UpdateSettingsTool(BaseTool):
                 "type": "string",
                 "description": "Custom instructions to inject into every agent system prompt",
             },
+            "use_supervisor": {
+                "type": "boolean",
+                "description": "Enable or disable the multi-agent supervisor (domain-based tool routing).",
+            },
         },
         "required": [],
     }
@@ -188,6 +193,11 @@ class UpdateSettingsTool(BaseTool):
         if "custom_prompt" in updates:
             settings.custom_prompt = str(updates["custom_prompt"])
             changed.append("custom_prompt")
+
+        # Supervisor toggle
+        if "use_supervisor" in updates:
+            settings.use_supervisor = bool(updates["use_supervisor"])
+            changed.append("use_supervisor")
 
         # Model / provider
         if "provider" in updates:
@@ -269,6 +279,8 @@ class UpdateSettingsTool(BaseTool):
             settings.user_name,
             settings.user_skills,
             settings.custom_prompt,
+            use_langgraph=settings.use_langgraph,
+            use_supervisor=settings.use_supervisor,
         )
 
         # ── Propagate wake word changes to live pipeline ──────────────────
@@ -308,6 +320,8 @@ class UpdateSettingsTool(BaseTool):
                     "user_skills": settings.user_skills,
                     "custom_prompt": settings.custom_prompt,
                     "long_term_memory_enabled": settings.long_term_memory_enabled,
+                    "use_langgraph": settings.use_langgraph,
+                    "use_supervisor": settings.use_supervisor,
                 })
             except Exception:
                 pass  # non-fatal

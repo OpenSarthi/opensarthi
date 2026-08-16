@@ -1,12 +1,13 @@
 import asyncio
 import shutil
-from tools.base import BaseTool, RiskLevel
+from tools.base import BaseTool, RiskLevel, ToolDomain
 from planner.schemas import ToolResult, ToolResultConfidence
 
 class MediaControlTool(BaseTool):
     name = "media_control"
     description = "Control active media players via playerctl (Spotify, VLC, YouTube in browser, etc.)."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.MUSIC
     schema = {
         "type": "object",
         "properties": {

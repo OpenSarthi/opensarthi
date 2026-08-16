@@ -5,7 +5,7 @@ import shutil
 import platform
 import tempfile
 from typing import Protocol, Optional
-from tools.base import BaseTool, RiskLevel
+from tools.base import BaseTool, RiskLevel, ToolDomain
 from planner.schemas import ToolResult, ToolResultConfidence
 
 SMOOTH_MOUSE = True
@@ -734,6 +734,7 @@ class ClickTool(BaseTool):
     name = "click"
     description = "Click at (x, y) coordinates. Automatically re-focuses the pinned task window before clicking."
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.DESKTOP_UI
     schema = {
         "type": "object",
         "properties": {
@@ -785,6 +786,7 @@ class TypeTextTool(BaseTool):
         "(like ctrl+l to focus browser address bar, or '/' to focus YouTube search) before using this tool."
     )
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.DESKTOP_UI
     schema = {
         "type": "object",
         "properties": {
@@ -818,6 +820,7 @@ class PressKeyTool(BaseTool):
     name = "press_key"
     description = "Press a keyboard key in the pinned task window (e.g., 'Return', 'Tab', 'Escape', 'ctrl+c')."
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.DESKTOP_UI
     schema = {
         "type": "object",
         "properties": {
@@ -851,6 +854,7 @@ class OpenAppTool(BaseTool):
     name = "open_app"
     description = "Launch a desktop application by name (e.g. 'firefox', 'dolphin', 'konsole'). Aliases like 'file manager' → 'dolphin' are resolved automatically."
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.DESKTOP_UI
     schema = {
         "type": "object",
         "properties": {
@@ -1248,6 +1252,7 @@ class FocusWindowTool(BaseTool):
     name = "focus_window"
     description = "Bring a window to the foreground by its title and pin it as the target for future type/click actions."
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.DESKTOP_UI
     schema = {
         "type": "object",
         "properties": {
@@ -1328,6 +1333,7 @@ class ClickElementTool(BaseTool):
         "Call observe_desktop first to see what elements are available."
     )
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.DESKTOP_UI
     schema = {
         "type": "object",
         "properties": {
@@ -1484,6 +1490,7 @@ class ObserveDesktopTool(BaseTool):
         "Always call this before click_element when unsure of element names or roles."
     )
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.DESKTOP_UI
     schema = {
         "type": "object",
         "properties": {},

@@ -9,10 +9,25 @@ class RiskLevel(str, Enum):
     DANGEROUS = "dangerous"  # shell commands, file writes, system changes
     FORBIDDEN = "forbidden"  # never auto-execute
 
+class ToolDomain(str, Enum):
+    """Tool domain classification for multi-agent supervisor routing."""
+    WEB = "web"
+    CALENDAR = "calendar"
+    MAIL = "mail"
+    BROWSER = "browser"
+    MUSIC = "music"
+    SOCIAL = "social"
+    CODE = "code"
+    DESKTOP_UI = "desktop_ui"
+    SHELL = "shell"
+    GENERAL = "general"  # Available to all domains
+
+
 class BaseTool(ABC):
     name: str
     description: str          # Shown to LLM for tool selection
     risk_level: RiskLevel = RiskLevel.MODERATE
+    domain: ToolDomain = ToolDomain.GENERAL  # Tool domain for supervisor routing
 
     # JSON Schema for args — enforces required params and prevents hallucination.
     # Must be a dict with "type": "object", "properties": {...}, "required": [...]

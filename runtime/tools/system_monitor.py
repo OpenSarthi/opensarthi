@@ -14,7 +14,7 @@ import platform
 import psutil
 from typing import Dict, Any, Optional, List
 
-from tools.base import BaseTool, RiskLevel, ToolResult
+from tools.base import BaseTool, RiskLevel, ToolResult, ToolDomain
 
 logger = structlog.get_logger()
 
@@ -34,6 +34,7 @@ class SystemStatusTool(BaseTool):
         "required": [],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         try:
@@ -145,6 +146,7 @@ class WeatherReportTool(BaseTool):
         "required": [],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         location = args.get("location", "auto")
@@ -208,6 +210,7 @@ class FlightFinderTool(BaseTool):
         "required": ["origin", "destination", "date"],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         # This would integrate with Duffel, Amadeus, or scrape
@@ -238,6 +241,7 @@ class ReminderSetTool(BaseTool):
         "required": ["time", "message"],
     }
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.GENERAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         try:
@@ -334,6 +338,7 @@ class ReminderCancelTool(BaseTool):
         "required": ["id"],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         try:
@@ -376,6 +381,7 @@ class MonitorControlTool(BaseTool):
         "required": ["action"],
     }
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.GENERAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         system = platform.system()
@@ -414,6 +420,7 @@ class AgentShutdownTool(BaseTool):
     description = "Gracefully shutdown the agent runtime."
     schema = {"type": "object", "properties": {"confirm": {"type": "boolean", "default": False}}}
     risk_level = RiskLevel.DANGEROUS
+    domain = ToolDomain.GENERAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         if not args.get("confirm"):

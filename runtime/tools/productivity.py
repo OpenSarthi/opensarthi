@@ -10,7 +10,7 @@ import time
 import urllib.request
 import urllib.parse
 from typing import Optional
-from tools.base import BaseTool, RiskLevel
+from tools.base import BaseTool, RiskLevel, ToolDomain
 from planner.schemas import ToolResult, ToolResultConfidence
 
 
@@ -20,6 +20,7 @@ class WebSearchTool(BaseTool):
     name = "search_web"
     description = "Search the web via DuckDuckGo for current information. Returns top results with titles and snippets."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {
@@ -120,6 +121,7 @@ class WeatherTool(BaseTool):
     name = "get_weather"
     description = "Get current weather and short forecast for a location using wttr.in (free, no API key)."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {
@@ -184,6 +186,7 @@ class SetTimerTool(BaseTool):
     name = "set_timer"
     description = "Start a countdown timer. Fires a system notification and voice-ready alert when done."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {
@@ -229,6 +232,7 @@ class ListTimersTool(BaseTool):
     name = "list_timers"
     description = "List all active countdown timers."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {"type": "object", "properties": {}, "required": []}
 
     async def execute(self, args: dict) -> ToolResult:
@@ -242,6 +246,7 @@ class CancelTimerTool(BaseTool):
     name = "cancel_timer"
     description = "Cancel a specific timer by ID, or cancel all timers if no ID given."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {
@@ -299,6 +304,7 @@ class ListFilesTool(BaseTool):
     name = "list_files"
     description = "List files and folders at a path. Accepts shortcuts: 'desktop', 'downloads', 'documents', 'home', or any absolute path."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {
@@ -350,6 +356,7 @@ class OpenPathTool(BaseTool):
     name = "open_path"
     description = "Open a file or folder in the default application (Nautilus/Dolphin for folders, default app for files)."
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {
@@ -385,6 +392,7 @@ class ReadFileTool(BaseTool):
     name = "read_file"
     description = "Read the text contents of a file (txt, md, py, ts, js, json, config, source code, etc.). Returns up to max_chars characters."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {
@@ -433,6 +441,7 @@ class VolumeControlTool(BaseTool):
     name = "set_volume"
     description = "Control system audio volume using PulseAudio (pactl) or ALSA (amixer)."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {
@@ -489,6 +498,7 @@ class BatteryTool(BaseTool):
     name = "get_battery"
     description = "Get current battery percentage and charging status."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {"type": "object", "properties": {}, "required": []}
 
     async def execute(self, args: dict) -> ToolResult:
@@ -541,6 +551,7 @@ class NetworkControlTool(BaseTool):
     name = "toggle_wifi"
     description = "Turn Wi-Fi on or off, or check its current status. Uses nmcli."
     risk_level = RiskLevel.DANGEROUS
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {

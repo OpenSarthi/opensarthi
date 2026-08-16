@@ -12,7 +12,7 @@ import asyncio
 import structlog
 from typing import Dict, Any, Optional, List
 
-from tools.base import BaseTool, RiskLevel, ToolResult
+from tools.base import BaseTool, RiskLevel, ToolResult, ToolDomain
 
 logger = structlog.get_logger()
 
@@ -34,6 +34,7 @@ class TwitterPostTool(BaseTool):
         "required": [],
     }
     risk_level = RiskLevel.DANGEROUS
+    domain = ToolDomain.SOCIAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         action = args.get("action", "post")
@@ -99,6 +100,7 @@ class LinkedInPostTool(BaseTool):
         "required": ["text"],
     }
     risk_level = RiskLevel.DANGEROUS
+    domain = ToolDomain.SOCIAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         from config import settings
@@ -158,6 +160,7 @@ class TelegramSendTool(BaseTool):
         "required": ["chat_id", "text"],
     }
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.SOCIAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         from config import settings
@@ -206,6 +209,7 @@ class WhatsAppSendTool(BaseTool):
         "required": ["phone", "text"],
     }
     risk_level = RiskLevel.DANGEROUS
+    domain = ToolDomain.SOCIAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         try:
@@ -250,6 +254,7 @@ class DiscordSendTool(BaseTool):
         "required": ["webhook_url", "text"],
     }
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.SOCIAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         try:
@@ -292,6 +297,7 @@ class EmailSendTool(BaseTool):
         "required": ["to", "subject", "body"],
     }
     risk_level = RiskLevel.DANGEROUS
+    domain = ToolDomain.SOCIAL
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         from config import settings

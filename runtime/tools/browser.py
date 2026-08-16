@@ -9,7 +9,7 @@ import structlog
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
-from tools.base import BaseTool, RiskLevel, ToolResult
+from tools.base import BaseTool, RiskLevel, ToolResult, ToolDomain
 
 logger = structlog.get_logger()
 
@@ -65,6 +65,7 @@ class BrowserGoToTool(BaseTool):
         "required": ["url"],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -84,6 +85,7 @@ class BrowserBackTool(BaseTool):
     description = "Navigate back in browser history."
     schema = {"type": "object", "properties": {}}
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -101,6 +103,7 @@ class BrowserForwardTool(BaseTool):
     description = "Navigate forward in browser history."
     schema = {"type": "object", "properties": {}}
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -118,6 +121,7 @@ class BrowserReloadTool(BaseTool):
     description = "Reload the current page."
     schema = {"type": "object", "properties": {}}
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -135,6 +139,7 @@ class BrowserGetUrlTool(BaseTool):
     description = "Get the current page URL."
     schema = {"type": "object", "properties": {}}
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -158,6 +163,7 @@ class BrowserClickTool(BaseTool):
         "required": [],
     }
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -191,6 +197,7 @@ class BrowserTypeTool(BaseTool):
         "required": ["selector", "text"],
     }
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -220,6 +227,7 @@ class BrowserPressTool(BaseTool):
         "required": ["key"],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -245,6 +253,7 @@ class BrowserScrollTool(BaseTool):
         "required": [],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -274,6 +283,7 @@ class BrowserFillFormTool(BaseTool):
         "required": ["fields"],
     }
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -299,6 +309,7 @@ class BrowserSmartClickTool(BaseTool):
         "required": ["description"],
     }
     risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -325,6 +336,7 @@ class BrowserGetTextTool(BaseTool):
         "required": [],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -353,6 +365,7 @@ class BrowserScreenshotTool(BaseTool):
         "required": [],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         page = await _ensure_page()
@@ -384,6 +397,7 @@ class BrowserNewTabTool(BaseTool):
         "required": [],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         global _browser_context
@@ -405,6 +419,7 @@ class BrowserCloseTabTool(BaseTool):
     description = "Close the current browser tab."
     schema = {"type": "object", "properties": {}}
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         global _browser_page
@@ -430,6 +445,7 @@ class BrowserSwitchTabTool(BaseTool):
         "required": ["index"],
     }
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         global _browser_context, _browser_page
@@ -453,6 +469,7 @@ class BrowserListTabsTool(BaseTool):
     description = "List all open browser tabs with their URLs."
     schema = {"type": "object", "properties": {}}
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         global _browser_context
@@ -473,6 +490,7 @@ class BrowserCloseTool(BaseTool):
     description = "Close the browser and clean up resources."
     schema = {"type": "object", "properties": {}}
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         global _browser, _browser_context, _browser_page, _browser_initialized
@@ -499,6 +517,7 @@ class BrowserCloseAllTool(BaseTool):
     description = "Close all browser windows and tabs."
     schema = {"type": "object", "properties": {}}
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
         global _browser, _browser_context, _browser_page, _browser_initialized

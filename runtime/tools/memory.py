@@ -1,4 +1,4 @@
-from tools.base import BaseTool, RiskLevel
+from tools.base import BaseTool, RiskLevel, ToolDomain
 from planner.schemas import ToolResult, ToolResultConfidence
 from memory.manager import MemoryManager
 
@@ -6,6 +6,7 @@ class RememberTool(BaseTool):
     name = "remember"
     description = "Store a fact, preference, name, or rule about the user permanently in long-term memory."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {
@@ -35,6 +36,7 @@ class RecallTool(BaseTool):
     name = "recall"
     description = "Search and retrieve stored facts, preferences, or rules from long-term memory based on a query."
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {
@@ -69,6 +71,7 @@ class ForgetMemoryTool(BaseTool):
         "Searches for and removes the best matching memory."
     )
     risk_level = RiskLevel.SAFE
+    domain = ToolDomain.GENERAL
     schema = {
         "type": "object",
         "properties": {

@@ -1,7 +1,7 @@
 import asyncio
 import os
 import shutil
-from tools.base import BaseTool, RiskLevel
+from tools.base import BaseTool, RiskLevel, ToolDomain
 from planner.schemas import ToolResult, ToolResultConfidence
 
 # Resolve workspace root dynamically relative to this file's location (runtime/tools/self_fix.py -> runtime -> workspace)
@@ -16,6 +16,7 @@ class SelfFixTool(BaseTool):
         "Runs diagnostics, rewrites the file using AI, verifies it compiles, and rolls back on failure."
     )
     risk_level = RiskLevel.DANGEROUS
+    domain = ToolDomain.CODE
     schema = {
         "type": "object",
         "properties": {
