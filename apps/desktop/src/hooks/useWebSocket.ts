@@ -309,6 +309,9 @@ export function useWebSocket(port: number | null) {
         if (p.use_langgraph !== undefined) {
           store.setUseLanggraph(p.use_langgraph);
         }
+        if (p.use_supervisor !== undefined) {
+          store.setUseSupervisor(p.use_supervisor);
+        }
         if (p.remote_dashboard_enabled !== undefined) {
           store.setRemoteDashboardEnabled(p.remote_dashboard_enabled);
         }

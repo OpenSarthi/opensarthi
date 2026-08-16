@@ -51,6 +51,8 @@ export default function App() {
     longTermMemoryEnabled,
     useLanggraph,
     setUseLanggraph,
+    useSupervisor,
+    setUseSupervisor,
     setVoiceSettings,
     setWakeWordSettings,
     setActiveTheme,
@@ -201,6 +203,7 @@ export default function App() {
     soundVolume: number;
     longTermMemoryEnabled: boolean;
     useLanggraph: boolean;
+    useSupervisor: boolean;
   }) => {
     setActiveModels(settings.localModel, settings.cloudModel);
     setActiveProvider(settings.provider);
@@ -217,6 +220,7 @@ export default function App() {
     setSoundSettings(settings.soundEnabled, settings.soundVolume);
     setLongTermMemoryEnabled(settings.longTermMemoryEnabled);
     setUseLanggraph(settings.useLanggraph);
+    setUseSupervisor(settings.useSupervisor);
 
     wsClient.send("update_settings", {
       local_model: settings.localModel,
@@ -236,6 +240,7 @@ export default function App() {
       wake_word_threshold: settings.wakeWordThreshold,
       long_term_memory_enabled: settings.longTermMemoryEnabled,
       use_langgraph: settings.useLanggraph,
+      use_supervisor: settings.useSupervisor,
     });
   };
 
@@ -374,6 +379,7 @@ export default function App() {
             currentSoundVolume={soundVolume}
             currentLongTermMemoryEnabled={longTermMemoryEnabled}
             currentUseLanggraph={useLanggraph}
+            currentUseSupervisor={useSupervisor}
             runtimePort={runtimePort}
             onSave={handleSaveSettings}
           />

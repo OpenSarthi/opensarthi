@@ -33,6 +33,7 @@ interface SettingsViewProps {
   currentSoundVolume: number;
   currentLongTermMemoryEnabled: boolean;
   currentUseLanggraph: boolean;
+  currentUseSupervisor: boolean;
   runtimePort: number | null;
   onSave: (settings: {
     localModel: string;
@@ -54,6 +55,7 @@ interface SettingsViewProps {
     soundVolume: number;
     longTermMemoryEnabled: boolean;
     useLanggraph: boolean;
+    useSupervisor: boolean;
     remoteDashboardEnabled: boolean;
   }) => void;
 }
@@ -180,6 +182,7 @@ export function SettingsView({
   currentSoundVolume,
   currentLongTermMemoryEnabled,
   currentUseLanggraph,
+  currentUseSupervisor,
   runtimePort,
   onSave,
 }: SettingsViewProps) {
@@ -209,6 +212,7 @@ export function SettingsView({
   const [soundVolume, setSoundVolume] = useState(currentSoundVolume !== undefined ? currentSoundVolume : 60);
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(currentLongTermMemoryEnabled !== undefined ? currentLongTermMemoryEnabled : false);
   const [useLanggraph, setUseLanggraph] = useState(currentUseLanggraph !== undefined ? currentUseLanggraph : true);
+  const [useSupervisor, setUseSupervisor] = useState(currentUseSupervisor !== undefined ? currentUseSupervisor : false);
   const [saved, setSaved] = useState(false);
 
   const providerInfo = PROVIDER_LABELS[provider] || PROVIDER_LABELS.google;
@@ -307,6 +311,7 @@ export function SettingsView({
       openrouterKey: provider === "openrouter"  ? (currentKey || currentOpenrouterKey) : currentOpenrouterKey,
       longTermMemoryEnabled,
       useLanggraph,
+      useSupervisor,
       // Keep other settings unchanged (use original values from props)
       voiceAccent: currentVoiceAccent,
       voiceSpeed: currentVoiceSpeed,
@@ -344,6 +349,7 @@ export function SettingsView({
       openrouterKey: provider === "openrouter"  ? (currentKey || currentOpenrouterKey) : openrouterKey,
       longTermMemoryEnabled,
       useLanggraph,
+      useSupervisor,
       // Save all modified state values
       voiceAccent,
       voiceSpeed,
@@ -599,6 +605,17 @@ export function SettingsView({
                   onChange={setUseLanggraph}
                   label="USE NATIVE LANGGRAPH FLOW"
                   sublabel="Enables stateful multi-step tasks, sub-agent orchestration, and task recovery"
+                />
+              </div>
+
+              {/* Multi-Agent Supervisor Toggle */}
+              <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px dashed rgba(255,255,255,0.07)" }}>
+                <Toggle
+                  id="use-supervisor-toggle"
+                  checked={useSupervisor}
+                  onChange={setUseSupervisor}
+                  label="USE MULTI-AGENT SUPERVISOR"
+                  sublabel="Filters available tools dynamically by classifying task domain(s) for safety and speed"
                 />
               </div>
 

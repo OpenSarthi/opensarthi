@@ -125,6 +125,7 @@ interface AssistantState {
   longTermMemoryEnabled: boolean;
   longTermMemories: any[];
   useLanggraph: boolean;
+  useSupervisor: boolean;
   nodeStatuses: Record<string, "idle" | "running" | "done">;
   
   // Remote dashboard pairing state
@@ -149,6 +150,7 @@ interface AssistantState {
   setLongTermMemoryEnabled: (enabled: boolean) => void;
   setLongTermMemories: (memories: any[]) => void;
   setUseLanggraph: (enabled: boolean) => void;
+  setUseSupervisor: (enabled: boolean) => void;
   setNodeStatus: (node: string, status: "idle" | "running" | "done", thread_id?: string) => void;
   setTranscript: (text: string | null) => void;
   
@@ -307,6 +309,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   longTermMemoryEnabled: false,
   longTermMemories: [],
   useLanggraph: true,
+  useSupervisor: false,
   nodeStatuses: {},
   planReasonings: {},
   remoteDashboardEnabled: false,
@@ -319,6 +322,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   setMobilePairing: (mobilePairing) => set({ mobilePairing }),
   setLongTermMemories: (longTermMemories) => set({ longTermMemories }),
   setUseLanggraph: (useLanggraph) => set({ useLanggraph }),
+  setUseSupervisor: (useSupervisor) => set({ useSupervisor }),
   setNodeStatus: (node, status, _thread_id) => set((s) => ({
     nodeStatuses: { ...s.nodeStatuses, [node]: status }
   })),
@@ -443,12 +447,25 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       .filter(m => m.plan?.reasoning)
       .map(m => ({ text: m.plan!.reasoning!, attempt: 0, thread_id: id }));
 
+    // Find the most recent plan in messages
+    let restoredPlan: Plan | null = null;
+    let restoredExecutingStepIndex: number | null = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].plan) {
+        restoredPlan = messages[i].plan as Plan;
+        const steps = restoredPlan.steps || [];
+        const firstPending = steps.findIndex((step: any) => step.status === "pending" || step.status === "running");
+        restoredExecutingStepIndex = firstPending >= 0 ? firstPending : null;
+        break;
+      }
+    }
+
     const tab: ThreadTab = {
       id,
       title,
       messages,
-      currentPlan: null,
-      executingStepIndex: null,
+      currentPlan: restoredPlan,
+      executingStepIndex: restoredExecutingStepIndex,
       taskPaused: false,
       tokenUsage,
     };
@@ -459,8 +476,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
         ? s.tabs.map((t, idx) => idx === existingIndex ? tab : t)
         : [...s.tabs, tab],
       messages,
-      currentPlan: null,
-      executingStepIndex: null,
+      currentPlan: restoredPlan,
+      executingStepIndex: restoredExecutingStepIndex,
       taskPaused: false,
       tokenUsage,
       planReasonings: restoredReasonings.length > 0
