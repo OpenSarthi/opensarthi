@@ -723,6 +723,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
   const activeTab = tabs.find((t) => t.id === activeThreadId);
   const isTaskRunning = !!activeTab?.currentPlan;
+  const isBusy = isTaskRunning || voiceState === "processing" || voiceState === "speaking" || !!streamingResponse;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -752,6 +753,12 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   // Handle stop task action (replaces send button when task is running)
   const handleStopTask = useCallback(() => {
     wsClient.send("cancel_execution", { thread_id: activeThreadId });
+    // Instantly reset UI state locally
+    const store = useAssistantStore.getState();
+    store.setPlan(null, activeThreadId);
+    store.setExecutingStep(null, activeThreadId);
+    store.setVoiceState("idle");
+    store.clearStreamingResponse();
   }, [activeThreadId]);
 
   // Reset user override when a new task starts
@@ -2353,20 +2360,20 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 <VoiceButton voiceState={voiceState} onClick={handleVoiceClick} disabled={!isConnected} />
                 <input
                   id="sarthi-text-input"
-                  value={isTaskRunning ? "" : textInput}
-                  onChange={(e) => !isTaskRunning && setTextInput(e.target.value)}
+                  value={isBusy ? "" : textInput}
+                  onChange={(e) => !isBusy && setTextInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={!isConnected ? "CONNECTING..." : isTaskRunning ? "▶ TASK RUNNING — CLICK ■ TO STOP" : "ENTER COMMAND..."}
-                  disabled={!isConnected}
+                  placeholder={!isConnected ? "CONNECTING..." : isBusy ? "▶ AGENT ACTIVE — CLICK ■ TO STOP" : "ENTER COMMAND..."}
+                  disabled={!isConnected || isBusy}
                   style={{
-                    flex: 1, background: "transparent", border: "none", borderBottom: `1px solid ${isTaskRunning ? "rgba(255,60,60,0.4)" : "var(--border-accent)"}`,
-                    color: isTaskRunning ? "rgba(255,100,100,0.6)" : "var(--text-primary)", fontSize: "14px", fontFamily: "var(--font-mono)",
+                    flex: 1, background: "transparent", border: "none", borderBottom: `1px solid ${isBusy ? "rgba(255,60,60,0.4)" : "var(--border-accent)"}`,
+                    color: isBusy ? "rgba(255,100,100,0.6)" : "var(--text-primary)", fontSize: "14px", fontFamily: "var(--font-mono)",
                     padding: "8px 4px", outline: "none",
-                    cursor: isTaskRunning ? "default" : "text",
+                    cursor: isBusy ? "default" : "text",
                   }}
                 />
-                {isTaskRunning ? (
-                  // STOP button — shown when task is running
+                {isBusy ? (
+                  // STOP button — shown when agent is active/busy (running task, planning, or speaking)
                   <motion.button
                     id="sarthi-stop-btn"
                     onClick={handleStopTask}

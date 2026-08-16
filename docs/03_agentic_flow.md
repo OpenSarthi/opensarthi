@@ -457,41 +457,76 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    GOAL[User goal received] --> SUPER[Supervisor Node]
+    START([LangGraph run_graph invoked]) --> OBSERVE[observe_node
+Desktop snapshot + memory recall]
+    OBSERVE --> SUPER[supervise_node
+Multi-Agent Supervisor]
     
-    SUPER --> CLASSIFY[Classify domain(s)\nDesktop, Web, Calendar, Music, Social, Browser, Code, System]
-    CLASSIFY --> DISPATCH[Dispatch to sub-agents\nLangGraph Send API]
+    SUPER --> CLASSIFY{use_supervisor setting?}
+    CLASSIFY -->|False| PLAN[plan_node
+All tools available]
+    CLASSIFY -->|True| CLASSIFY_LLM[LLM Domain Classifier
+PydanticAgent with multi-domain prompt]
     
-    DISPATCH --> DESKTOP[DesktopUIAgent\nTools: click, type, open_app, observe]
-    DISPATCH --> WEB[WebAgent\nTools: web_search, browser_*]
-    DISPATCH --> CAL[CalendarAgent\nTools: calendar_read, gmail_read]
-    DISPATCH --> MUSIC[MusicAgent\nTools: youtube_*, music_play]
-    DISPATCH --> SOCIAL[SocialAgent\nTools: twitter_post, linkedin_post, telegram_send, whatsapp_send, discord_send, email_send]
-    DISPATCH --> BROWSER[BrowserAgent\nTools: browser_control (15+ actions)]
-    DISPATCH --> CODE[CodeAgent\nTools: dev_agent, code_helper, shell]
-    DISPATCH --> SYSTEM[SystemAgent\nTools: system_status, weather, flight_finder, reminder, monitor_control]
-    DISPATCH --> MEMORY[MemoryAgent\nTools: remember, recall, forget]
-    DISPATCH --> SETTINGS[SettingsAgent\nTools: update_settings]
+    CLASSIFY_LLM --> PARSE[Parse JSON output
+domains + confidence + reason]
+    PARSE --> RESOLVE[resolve_allowed_tools
+Union of domain tools + GENERAL]
     
-    DESKTOP --> FANIN[Fan-in: Collect results]
-    WEB --> FANIN
-    CAL --> FANIN
-    MUSIC --> FANIN
-    SOCIAL --> FANIN
-    BROWSER --> FANIN
-    CODE --> FANIN
-    SYSTEM --> FANIN
-    MEMORY --> FANIN
-    SETTINGS --> FANIN
+    RESOLVE --> CONFIDENCE{confidence >= 0.4?}
+    CONFIDENCE -->|Yes| RETURN[Return SupervisorResult
+domains, confidence, reason, allowed_tools, dispatch_id]
+    CONFIDENCE -->|No| FALLBACK[Fallback: GENERAL
+All tools available]
     
-    FANIN --> SYNTHESIZE[Supervisor synthesizes\nFinal response + Content Panel updates]
-    SYNTHESIZE --> RESPOND[Stream response + emit content_update]
+    RETURN --> PLAN[plan_node
+build_structured_context filters to allowed_tools]
+    FALLBACK --> PLAN
+    
+    PLAN --> EXECUTE[execute_step_node
+Authorization: tool must be in allowed_tools]
+    EXECUTE --> HEAL[heal_node
+HealerAgent.diagnose_and_fix filters to allowed_tools]
+    
+    EXECUTE -->|Success| MORE{More steps?}
+    MORE -->|Yes| EXECUTE
+    MORE -->|No| REVIEW[review_node
+Post-task lesson extraction]
+    HEAL -->|Healed| EXECUTE
+    HEAL -->|Failed| REPLAN[replan_node]
 ```
 
-**Each sub-agent has:**
-- Small, domain-specific system prompt
-- Restricted tool set (only their domain)
-- Parallel execution via LangGraph `Send` API
+### Implementation Details
+
+**Supervisor runs ONCE** at the start of the graph (after `observe_node`, before `plan_node`). It does not use LangGraph `Send` API for sub-agent dispatch — instead it produces a `SupervisorResult` with an `allowed_tools` list that is threaded through three enforcement points:
+
+| Enforcement Point | Location | How it works |
+|---|---|---|
+| **Planner visibility** | `plan_node` → `build_structured_context` | Filters the tool list shown to the LLM; only `allowed_tools` are visible |
+| **Executor authorization** | `execute_step_node` | Rejects any step whose tool is not in `allowed_tools` (returns error) |
+| **Healer visibility** | `heal_node` → `HealerAgent.diagnose_and_fix` | Only suggests replacement tools within `allowed_tools` scope |
+
+**Domain Classification:**
+- 10 domains: `WEB`, `CALENDAR`, `MAIL`, `BROWSER`, `MUSIC`, `SOCIAL`, `CODE`, `DESKTOP_UI`, `SHELL`, `GENERAL`
+- Multi-domain supported (e.g., "check calendar and email summary" → `CALENDAR`, `MAIL`)
+- Tool metadata lives on `BaseTool.domain` (not hardcoded mapping)
+- `GENERAL` tools always included; if `GENERAL` in domains → all tools returned
+
+**Fallback Behavior (never raises):**
+1. Classifier exception → `GENERAL` with all tools
+2. Confidence < 0.4 → `GENERAL` with all tools
+3. Parse failure → `GENERAL` with all tools
+
+**WebSocket Events:**
+- `multi_agent_dispatch` — emitted on every supervisor decision (domains, confidence, allowed_tools, dispatch_id)
+- `graph_node_status` — `SUPERVISE` node status (running/done)
+
+**Metrics:**
+- `SupervisorMetrics` tracks: total dispatches, domain distribution, avg confidence, avg tool scope size, fallback rate
+
+**Backward Compatibility:**
+- `AgentRuntime` (legacy, `USE_LANGGRAPH=false`) passes `allowed_tools=None` → unrestricted
+- `use_supervisor` setting toggles the feature (default: `false`)
 
 ---
 

@@ -684,13 +684,28 @@ class Session:
             })
         elif msg_type == "cancel_execution":
             thread_id = payload.get("thread_id") or self.thread_id
+            
+            # Immediately stop any speech/voice synthesis output
+            if hasattr(self, 'voice_pipeline') and self.voice_pipeline:
+                try:
+                    self.voice_pipeline.stop_speaking()
+                except Exception as e:
+                    logger.warning("Failed to stop voice playback on cancellation", error=str(e))
+
             # Cancel legacy AgentRuntime path
             if thread_id in self._active_runtimes:
                 self._active_runtimes[thread_id].request_cancel()
+            
             # Cancel LangGraph / message task path (covers both USE_LANGGRAPH=true and false)
             if thread_id in self._message_tasks and not self._message_tasks[thread_id].done():
                 self._message_tasks[thread_id].cancel()
                 logger.info("Cancelled message task for thread", thread_id=thread_id)
+
+            # Cancel singular JSON plan message task path
+            if hasattr(self, '_message_task') and self._message_task and not self._message_task.done():
+                self._message_task.cancel()
+                logger.info("Cancelled singular JSON plan message task")
+
             await self.send_message("agent_state", {
                 "state": "idle",
                 "goal": None,
@@ -914,6 +929,7 @@ class Session:
             settings.active_theme = payload.get("active_theme", settings.active_theme)
             settings.long_term_memory_enabled = bool(payload.get("long_term_memory_enabled", settings.long_term_memory_enabled))
             settings.use_langgraph = bool(payload.get("use_langgraph", settings.use_langgraph))
+            settings.use_supervisor = bool(payload.get("use_supervisor", settings.use_supervisor))
             
             # Wake word settings
             raw_wake = payload.get("wake_words")
@@ -988,6 +1004,7 @@ class Session:
                 settings.proactive_enabled,
                 settings.proactive_cooldown_minutes,
                 settings.use_langgraph,
+                settings.use_supervisor,
             )
 
             # Propagate to running voice pipeline
@@ -1031,6 +1048,7 @@ class Session:
                 "custom_prompt": settings.custom_prompt,
                 "long_term_memory_enabled": settings.long_term_memory_enabled,
                 "use_langgraph": settings.use_langgraph,
+                "use_supervisor": settings.use_supervisor,
             })
 
             if getattr(self, "_session_active", False):
@@ -1150,6 +1168,8 @@ class ConnectionManager:
             "custom_prompt": getattr(settings, "custom_prompt", ""),
             "long_term_memory_enabled": getattr(settings, "long_term_memory_enabled", True),
             "remote_dashboard_enabled": getattr(settings, "remote_dashboard_enabled", False),
+            "use_langgraph": getattr(settings, "use_langgraph", True),
+            "use_supervisor": getattr(settings, "use_supervisor", False),
         })
         
         # Voice listening will be started via 'client_state' message from frontend

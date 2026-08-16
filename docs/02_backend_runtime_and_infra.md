@@ -83,7 +83,7 @@ Client disconnects → cleanup active tasks
 |-------------|---------|
 | `user_message` | Classify → AgentRuntime or LangGraph |
 | `run_json_plan` | Direct plan execution (no LLM) |
-| `cancel_execution` | `AgentRuntime.request_cancel()` |
+| `cancel_execution` | Cancel tasks, stop speech playback |
 | `pause_execution` | `AgentRuntime.pause()` |
 | `resume_execution` | `AgentRuntime.resume()` |
 | `update_settings` | `save_settings_to_env()` → rebuild deps → `settings_sync` |

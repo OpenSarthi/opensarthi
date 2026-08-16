@@ -64,7 +64,7 @@ Execute a pre-built JSON plan directly, bypassing LLM planning.
 
 ### `cancel_execution`
 
-Cancel the currently running task. Immediately cancels both the LLM inference task and the active tool task.
+Cancel the currently running task. Immediately cancels the LLM inference task, the active tool task, and terminates any active speech synthesis output.
 
 ```json
 {
@@ -445,10 +445,18 @@ Full settings state pushed to frontend on connect or after any update.
     "background_monitoring_enabled": false,
     "monitoring_interval_minutes": 30,
     "proactive_enabled": false,
-    "proactive_cooldown_minutes": 20
+    "proactive_cooldown_minutes": 20,
+    "use_langgraph": true,
+    "use_supervisor": false
   }
 }
 ```
+
+Note: API key values are **never** sent to the frontend. Only boolean `has_*_key` flags indicating whether a key is configured.
+
+**New fields:**
+- `use_langgraph` — Whether LangGraph engine is active (vs legacy AgentRuntime)
+- `use_supervisor` — Whether multi-agent supervisor domain routing is enabled
 
 Note: API key values are **never** sent to the frontend. Only boolean `has_*_key` flags indicating whether a key is configured.
 
@@ -795,18 +803,31 @@ Session memory summary created or consumed.
 
 ### `multi_agent_dispatch`
 
-Multi-agent supervisor dispatch event.
+Multi-agent supervisor dispatch event. Emitted when the supervisor classifies a task and resolves the allowed tool scope.
 
 ```json
 {
   "type": "multi_agent_dispatch",
   "payload": {
-    "supervisor_decision": "Dispatching to WebAgent and CalendarAgent",
+    "domains": ["web", "calendar"],
+    "confidence": 0.85,
+    "reason": "User asked to check calendar and search for related events",
+    "allowed_tools": ["web_search", "calendar_read", "gmail_read", "click", "type_text", "observe_desktop", ...],
     "sub_agents": ["WebAgent", "CalendarAgent"],
+    "dispatch_id": "uuid-v4",
     "thread_id": "8558d1f1-..."
   }
 }
 ```
+
+**Fields:**
+- `domains` — Ordered list of classified domains (most relevant first). Values: `web`, `calendar`, `mail`, `browser`, `music`, `social`, `code`, `desktop_ui`, `shell`, `general`
+- `confidence` — Classification confidence in [0, 1]
+- `reason` — Human-readable explanation of the routing decision
+- `allowed_tools` — Full list of tool names the planner/healer/executor may use (union of domain tools + GENERAL tools)
+- `sub_agents` — Logical agent names derived from domains (e.g., `web` → `WebAgent`)
+- `dispatch_id` — Stable UUID for correlation with metrics/logs
+- `thread_id` — Active conversation thread
 
 ---
 
