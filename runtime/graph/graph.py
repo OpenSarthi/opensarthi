@@ -36,6 +36,7 @@ from graph.nodes import (
     heal_node,
     review_node,
     chat_node,
+    supervise_node,
 )
 from graph.edges import (
     route_by_classification,
@@ -85,6 +86,7 @@ def build_graph(use_sqlite: bool = False) -> StateGraph:
     # ── Register nodes ──────────────────────────────────────────────────
     workflow.add_node("classify", classify_node)
     workflow.add_node("observe", observe_node)
+    workflow.add_node("supervise", supervise_node)
     workflow.add_node("plan", plan_node)
     workflow.add_node("execute", execute_step_node)
     workflow.add_node("heal", heal_node)
@@ -106,7 +108,8 @@ def build_graph(use_sqlite: bool = False) -> StateGraph:
         },
     )
 
-    workflow.add_edge("observe", "plan")
+    workflow.add_edge("observe", "supervise")
+    workflow.add_edge("supervise", "plan")
 
     workflow.add_conditional_edges(
         "plan",

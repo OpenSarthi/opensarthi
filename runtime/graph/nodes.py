@@ -131,6 +131,83 @@ async def classify_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         return {"classification": "TASK"}
 
 
+# ── supervise_node ───────────────────────────────────────────────────────────────
+async def supervise_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
+    """
+    Multi-agent supervisor: classify task into domain(s) and resolve allowed tools.
+
+    Runs ONCE per task before planning. Falls back to GENERAL (all tools) when
+    the supervisor is disabled or classification is unavailable.
+    """
+    from config import settings
+    from metrics import start_dispatch_timer, record_dispatch
+    ws = config["configurable"].get("ws_handler")
+    thread_id = config["configurable"].get("thread_id")
+    model = config["configurable"]["model"]
+    deps = config["configurable"].get("deps")
+    logger_instance = config["configurable"].get("dev_logger")
+
+    # If supervisor is disabled via settings, short-circuit with GENERAL (all tools)
+    if not getattr(settings, "use_supervisor", False):
+        logger.info("supervise_node: supervisor disabled — using all tools")
+        return {"supervisor_disabled": True}
+
+    if ws:
+        await ws.send_message("graph_node_status", {"node": "SUPERVISE", "status": "running"}, thread_id=thread_id)
+
+    from agents.supervisor import get_supervisor
+    import uuid
+
+    dispatch_id = str(uuid.uuid4())
+    supervisor = get_supervisor(ws_handler=ws, model=model, deps=deps, thread_id=thread_id)
+
+    start = start_dispatch_timer()
+    try:
+        result = await supervisor.classify(state.goal, dispatch_id=dispatch_id)
+        is_fallback = result.is_fallback()
+        record_dispatch(
+            domains=result.to_dict()["domains"],
+            confidence=result.confidence,
+            allowed_tools=result.allowed_tools,
+            start_time=start,
+            is_fallback=is_fallback,
+        )
+        update = {
+            "supervisor_domains": result.to_dict()["domains"],
+            "supervisor_confidence": result.confidence,
+            "supervisor_reason": result.reason,
+            "allowed_tools": result.allowed_tools,
+            "dispatch_id": dispatch_id,
+            "supervisor_result": result.to_dict(),
+        }
+        if logger_instance:
+            prompt_str = supervisor._build_classifier_prompt() if hasattr(supervisor, "_build_classifier_prompt") else None
+            logger_instance.log_supervisor_decision(
+                domains=result.to_dict()["domains"],
+                confidence=result.confidence,
+                reason=result.reason,
+                allowed_tools=result.allowed_tools,
+                dispatch_id=dispatch_id,
+                supervisor_prompt=prompt_str,
+            )
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "SUPERVISE", "status": "done"}, thread_id=thread_id)
+        return update
+    except Exception as e:
+        logger.warning("supervise_node failed; falling back to GENERAL", error=str(e))
+        # Record the fallback as a metrics event
+        record_dispatch(
+            domains=["general"],
+            confidence=0.0,
+            allowed_tools=[],
+            start_time=start,
+            is_fallback=True,
+        )
+        if ws:
+            await ws.send_message("graph_node_status", {"node": "SUPERVISE", "status": "done"}, thread_id=thread_id)
+        return {"supervisor_disabled": True, "allowed_tools": None}
+
+
 # ── observe_node ────────────────────────────────────────────────────────────────
 async def observe_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     """Take a desktop snapshot and recall relevant memories."""
@@ -220,6 +297,7 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         recalled_memories=reconstructed_recalled,
         summarized_context=state.summarized_context,
         auto_recalled_memories=reconstructed_prefs if reconstructed_prefs else None,
+        allowed_tools=state.allowed_tools,
     )
 
     logger_instance = config["configurable"].get("dev_logger")
@@ -310,7 +388,7 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     "goal": plan.goal or state.goal,
                     "steps": updates["cumulative_steps"],
                     "recovery_hint": plan.recovery_hint,
-                })
+                }, thread_id=thread_id)
 
                 # Emit the LLM's reasoning text (prose before the JSON block) so the frontend
                 # can show it as a collapsible "AI Reasoning" block.
@@ -318,8 +396,8 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     await ws.send_message("plan_reasoning", {
                         "text": text_response.strip(),
                         "attempt": state.retry_count,
-                        "thread_id": getattr(state, "thread_id", None),
-                    })
+                        "thread_id": thread_id,
+                    }, thread_id=thread_id)
 
                 # ── Smart overlay: only minimize when plan contains screen-interaction tools ──
                 SCREEN_TOOLS = {
@@ -332,7 +410,7 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     await ws.send_message("window_control", {
                         "action": "minimize_hint",
                         "reason": "Plan contains screen-interaction steps",
-                    })
+                    }, thread_id=thread_id)
         else:
             updates["final_response"] = text_response or "I couldn't generate a response."
             updates["plan_steps"] = []
@@ -392,7 +470,7 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
                 "description": f"[SKIPPED - already completed] {step.description or step.tool}",
                 "status": "success",
                 "result": "Step was already completed in a previous attempt — skipped.",
-            })
+            }, thread_id=thread_id)
         return {
             "current_step_index": idx + 1,
             "completed_actions": state.completed_actions,  # No new addition — already there
@@ -406,7 +484,32 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
             await ws.send_message("tool_error", {
                 "index": cumulative_idx, "error": err, "tool": step.tool,
                 "description": step.description, "args": step.args,
-            })
+            }, thread_id=thread_id)
+        updated_steps = list(state.cumulative_steps)
+        if cumulative_idx < len(updated_steps):
+            updated_steps[cumulative_idx] = {**updated_steps[cumulative_idx], "status": "error", "error": err}
+        return {
+            "last_tool_result": {"success": False, "error": err, "retryable": False},
+            "failed_actions": state.failed_actions + [f"{step.description}: {err}"],
+            "cumulative_steps": updated_steps,
+        }
+
+    # ── Supervisor tool authorization check ──
+    # If allowed_tools is set (supervisor active), reject steps using disallowed tools
+    if state.allowed_tools is not None and step.tool not in state.allowed_tools:
+        err = f"Tool '{step.tool}' not authorized for this task's domain(s). Allowed: {state.allowed_tools}"
+        logger.warning("execute_step_node: tool not in allowed_tools", tool=step.tool, allowed=state.allowed_tools)
+        if ws:
+            await ws.send_message("tool_error", {
+                "index": cumulative_idx, "error": err, "tool": step.tool,
+                "description": step.description, "args": step.args,
+            }, thread_id=thread_id)
+            await ws.send_message("tool_action", {
+                "tool": step.tool,
+                "description": f"[BLOCKED] {step.description or step.tool} — not in allowed tool scope",
+                "status": "error",
+                "result": err,
+            }, thread_id=thread_id)
         updated_steps = list(state.cumulative_steps)
         if cumulative_idx < len(updated_steps):
             updated_steps[cumulative_idx] = {**updated_steps[cumulative_idx], "status": "error", "error": err}
@@ -439,11 +542,11 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
         await ws.send_message("tool_started", {
             "index": cumulative_idx, "tool": step.tool,
             "description": step.description, "args": step.args,
-        })
+        }, thread_id=thread_id)
         await ws.send_message("tool_action", {
             "tool": step.tool, "description": step.description,
             "status": "running", "result": None,
-        })
+        }, thread_id=thread_id)
 
     # Update step status to running
     updated_steps = list(state.cumulative_steps)
@@ -475,7 +578,7 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
             await ws.send_message("tool_error", {
                 "index": cumulative_idx, "error": str(e), "tool": step.tool,
                 "description": step.description, "args": step.args,
-            })
+            }, thread_id=thread_id)
         if cumulative_idx < len(updated_steps):
             updated_steps[cumulative_idx] = {**updated_steps[cumulative_idx], "status": "error", "error": str(e)}
         logger_instance = config["configurable"].get("dev_logger")
@@ -502,17 +605,17 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
             "tool": step.tool, "description": step.description,
             "status": status_str,
             "result": res.observation if res.success else res.error,
-        })
+        }, thread_id=thread_id)
         if res.success:
             await ws.send_message("tool_completed", {
                 "index": cumulative_idx, "result": res.observation,
                 "tool": step.tool, "description": step.description, "args": step.args,
-            })
+            }, thread_id=thread_id)
         else:
             await ws.send_message("tool_error", {
                 "index": cumulative_idx, "error": res.error or "Unknown error",
                 "tool": step.tool, "description": step.description, "args": step.args,
-            })
+            }, thread_id=thread_id)
 
     # Update cumulative step status
     if cumulative_idx < len(updated_steps):
@@ -584,7 +687,7 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                 "tool": "self_heal",
                 "description": f"Self-healing limit exceeded for: {state.plan_steps[idx].get('tool')}",
                 "status": "error", "result": "Exceeded maximum self-healing attempts (2). Retrying with a new plan...",
-            })
+            }, thread_id=thread_id)
             await ws.send_message("graph_node_status", {"node": "HEAL", "status": "done"}, thread_id=thread_id)
         # Return state update with incremented attempts, but no patched steps, which triggers a replan edge
         return {"heal_attempts": {**state.heal_attempts, idx: attempts}}
@@ -598,7 +701,7 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
             "tool": "self_heal",
             "description": f"Self-healing: {step_data.get('description', step_data.get('tool'))}",
             "status": "running", "result": None,
-        })
+        }, thread_id=thread_id)
 
     try:
         from observation import DesktopObserver
@@ -614,6 +717,7 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
             description=step_data.get("description", step_data["tool"]),
             error=err_msg,
             screen_summary=screen_text,
+            allowed_tools=state.allowed_tools,
         )
 
         usage = getattr(healer, "last_usage", None)
@@ -623,6 +727,15 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
             await ws.accumulate_and_update_tokens(usage, thread_id=thread_id)
 
         accumulated = _accumulate_tokens(state, token_delta)
+
+        # Validate healed tool is in allowed_tools scope (if supervisor active)
+        if healed and state.allowed_tools is not None and healed["tool"] not in state.allowed_tools:
+            logger.warning(
+                "heal_node: healed tool outside allowed scope — rejecting",
+                healed_tool=healed["tool"],
+                allowed=state.allowed_tools,
+            )
+            healed = None
 
         if healed:
             # Patch the plan_steps with healed tool/args so execute_step_node retries it
@@ -656,7 +769,7 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     "description": f"Self-healing: {step_data.get('description')}",
                     "status": "success",
                     "result": f"Applying correction: {healed.get('description', healed['tool'])}",
-                })
+                }, thread_id=thread_id)
                 await ws.send_message("graph_node_status", {"node": "HEAL", "status": "done"}, thread_id=thread_id)
             return {
                 "plan_steps": updated_steps,
@@ -672,7 +785,7 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     "description": f"Self-healing: {step_data.get('description')}",
                     "status": "error",
                     "result": "No healing path found.",
-                })
+                }, thread_id=thread_id)
                 await ws.send_message("graph_node_status", {"node": "HEAL", "status": "done"}, thread_id=thread_id)
             return {
                 "heal_attempts": {**state.heal_attempts, idx: attempts},
@@ -883,7 +996,7 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     # Restore window overlay after task completes
     if ws:
         try:
-            await ws.send_message("window_control", {"action": "restore_hint"})
+            await ws.send_message("window_control", {"action": "restore_hint"}, thread_id=thread_id)
         except Exception:
             pass
 

@@ -52,6 +52,15 @@ class OpenSarthiState(BaseModel):
     is_paused: bool = False
     interrupt_before_tool: bool = False   # LangGraph interrupt() gate
 
+    # ── Supervisor (multi-domain routing) ────────────────────────────────
+    supervisor_disabled: bool = False      # Use of supervisor gated by settings.use_supervisor
+    supervisor_domains: list = Field(default_factory=list)   # List[str] domain values
+    supervisor_confidence: float = 0.0
+    supervisor_reason: Optional[str] = None
+    allowed_tools: Optional[list] = None   # Resolved tool-name whitelist (None = unrestricted)
+    dispatch_id: Optional[str] = None      # Stable id for telemetry/WebSocket correlation
+    supervisor_result: Optional[dict] = None  # Full SupervisorResult.to_dict() for UI/metrics
+
     # ── Final output ────────────────────────────────────────────────────
     final_response: Optional[str] = None
 
