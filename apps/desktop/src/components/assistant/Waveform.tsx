@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
 import type { VoiceState } from "../../lib/schemas";
 
 interface WaveformProps {
@@ -8,105 +7,132 @@ interface WaveformProps {
   level?: number;
 }
 
-const BAR_COUNT = 40;
+const BAR_COUNT = 90;
 
 export function Waveform({ voiceState }: WaveformProps) {
   const isListening = voiceState === "listening";
   const isSpeaking = voiceState === "speaking";
-  const isActive = isListening || isSpeaking;
+  const isProcessing = voiceState === "processing";
+  const isError = voiceState === "error";
+  const isActive = isListening || isSpeaking || isProcessing || isError;
 
-  // Live microphone amplitude analysis
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number>(0);
-  const [bars, setBars] = useState<number[]>(Array(BAR_COUNT).fill(0.08));
+  
+  // Array storing current display heights (0 to 1)
+  const [bars, setBars] = useState<number[]>(Array(BAR_COUNT).fill(0.05));
+  const currentBarsRef = useRef<number[]>(Array(BAR_COUNT).fill(0.05));
 
   useEffect(() => {
-    if (!isListening) {
-      // Tear down mic stream when not listening
-      cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-      analyserRef.current = null;
-      if (isSpeaking) {
-        // Gentle animated idle for speaking state
-        setBars(
-          Array.from({ length: BAR_COUNT }, (_, i) =>
-            0.15 + Math.abs(Math.sin(i * 0.7)) * 0.35
-          )
-        );
-      } else {
-        setBars(Array(BAR_COUNT).fill(0.08));
-      }
-      return;
+    // Microphone source setup when listening
+    if (isListening) {
+      let mounted = true;
+      navigator.mediaDevices
+        .getUserMedia({ audio: true, video: false })
+        .then((stream) => {
+          if (!mounted) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          streamRef.current = stream;
+          const ctx = new AudioContext();
+          const src = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 256;
+          analyser.smoothingTimeConstant = 0.8;
+          src.connect(analyser);
+          analyserRef.current = analyser;
+        })
+        .catch((err) => {
+          console.warn("Waveform: Microphone access denied or unavailable", err);
+        });
+
+      return () => {
+        mounted = false;
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        analyserRef.current = null;
+      };
     }
+  }, [isListening]);
 
-    // Set up mic → analyser
-    let mounted = true;
-    navigator.mediaDevices
-      .getUserMedia({ audio: true, video: false })
-      .then((stream) => {
-        if (!mounted) { stream.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = stream;
-        const ctx = new AudioContext();
-        const src = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 128;
-        analyser.smoothingTimeConstant = 0.80;
-        src.connect(analyser);
-        analyserRef.current = analyser;
+  // Main animation render loop (updates state every frame)
+  useEffect(() => {
+    let t = 0;
+    const data = analyserRef.current ? new Uint8Array(analyserRef.current.frequencyBinCount) : null;
 
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        const tick = () => {
-          if (!mounted) return;
-          analyser.getByteFrequencyData(data);
-          // Map frequency bins → bar heights (0–1)
+    const tick = () => {
+      t += 0.05;
+      const analyser = analyserRef.current;
+      if (analyser && data) {
+        analyser.getByteFrequencyData(data);
+      }
+
+      // 4-5 waves configuration across BAR_COUNT
+      const waveCount = 4.5;
+      const freq = (waveCount * 2 * Math.PI) / BAR_COUNT;
+
+      const targetBars = Array.from({ length: BAR_COUNT }, (_, i) => {
+        // Flat boundary taper allowing multiple cycles to show across the full width (matches Mark-L aesthetics)
+        const taper = 0.45 + 0.55 * Math.sin((i / (BAR_COUNT - 1)) * Math.PI);
+
+        // 1. MIC ACTIVE MODE
+        if (isListening && analyser && data) {
           const step = Math.floor(data.length / BAR_COUNT);
-          const newBars = Array.from({ length: BAR_COUNT }, (_, i) => {
-            const bin = data[Math.min(i * step, data.length - 1)] / 255;
-            // Bell-curve taper so center bars are taller
-            const taper = 1 - Math.abs((i / (BAR_COUNT - 1)) - 0.5) * 0.5;
-            return Math.max(0.06, bin * taper);
-          });
-          setBars(newBars);
-          rafRef.current = requestAnimationFrame(tick);
-        };
-        rafRef.current = requestAnimationFrame(tick);
-      })
-      .catch(() => {
-        // Mic not available — fall back to animated bars
-        if (!mounted) return;
-        let t = 0;
-        const tick = () => {
-          t += 0.07;
-          setBars(
-            Array.from({ length: BAR_COUNT }, (_, i) =>
-              Math.max(0.06, 0.42 + Math.sin(t + i * 0.5) * 0.38)
-            )
-          );
-          rafRef.current = requestAnimationFrame(tick);
-        };
-        rafRef.current = requestAnimationFrame(tick);
+          const binVal = data[Math.min(i * step, data.length - 1)] / 255;
+          // Background organic breathing wave
+          const baseWave = 0.05 + 0.04 * Math.sin(t - i * freq) * taper;
+          // React strongly to voice input (raise high when user speaks, drop to flat normal base when silent/muted)
+          return Math.max(0.04, binVal * 2.5 * taper + baseWave);
+        }
+
+        // 2. SPEAKING MODE (Simulate dynamic spoken syllable envelope and silent pauses)
+        if (isSpeaking) {
+          const speechEnvelope = Math.max(0.08, Math.sin(t * 1.6) * 0.75 + Math.cos(t * 0.7) * 0.35);
+          const waveA = 0.45 * Math.sin(t - i * freq);
+          const waveB = 0.20 * Math.sin(1.8 * t + i * 1.5 * freq);
+          const activeWave = (waveA + waveB) * taper * speechEnvelope;
+          return Math.max(0.04, 0.06 + activeWave);
+        }
+
+        // 3. PROCESSING/THINKING MODE (Fast moving pulse)
+        if (isProcessing) {
+          const wave = 0.35 * Math.sin(2.5 * t - i * 1.5 * freq);
+          return Math.max(0.04, 0.08 + wave * taper);
+        }
+
+        // 4. ERROR STATE (Low red flat frozen wave)
+        if (isError) {
+          return Math.max(0.04, 0.08 + 0.04 * Math.sin(t * 0.2 + i * freq * 2) * taper);
+        }
+
+        // 5. IDLE BREATHING STATE
+        const idleWave = 0.06 * Math.sin(t * 0.6 - i * freq);
+        return Math.max(0.04, 0.06 + idleWave * taper);
       });
 
-    return () => {
-      mounted = false;
-      cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-      analyserRef.current = null;
-    };
-  }, [isListening, isSpeaking]);
+      // Linear interpolation (lerp) for smooth transitions between states and frames
+      const lerped = currentBarsRef.current.map((curr, i) => {
+        const target = targetBars[i];
+        const factor = isListening && analyser ? 0.25 : 0.15; // Faster reaction for live mic
+        const val = curr + (target - curr) * factor;
+        currentBarsRef.current[i] = val;
+        return val;
+      });
 
-  // For speaking state: gentle pulsing animation
-  const speakBars = isSpeaking && !isListening;
+      setBars(lerped);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [isListening, isSpeaking, isProcessing, isError]);
 
   const barColor =
-    voiceState === "error"   ? "var(--danger)"
+    voiceState === "error" ? "var(--danger)"
     : voiceState === "speaking" ? "var(--success)"
     : "var(--accent)";
-
-  const halfCount = Math.ceil(BAR_COUNT / 2);
 
   return (
     <div
@@ -114,73 +140,62 @@ export function Waveform({ voiceState }: WaveformProps) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        gap: "2px",
-        height: "52px",
+        height: "60px",
         width: "100%",
-        padding: "0 8px",
+        padding: "0 4px",
       }}
       aria-label={`Voice waveform — ${voiceState}`}
     >
-      {/* Upper + lower mirrored bars */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1px", width: "100%" }}>
-        {/* Upper half */}
-        <div style={{ display: "flex", alignItems: "flex-end", gap: "2px", height: "24px", width: "100%", justifyContent: "center" }}>
-          {bars.slice(0, halfCount).map((h, i) => (
-            <motion.div
+        
+        {/* Top half of waveform */}
+        <div style={{ display: "flex", alignItems: "flex-end", gap: "1px", height: "28px", width: "100%", justifyContent: "center" }}>
+          {bars.map((h, i) => (
+            <div
               key={`u-${i}`}
-              animate={
-                speakBars
-                  ? { scaleY: [Math.max(0.08, 0.28 + Math.sin(i * 1.1) * 0.2), Math.max(0.08, 0.65 + Math.sin(i * 1.1 + 1.5) * 0.3), Math.max(0.08, 0.28 + Math.sin(i * 1.1) * 0.2)] }
-                  : { scaleY: Math.max(0.06, h) }
-              }
-              transition={
-                speakBars
-                  ? { duration: 0.6 + (i % 4) * 0.09, delay: (i / halfCount) * 0.25, repeat: Infinity, ease: "easeInOut" }
-                  : { duration: 0.07, ease: "linear" }
-              }
               style={{
                 flex: 1,
-                maxWidth: "5px",
-                height: "100%",
-                borderRadius: "2px 2px 0 0",
-                background: `linear-gradient(to top, ${barColor}, rgba(255,255,255,0.85))`,
-                transformOrigin: "bottom",
-                opacity: isActive ? 0.9 : 0.15,
-                boxShadow: isActive ? `0 0 5px ${barColor}88` : "none",
+                maxWidth: "3px",
+                height: `${Math.max(4, h * 100)}%`,
+                borderRadius: "1.5px 1.5px 0 0",
+                background: `linear-gradient(to top, ${barColor}, rgba(255, 255, 255, 0.95))`,
+                opacity: isActive ? 0.95 : 0.2,
+                boxShadow: isActive ? `0 -1px 4px ${barColor}` : "none",
+                transition: "height 0.05s linear",
               }}
             />
           ))}
         </div>
-        {/* Center line */}
-        <div style={{ height: "1px", width: "100%", background: isActive ? `${barColor}55` : "transparent" }} />
-        {/* Lower mirror half */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "2px", height: "24px", width: "100%", justifyContent: "center" }}>
-          {bars.slice(0, halfCount).map((h, i) => (
-            <motion.div
+
+        {/* Dynamic center baseline */}
+        <div 
+          style={{ 
+            height: "1px", 
+            width: "100%", 
+            background: barColor,
+            opacity: isActive ? 0.6 : 0.1,
+          }} 
+        />
+
+        {/* Bottom mirror half (reflection effect) */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "1px", height: "28px", width: "100%", justifyContent: "center" }}>
+          {bars.map((h, i) => (
+            <div
               key={`d-${i}`}
-              animate={
-                speakBars
-                  ? { scaleY: [Math.max(0.08, 0.28 + Math.sin(i * 1.1) * 0.2), Math.max(0.08, 0.65 + Math.sin(i * 1.1 + 1.5) * 0.3), Math.max(0.08, 0.28 + Math.sin(i * 1.1) * 0.2)] }
-                  : { scaleY: Math.max(0.06, h) }
-              }
-              transition={
-                speakBars
-                  ? { duration: 0.6 + (i % 4) * 0.09, delay: (i / halfCount) * 0.25, repeat: Infinity, ease: "easeInOut" }
-                  : { duration: 0.07, ease: "linear" }
-              }
               style={{
                 flex: 1,
-                maxWidth: "5px",
-                height: "100%",
-                borderRadius: "0 0 2px 2px",
-                background: `linear-gradient(to bottom, ${barColor}, rgba(255,255,255,0.4))`,
-                transformOrigin: "top",
-                opacity: isActive ? 0.5 : 0.08,
-                boxShadow: isActive ? `0 0 3px ${barColor}44` : "none",
+                maxWidth: "3px",
+                height: `${Math.max(4, h * 85)}%`, // slightly compressed reflection height
+                borderRadius: "0 0 1.5px 1.5px",
+                background: `linear-gradient(to bottom, ${barColor}, rgba(255, 255, 255, 0.05))`,
+                opacity: isActive ? 0.35 : 0.08, // soft reflection transparency
+                boxShadow: isActive ? `0 1px 3px ${barColor}` : "none",
+                transition: "height 0.05s linear",
               }}
             />
           ))}
         </div>
+
       </div>
     </div>
   );

@@ -9,10 +9,23 @@ export function useTauriEvent<T = unknown>(
   handler: (payload: T) => void
 ) {
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    listen<T>(event, (e) => handler(e.payload)).then((fn) => {
-      unlisten = fn;
+    let active = true;
+    let unlistenFn: UnlistenFn | undefined;
+
+    listen<T>(event, (e) => {
+      if (active) handler(e.payload);
+    }).then((fn) => {
+      unlistenFn = fn;
+      if (!active) {
+        unlistenFn();
+      }
     });
-    return () => unlisten?.();
+
+    return () => {
+      active = false;
+      if (unlistenFn) {
+        unlistenFn();
+      }
+    };
   }, [event, handler]);
 }
