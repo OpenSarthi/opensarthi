@@ -26,6 +26,8 @@ class AgentDependencies(BaseModel):
     skills: List[str] = []
     user_name: str = ""
     custom_prompt: str = ""
+    # Tool sandboxing for multi-agent supervisor (restrict tool access per-domain)
+    allowed_tools: Optional[List[str]] = None
 
 
 # ─── Overhauled System Prompt ──────────────────────────────────────────────
@@ -327,6 +329,7 @@ def build_structured_context(
     recalled_memories: list = None,
     summarized_context: str = None,
     auto_recalled_memories: list = None,
+    allowed_tools: Optional[List[str]] = None,
 ) -> str:
     """Build the structured context string injected before every agent call.
 
@@ -460,6 +463,12 @@ EXECUTION CONTEXT:
         from tools.registry import all_tools
         from tools.base import RiskLevel
         tools = all_tools()
+
+        # Filter tools by allowed_tools if specified (for multi-agent supervisor sandboxing)
+        if allowed_tools is not None:
+            allowed_set = set(allowed_tools)
+            tools = [t for t in tools if t.name in allowed_set]
+
         tool_lines = [
             f"  • {t.name}({t.args_schema_summary()}) — {t.description[:80]}"
             for t in tools

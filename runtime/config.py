@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     custom_prompt: str = ""
     long_term_memory_enabled: bool = False
     use_langgraph: bool = True
+    use_supervisor: bool = True
 
     # Native Audio Pipeline (Mark-L speed feature)
     native_audio_pipeline: str = "auto"  # "auto" | "gemini-live" | "openai-realtime" | "offline"
@@ -122,6 +123,7 @@ def save_settings_to_env(
     proactive_enabled: bool = False,
     proactive_cooldown_minutes: int = 20,
     use_langgraph: bool = True,
+    use_supervisor: bool = False,
 ):
     import json
     # Always write to the writable user's home configuration directory (safe for read-only AppImage filesystems!)
@@ -167,6 +169,7 @@ def save_settings_to_env(
         f.write(f"PROACTIVE_ENABLED={'True' if proactive_enabled else 'False'}\n")
         f.write(f"PROACTIVE_COOLDOWN_MINUTES={proactive_cooldown_minutes}\n")
         f.write(f"USE_LANGGRAPH={'True' if use_langgraph else 'False'}\n")
+        f.write(f"USE_SUPERVISOR={'True' if use_supervisor else 'False'}\n")
         if user_name:
             f.write(f"USER_NAME={user_name}\n")
         if user_skills:

@@ -115,6 +115,32 @@ class DevLogger:
         except Exception as e:
             self.log(f"Error logging tool call: {e}")
 
+    def log_supervisor_decision(self, domains: list, confidence: float, reason: str, allowed_tools: list, dispatch_id: str = None, supervisor_prompt: str = None):
+        """Log the supervisor's domain classification and tool resolution."""
+        if not self.is_dev_mode:
+            return
+        try:
+            if supervisor_prompt:
+                prompt_path = os.path.join(self.run_dir, "supervisor_prompt.txt")
+                with open(prompt_path, "w", encoding="utf-8") as f:
+                    f.write(supervisor_prompt)
+
+            filepath = os.path.join(self.run_dir, "supervisor_decision.json")
+            record = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "domains": domains,
+                "confidence": confidence,
+                "reason": reason,
+                "allowed_tools": allowed_tools,
+                "dispatch_id": dispatch_id,
+                "tool_count": len(allowed_tools) if allowed_tools else 0,
+            }
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(record, f, indent=2)
+            self.log(f"Supervisor: domains={domains}, confidence={confidence:.2f}, tools={len(allowed_tools) if allowed_tools else 0}")
+        except Exception as e:
+            self.log(f"Error logging supervisor decision: {e}")
+
     def finalize(self, final_response: str):
         if not self.is_dev_mode:
             return
