@@ -441,7 +441,7 @@ class VoicePipeline:
 ### Fallback Strategy
 
 - **Auto mode**: Try Gemini Live → OpenAI Realtime → Offline pipeline
-- **Settings**: User can force specific pipeline in Settings → Voice → Native Audio Pipeline
+- **Settings**: When using Google Gemini, users can toggle "NATIVE VOICE PIPELINE (GEMINI LIVE)" via settings (`use_native_voice: True`). When toggled ON, it initializes the native WebSocket session with bidirectional audio. When toggled OFF, it falls back to the offline wake-word detector and local TTS.
 - **Seamless switch**: Can switch pipelines mid-session without losing context
 
 ---

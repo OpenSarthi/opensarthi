@@ -526,6 +526,7 @@ Frontend settings modal
   → update_settings WS message
   → websocket.py updates settings object in-memory
   → save_settings_to_env() writes to .env file
+  → sync_voice_pipeline() toggles native voice (Gemini Live) or offline wake loop
   → Deps rebuilt with new skills/name/prompt
   → settings_sync sent back to frontend
 ```

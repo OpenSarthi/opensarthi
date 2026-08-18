@@ -121,7 +121,8 @@ Update one or more settings. Empty string values for API keys are ignored (no ac
     "long_term_memory_enabled": true,
     "user_name": "Kartik",
     "user_skills": ["general", "developer", "desktop_automation"],
-    "custom_prompt": "I prefer concise answers."
+    "custom_prompt": "I prefer concise answers.",
+    "use_native_voice": false
   }
 }
 ```
@@ -402,6 +403,19 @@ Connection status event (emitted on connect/disconnect).
 }
 ```
 
+### `activity_log`
+
+Arbitrary system or compiler status messages pushed to the client activity log HUD.
+
+```json
+{
+  "type": "activity_log",
+  "payload": {
+    "text": "SYS: Initializing startup briefing..."
+  }
+}
+```
+
 ### `settings_sync`
 
 Full settings state pushed to frontend on connect or after any update.
@@ -447,7 +461,8 @@ Full settings state pushed to frontend on connect or after any update.
     "proactive_enabled": false,
     "proactive_cooldown_minutes": 20,
     "use_langgraph": true,
-    "use_supervisor": false
+    "use_supervisor": false,
+    "use_native_voice": false
   }
 }
 ```
@@ -457,6 +472,7 @@ Note: API key values are **never** sent to the frontend. Only boolean `has_*_key
 **New fields:**
 - `use_langgraph` — Whether LangGraph engine is active (vs legacy AgentRuntime)
 - `use_supervisor` — Whether multi-agent supervisor domain routing is enabled
+- `use_native_voice` — Whether direct native voice connection (Gemini Live) is enabled
 
 Note: API key values are **never** sent to the frontend. Only boolean `has_*_key` flags indicating whether a key is configured.
 
