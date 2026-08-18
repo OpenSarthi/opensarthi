@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop, Paperclip } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop, Paperclip, Eye } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
@@ -110,6 +110,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const [showLogsPanel, setShowLogsPanel] = useState(false);
   const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
   const [showRemotePopover, setShowRemotePopover] = useState(false);
+  const [showContentDrawer, setShowContentDrawer] = useState(false);
 
   // Custom theme color picker, mobile remote modal, and uptime tracking states
   const [showRemoteModal, setShowRemoteModal] = useState(false);
@@ -183,6 +184,15 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
       setOnlineSince(null);
     }
   }, [isConnected]);
+
+  // Auto-open content drawer when new content arrives
+  useEffect(() => {
+    if (contentPanel.contentType) {
+      setShowContentDrawer(true);
+    } else {
+      setShowContentDrawer(false);
+    }
+  }, [contentPanel.contentType]);
 
   const getUptimeString = () => {
     if (!isConnected || !onlineSince) return "00h 00m";
@@ -1723,16 +1733,6 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                       )}
                     </div>
 
-                    {/* NET Speed */}
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>
-                      <span>NET SPEED:</span>
-                      <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-                        {systemMetrics.net_kbps >= 1024
-                          ? `${(systemMetrics.net_kbps / 1024).toFixed(1)} MB/s`
-                          : `${systemMetrics.net_kbps.toFixed(0)} KB/s`}
-                      </span>
-                    </div>
-
                     {/* TEMP */}
                     <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1746,6 +1746,16 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                           <div style={{ width: `${Math.min(100, (systemMetrics.temp / 95) * 100)}%`, height: "100%", background: metricColor((systemMetrics.temp / 95) * 100), transition: "width 1s ease-out, background 1s ease-out" }} />
                         </div>
                       )}
+                    </div>
+
+                    {/* NET Speed */}
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>
+                      <span>NET SPEED:</span>
+                      <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
+                        {systemMetrics.net_kbps >= 1024
+                          ? `${(systemMetrics.net_kbps / 1024).toFixed(1)} MB/s`
+                          : `${systemMetrics.net_kbps.toFixed(0)} KB/s`}
+                      </span>
                     </div>
                   </div>
 
@@ -2506,7 +2516,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           </div>
 
           {/* RIGHT PANEL */}
-          <div data-panel="right" style={{ width: `${rightWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div data-panel="right" style={{ width: `${rightWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px", position: "relative" }}>
 
             {/* ACTIVITY LOG */}
             <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -2521,25 +2531,51 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <MatrixRainBackground voiceState={voiceState} />
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-                <div className="hud-panel-title">// ACTIVE TASK PLAN</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                  <div className="hud-panel-title">// ACTIVE TASK PLAN</div>
+                  {contentPanel.contentType && (
+                    <button
+                      onClick={() => setShowContentDrawer(!showContentDrawer)}
+                      title={showContentDrawer ? "Close Results" : "View Results"}
+                      style={{
+                        background: showContentDrawer ? "var(--accent)" : "transparent",
+                        border: "1px solid var(--border)",
+                        borderRadius: "4px",
+                        color: showContentDrawer ? "#000" : "var(--text-secondary)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "4px 8px",
+                        cursor: "pointer",
+                        marginRight: "12px",
+                        marginTop: "4px",
+                        boxShadow: showContentDrawer ? "0 0 6px var(--accent)" : "none",
+                        transition: "all 0.2s ease",
+                      }}
+                      onMouseOver={e => {
+                        if (!showContentDrawer) {
+                          e.currentTarget.style.color = "var(--accent)";
+                          e.currentTarget.style.borderColor = "var(--accent)";
+                        }
+                      }}
+                      onMouseOut={e => {
+                        if (!showContentDrawer) {
+                          e.currentTarget.style.color = "var(--text-secondary)";
+                          e.currentTarget.style.borderColor = "var(--border)";
+                        }
+                      }}
+                    >
+                      <Eye size={13} />
+                    </button>
+                  )}
+                </div>
                 <div className="activity-scroll-container" style={{ padding: "12px", overflowY: "auto", flex: 1, minHeight: 0 }}>
                   <ActionLog plan={currentPlan} selectedTaskId={selectedTaskId} messages={messages} />
                 </div>
               </div>
             </div>
 
-            {/* CONTENT VIEW */}
-            {contentPanel.contentType && (
-              <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <MatrixRainBackground voiceState={voiceState} />
-                <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-                  <div className="hud-panel-title">// CONTENT VIEW</div>
-                  <div style={{ flex: 1, padding: "12px", overflowY: "auto", minHeight: 0 }}>
-                    <ContentPanelView contentType={contentPanel.contentType} data={contentPanel.contentData} />
-                  </div>
-                </div>
-              </div>
-            )}
+
             <div className="hud-panel" style={{ padding: "12px", display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0, overflow: "hidden" }}>
               <MatrixRainBackground voiceState={voiceState} />
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: "8px", flex: 1 }}>
@@ -2579,6 +2615,65 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 </div>
               </div>
             </div>
+
+            {/* Content View Side Panel Overlay */}
+            <AnimatePresence>
+              {showContentDrawer && contentPanel.contentType && (
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 15 }}
+                  transition={{ duration: 0.2 }}
+                  className="hud-panel"
+                  style={{
+                    position: "absolute",
+                    top: "calc(50% + 8px)", // top of Active Task Plan
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    background: "rgba(10, 12, 10, 0.98)",
+                    backdropFilter: "blur(20px)",
+                    border: "1px solid var(--border-accent)",
+                    boxShadow: "0 10px 40px rgba(0,0,0,0.8)",
+                    zIndex: 50,
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                  }}
+                >
+                  <MatrixRainBackground voiceState={voiceState} />
+                  <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+                    {/* Header */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", borderBottom: "1px solid var(--border)" }}>
+                      <span style={{ fontSize: "11px", fontWeight: "bold", color: "var(--accent)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em" }}>
+                        // CONTENT VIEW
+                      </span>
+                      <button
+                        onClick={() => setShowContentDrawer(false)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--text-secondary)",
+                          cursor: "pointer",
+                          padding: "4px",
+                          display: "flex",
+                          alignItems: "center",
+                          transition: "color 0.15s ease",
+                        }}
+                        onMouseOver={e => e.currentTarget.style.color = "var(--accent)"}
+                        onMouseOut={e => e.currentTarget.style.color = "var(--text-secondary)"}
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                    {/* Content */}
+                    <div style={{ flex: 1, padding: "12px", overflowY: "auto", minHeight: 0 }} className="custom-scrollbar">
+                      <ContentPanelView contentType={contentPanel.contentType} data={contentPanel.contentData} />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </motion.div>
       </AnimatePresence>
@@ -2733,6 +2828,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           </motion.div>
         )}
       </AnimatePresence>
+
+
     </div>
   );
 }

@@ -9,22 +9,28 @@ import {
 } from "../../lib/models";
 
 const SKILLS = [
-  { id: "general",           icon: "🤖", label: "General Assistant",    desc: "Balanced chat & everyday help" },
-  { id: "desktop_automation",icon: "🖥️", label: "Desktop Automation",   desc: "Control apps, click, type on screen" },
-  { id: "developer",         icon: "💻", label: "Developer & Coding",   desc: "Code, debug, terminal & Git" },
-  { id: "system_admin",      icon: "🔧", label: "System Admin",         desc: "System management & shell commands" },
-  { id: "media",             icon: "🎵", label: "Media & Music",        desc: "Spotify, YouTube & media controls" },
-  { id: "writing",           icon: "✍️", label: "Writing & Content",    desc: "Drafts, blogs, emails & editing" },
-  { id: "research",          icon: "🔬", label: "Research & Analysis",  desc: "Deep analysis & smart summaries" },
-  { id: "web",               icon: "🌐", label: "Web & Browser",        desc: "Browser automation & web tasks" },
-  { id: "files",             icon: "📂", label: "Files & Data",         desc: "File management & data processing" },
-  { id: "privacy",           icon: "🔒", label: "Privacy Mode",         desc: "Local model preferred, minimal data" },
-  { id: "home_user",         icon: "🏠", label: "Home User",            desc: "Friendly, simple & approachable" },
-  { id: "gaming",            icon: "🎮", label: "Gaming & Fun",         desc: "Gaming tips & entertainment" },
+  { id: "general",           icon: "🤖", label: "General Assistant",    desc: "Balanced chat & everyday help", color: "#00FF66" },
+  { id: "desktop_automation",icon: "🖥️", label: "Desktop Automation",   desc: "Control apps, click, type on screen", color: "#00D9FF" },
+  { id: "developer",         icon: "💻", label: "Developer & Coding",   desc: "Code, debug, terminal & Git", color: "#7B2FFE" },
+  { id: "system_admin",      icon: "🔧", label: "System Admin",         desc: "System management & shell commands", color: "#FF5722" },
+  { id: "media",             icon: "🎵", label: "Media & Music",        desc: "Spotify, YouTube & media controls", color: "#FFEB3B" },
+  { id: "writing",           icon: "✍️", label: "Writing & Content",    desc: "Drafts, blogs, emails & editing", color: "#E91E63" },
+  { id: "research",          icon: "🔬", label: "Research & Analysis",  desc: "Deep analysis & smart summaries", color: "#9C27B0" },
+  { id: "web",               icon: "🌐", label: "Web & Browser",        desc: "Browser automation & web tasks", color: "#2196F3" },
+  { id: "files",             icon: "📂", label: "Files & Data",         desc: "File management & data processing", color: "#4CAF50" },
+  { id: "privacy",           icon: "🔒", label: "Privacy Mode",         desc: "Local model preferred, minimal data", color: "#607D8B" },
+  { id: "home_user",         icon: "🏠", label: "Home User",            desc: "Friendly, simple & approachable", color: "#FF9800" },
+  { id: "gaming",            icon: "🎮", label: "Gaming & Fun",         desc: "Gaming tips & entertainment", color: "#3F51B5" },
 ];
 
 const ALL_SKILL_IDS = SKILLS.map(s => s.id);
 
+const hexToRgba = (hex: string, alpha: number) => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
 
 const selectStyle: React.CSSProperties = {
   width: "100%",
@@ -330,24 +336,25 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
       exit={{ opacity: 0 }}
       style={{
         position: "fixed", inset: 0, zIndex: 9999,
-        background: "radial-gradient(ellipse at 20% 50%, hsl(270,60%,8%) 0%, hsl(230,40%,4%) 60%, hsl(0,0%,2%) 100%)",
-        display: "flex", alignItems: "center", justifyContent: "center",
+        background: "radial-gradient(ellipse at 50% 50%, #06180f 0%, #04090c 60%, #020202 100%)",
+        display: "flex", flexDirection: "column",
         fontFamily: "var(--font-sans, 'Inter', sans-serif)",
-        overflow: "hidden",
+        overflowY: "auto",
+        boxSizing: "border-box",
+        padding: "60px 48px",
+        alignItems: "center",
       }}
     >
       {/* Background glow orbs */}
-      <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: "10%", left: "15%", width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, hsla(280,80%,50%,0.12) 0%, transparent 70%)", filter: "blur(40px)" }} />
-        <div style={{ position: "absolute", bottom: "10%", right: "15%", width: 350, height: 350, borderRadius: "50%", background: "radial-gradient(circle, hsla(200,80%,50%,0.1) 0%, transparent 70%)", filter: "blur(40px)" }} />
-        <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: 500, height: 200, borderRadius: "50%", background: "radial-gradient(circle, hsla(340,70%,40%,0.08) 0%, transparent 70%)", filter: "blur(60px)" }} />
+      <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
+        <div style={{ position: "absolute", top: "10%", left: "15%", width: 600, height: 600, borderRadius: "50%", background: "radial-gradient(circle, rgba(0,255,102,0.06) 0%, transparent 70%)", filter: "blur(60px)" }} />
+        <div style={{ position: "absolute", bottom: "10%", right: "15%", width: 500, height: 500, borderRadius: "50%", background: "radial-gradient(circle, rgba(0,217,255,0.05) 0%, transparent 70%)", filter: "blur(60px)" }} />
       </div>
 
       <div style={{
-        position: "relative", width: "100%", maxWidth: 820,
-        maxHeight: "92vh", overflowY: "auto",
-        padding: "40px 48px",
-        display: "flex", flexDirection: "column", gap: 32,
+        position: "relative", zIndex: 1,
+        width: "100%", maxWidth: 1000,
+        display: "flex", flexDirection: "column", gap: 36,
       }}>
         {/* Header */}
         <div style={{ textAlign: "center" }}>
@@ -355,15 +362,19 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ delay: 0.1, type: "spring", stiffness: 200 }}
-            style={{ display: "inline-flex", alignItems: "center", gap: 10, marginBottom: 12 }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 12, marginBottom: 12 }}
           >
             <div style={{
               width: 44, height: 44, borderRadius: "50%",
-              background: "linear-gradient(135deg, hsl(280,80%,60%), hsl(200,80%,55%))",
+              background: "linear-gradient(135deg, #00FF66, #00D9FF)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 0 24px hsla(280,80%,60%,0.5)",
+              boxShadow: "0 0 24px rgba(0, 217, 255, 0.4)",
             }}>
-              <Sparkles size={22} color="white" />
+              <svg width="24" height="24" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="24" cy="24" r="20" stroke="#08080c" strokeWidth="4" strokeDasharray="6 3" />
+                <path d="M24 12 L34 24 L24 36 L14 24 Z" fill="#08080c" fillOpacity="0.15" stroke="#08080c" strokeWidth="4" />
+                <circle cx="24" cy="24" r="4" fill="#08080c" />
+              </svg>
             </div>
             <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", color: "white" }}>
               OpenSarthi
@@ -407,8 +418,9 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
           {["skills", "persona", "agent"].map((s) => (
             <div key={s} style={{
               width: step === s ? 28 : 8, height: 8, borderRadius: 4,
-              background: step === s ? "hsl(280,80%,60%)" : "rgba(255,255,255,0.15)",
-              transition: "width 0.3s ease, background 0.3s ease",
+              background: step === s ? "#00FF66" : "rgba(255,255,255,0.15)",
+              boxShadow: step === s ? "0 0 8px #00FF66" : "none",
+              transition: "width 0.3s ease, background 0.3s ease, box-shadow 0.3s ease",
             }} />
           ))}
         </div>
@@ -422,9 +434,9 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                   onClick={() => setSelected(allSelected ? new Set(["general"]) : new Set(ALL_SKILL_IDS))}
                   style={{
                     fontSize: 11, fontWeight: 600, letterSpacing: "0.05em",
-                    color: allSelected ? "hsl(280,80%,70%)" : "rgba(255,255,255,0.5)",
-                    background: allSelected ? "hsla(280,80%,60%,0.12)" : "transparent",
-                    border: `1px solid ${allSelected ? "hsla(280,80%,60%,0.3)" : "rgba(255,255,255,0.1)"}`,
+                    color: allSelected ? "#00FF66" : "rgba(255,255,255,0.5)",
+                    background: allSelected ? "rgba(0, 255, 102, 0.12)" : "transparent",
+                    border: `1px solid ${allSelected ? "rgba(0, 255, 102, 0.3)" : "rgba(255,255,255,0.1)"}`,
                     borderRadius: 6, padding: "5px 12px", cursor: "pointer",
                     transition: "all 0.2s",
                   }}
@@ -441,6 +453,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
               }}>
                 {SKILLS.map((skill, idx) => {
                   const isOn = selected.has(skill.id);
+                  const skillColor = (skill as any).color || "#00FF66";
                   return (
                     <motion.button
                       key={skill.id}
@@ -452,10 +465,10 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                         display: "flex", alignItems: "flex-start", gap: 12,
                         padding: "12px 14px", borderRadius: 12, cursor: "pointer",
                         background: isOn
-                          ? "linear-gradient(135deg, hsla(280,80%,60%,0.15), hsla(200,80%,55%,0.1))"
+                          ? `linear-gradient(135deg, ${hexToRgba(skillColor, 0.15)}, ${hexToRgba(skillColor, 0.04)})`
                           : "rgba(255,255,255,0.04)",
-                        border: `1px solid ${isOn ? "hsla(280,70%,60%,0.4)" : "rgba(255,255,255,0.08)"}`,
-                        boxShadow: isOn ? "0 0 16px hsla(280,70%,60%,0.12), inset 0 0 20px hsla(280,70%,60%,0.05)" : "none",
+                        border: `1px solid ${isOn ? skillColor : "rgba(255,255,255,0.08)"}`,
+                        boxShadow: isOn ? `0 0 16px ${hexToRgba(skillColor, 0.12)}, inset 0 0 20px ${hexToRgba(skillColor, 0.05)}` : "none",
                         transition: "all 0.18s ease",
                         textAlign: "left",
                         position: "relative",
@@ -477,8 +490,9 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                             style={{
                               position: "absolute", top: 8, right: 8,
                               width: 18, height: 18, borderRadius: "50%",
-                              background: "hsl(280,80%,60%)",
+                              background: skillColor,
                               display: "flex", alignItems: "center", justifyContent: "center",
+                              boxShadow: `0 0 8px ${skillColor}`,
                             }}
                           >
                             <Check size={11} color="white" />
@@ -516,7 +530,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                       fontFamily: "inherit",
                       transition: "border-color 0.2s",
                     }}
-                    onFocus={e => (e.target.style.borderColor = "hsla(280,80%,60%,0.5)")}
+                    onFocus={e => (e.target.style.borderColor = "#00D9FF")}
                     onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                   />
                   {nameError && <p style={{ fontSize: 11, color: "hsl(0,80%,60%)", margin: "4px 0 0" }}>{nameError}</p>}
@@ -542,32 +556,11 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                       fontFamily: "inherit", lineHeight: 1.6,
                       transition: "border-color 0.2s",
                     }}
-                    onFocus={e => (e.target.style.borderColor = "hsla(280,80%,60%,0.5)")}
+                    onFocus={e => (e.target.style.borderColor = "#00FF66")}
                     onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                   />
                   <div style={{ textAlign: "right", fontSize: 10, color: "rgba(255,255,255,0.25)", marginTop: 4 }}>
                     {customPrompt.length}/500
-                  </div>
-                </div>
-
-                {/* Skills summary */}
-                <div style={{
-                  padding: "12px 16px", borderRadius: 10,
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid rgba(255,255,255,0.07)",
-                }}>
-                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: "0 0 8px", fontWeight: 600, letterSpacing: "0.05em" }}>SELECTED SKILLS ({selected.size})</p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {SKILLS.filter(s => selected.has(s.id)).map(s => (
-                      <span key={s.id} style={{
-                        fontSize: 11, padding: "3px 8px", borderRadius: 20,
-                        background: "hsla(280,80%,60%,0.15)",
-                        border: "1px solid hsla(280,80%,60%,0.25)",
-                        color: "hsla(280,80%,80%,1)",
-                      }}>
-                        {s.icon} {s.label}
-                      </span>
-                    ))}
                   </div>
                 </div>
               </div>
@@ -613,10 +606,10 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                             borderRadius: "10px",
                             cursor: "pointer",
                             background: isSelected
-                              ? "linear-gradient(135deg, hsla(280,80%,60%,0.16), hsla(200,80%,55%,0.1))"
+                              ? "linear-gradient(135deg, rgba(0, 255, 102, 0.15), rgba(0, 217, 255, 0.05))"
                               : "rgba(255,255,255,0.03)",
-                            border: `1px solid ${isSelected ? "hsla(280,80%,60%,0.4)" : "rgba(255,255,255,0.08)"}`,
-                            boxShadow: isSelected ? "0 4px 16px hsla(280,80%,60%,0.15)" : "none",
+                            border: `1px solid ${isSelected ? "#00FF66" : "rgba(255,255,255,0.08)"}`,
+                            boxShadow: isSelected ? "0 4px 16px rgba(0, 255, 102, 0.15)" : "none",
                             transition: "all 0.2s"
                           }}
                         >
@@ -736,10 +729,10 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
             style={{
               display: "flex", alignItems: "center", gap: 8,
               padding: "11px 28px", borderRadius: 10, cursor: "pointer",
-              background: "linear-gradient(135deg, hsl(280,80%,55%), hsl(200,80%,50%))",
-              border: "none", color: "white",
+              background: "linear-gradient(135deg, #00FF66, #00D9FF)",
+              border: "none", color: "#08080c",
               fontSize: 13, fontWeight: 700, letterSpacing: "0.04em",
-              boxShadow: "0 4px 20px hsla(280,80%,55%,0.4)",
+              boxShadow: "0 4px 20px rgba(0, 217, 255, 0.4)",
               fontFamily: "inherit",
             }}
           >
