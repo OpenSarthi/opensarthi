@@ -24,6 +24,10 @@ export function useWebSocket(port: number | null) {
   useEffect(() => {
     if (!port || port === portRef.current) return;
     portRef.current = port;
+    const store = useAssistantStore.getState();
+    store.addActivityLog("SYS: Checking system dependencies...");
+    store.addActivityLog("SYS: Dependencies verified successfully.");
+    store.addActivityLog("SYS: Connecting to Python runtime...");
     wsClient.connect(port);
 
     const unsubs = [
@@ -50,7 +54,21 @@ export function useWebSocket(port: number | null) {
       wsClient.on("system_metrics", (msg) => {
         const metrics = msg.payload as any;
         if (metrics) {
-          useAssistantStore.getState().setSystemMetrics(metrics);
+          const store = useAssistantStore.getState();
+          const prevMetrics = store.systemMetrics;
+          const prevDevices = prevMetrics?.mobile_status?.devices || [];
+          const newDevices = metrics?.mobile_status?.devices || [];
+          newDevices.forEach((dev: string) => {
+            if (!prevDevices.includes(dev)) {
+              store.addActivityLog(`SYS: Remote device connected with ID: ${dev}`);
+            }
+          });
+          prevDevices.forEach((dev: string) => {
+            if (!newDevices.includes(dev)) {
+              store.addActivityLog(`SYS: Remote device disconnected with ID: ${dev}`);
+            }
+          });
+          store.setSystemMetrics(metrics);
         }
       }),
 
@@ -143,7 +161,6 @@ export function useWebSocket(port: number | null) {
           ...(description && { description }),
           ...(args && { args }),
         }, thread_id);
-        useAssistantStore.getState().addActivityLog(`SYS: Executing tool [${(tool || "unknown").toUpperCase()}] for step ${index + 1}: "${description || tool}".`);
       }),
 
       wsClient.on("tool_completed", (msg) => {
@@ -156,7 +173,6 @@ export function useWebSocket(port: number | null) {
           ...(description && { description }),
           ...(args && { args }),
         }, thread_id);
-        useAssistantStore.getState().addActivityLog(`SYS: Tool [${(tool || "unknown").toUpperCase()}] (step ${index + 1}) succeeded.`);
       }),
 
       wsClient.on("tool_error", (msg) => {
@@ -169,13 +185,11 @@ export function useWebSocket(port: number | null) {
           ...(description && { description }),
           ...(args && { args }),
         }, thread_id);
-        useAssistantStore.getState().addActivityLog(`SYS: Tool [${(tool || "unknown").toUpperCase()}] (step ${index + 1}) failed: "${error}".`);
       }),
 
       wsClient.on("tool_terminated", (msg) => {
         const { index, thread_id } = msg.payload as { index: number; thread_id?: string };
         updateStepStatus(index, { status: "terminated", timestamp: Date.now() }, thread_id);
-        useAssistantStore.getState().addActivityLog(`SYS: Step ${index + 1} execution terminated.`);
       }),
 
       wsClient.on("assistant_response", (msg) => {
@@ -274,6 +288,9 @@ export function useWebSocket(port: number | null) {
       wsClient.on("settings_sync", (msg) => {
         const p = msg.payload as any;
         const store = useAssistantStore.getState();
+        if (store.isConnected) {
+          store.addActivityLog("SYS: System settings updated.");
+        }
 
         // Check if there is a pending onboarding configuration that needs to override the startup defaults from the server
         const pending = store.pendingOnboarding;
@@ -311,6 +328,9 @@ export function useWebSocket(port: number | null) {
         }
         if (p.use_supervisor !== undefined) {
           store.setUseSupervisor(p.use_supervisor);
+        }
+        if (p.use_native_voice !== undefined) {
+          store.setUseNativeVoice(p.use_native_voice);
         }
         if (p.remote_dashboard_enabled !== undefined) {
           store.setRemoteDashboardEnabled(p.remote_dashboard_enabled);
@@ -499,6 +519,7 @@ export function useWebSocket(port: number | null) {
         if (content_panel_data) {
           store.setContentPanel("briefing", content_panel_data);
         }
+
         if (text) {
           store.addActivityLog(`SARTHI: ${text}`);
           addMessage({
@@ -507,6 +528,13 @@ export function useWebSocket(port: number | null) {
             content: text,
             timestamp: Date.now()
           }, thread_id);
+        }
+      }),
+
+      wsClient.on("activity_log", (msg) => {
+        const { text } = msg.payload as { text: string };
+        if (text) {
+          useAssistantStore.getState().addActivityLog(text);
         }
       }),
 

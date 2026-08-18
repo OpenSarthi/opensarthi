@@ -58,6 +58,7 @@ export const WSMessageTypeSchema = z.enum([
   "briefing_phase2",
   "screen_analysis",
   "content_update",
+  "activity_log",
 ]);
 export type WSMessageType = z.infer<typeof WSMessageTypeSchema>;
 

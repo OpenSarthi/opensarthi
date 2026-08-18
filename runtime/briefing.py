@@ -41,12 +41,56 @@ class MorningBriefing:
 
     async def _send_phase1(self):
         """Send instant greeting — no tool calls."""
+        await self.ws.send_message("activity_log", {"text": "SYS: Initializing startup briefing..."})
         greeting = self._generate_greeting()
+
+        # Save Phase 1 greeting message to DB so it persists in active thread history
+        try:
+            import db
+            import time
+            import uuid
+            msg_id = str(uuid.uuid4())
+            timestamp = int(time.time() * 1000)
+            db.save_message(self.thread_id, msg_id, "assistant", greeting, timestamp)
+        except Exception as e:
+            logger.warning("Failed to save briefing Phase 1 message to db", error=str(e))
+
         await self.ws.send_message("briefing_phase1", {
             "text": greeting,
             "thread_id": self.thread_id,
         })
         logger.info("Briefing Phase 1 sent", thread_id=self.thread_id)
+        await self.ws.send_message("activity_log", {"text": "SYS: Fetching weather, calendar, news, and long-term memory in parallel..."})
+
+        # Speak Phase 1
+        spoken = False
+        if getattr(self.settings, "use_native_voice", False):
+            try:
+                from voice.native_audio import get_native_audio_pipeline
+                pipeline = get_native_audio_pipeline()
+                # Wait up to 3 seconds for connection
+                for _ in range(30):
+                    if pipeline and pipeline.is_connected():
+                        break
+                    await asyncio.sleep(0.1)
+
+                if pipeline and pipeline.is_connected():
+                    # Stream prompt to Gemini Live to speak it natively
+                    import json as _json
+                    msg = {
+                        "client_content": {
+                            "turns": [{"parts": [{"text": f"Greet the user: {greeting}"}]}],
+                            "turn_complete": True
+                        }
+                    }
+                    await pipeline.session.websocket.send(_json.dumps(msg))
+                    spoken = True
+            except Exception as e:
+                logger.warning("Failed to stream briefing Phase 1 to native voice", error=str(e))
+
+        if not spoken:
+            # Fallback to local TTS
+            asyncio.create_task(self.ws.speak(greeting))
 
     async def _run_phase2(self):
         """Gather all briefing data in parallel and send Phase 2."""
@@ -69,9 +113,21 @@ class MorningBriefing:
 
             # Build content panel data
             content_data = self._build_content_data(results)
+            await self.ws.send_message("activity_log", {"text": "SYS: Gathering complete. Compiling summary..."})
 
             # Generate summary text using LLM (if available)
             summary_text = await self._generate_summary(results)
+
+            # Save Phase 2 summary message to DB so it persists in active thread history
+            try:
+                import db
+                import time
+                import uuid
+                msg_id = str(uuid.uuid4())
+                timestamp = int(time.time() * 1000)
+                db.save_message(self.thread_id, msg_id, "assistant", summary_text, timestamp)
+            except Exception as e:
+                logger.warning("Failed to save briefing Phase 2 message to db", error=str(e))
 
             # Send Phase 2
             await self.ws.send_message("briefing_phase2", {
@@ -88,6 +144,39 @@ class MorningBriefing:
             })
 
             logger.info("Briefing Phase 2 sent", thread_id=self.thread_id)
+            await self.ws.send_message("activity_log", {"text": "SYS: Startup briefing ready."})
+
+            # Speak Phase 2
+            spoken = False
+            if getattr(self.settings, "use_native_voice", False):
+                try:
+                    from voice.native_audio import get_native_audio_pipeline
+                    pipeline = get_native_audio_pipeline()
+                    if pipeline and pipeline.is_connected():
+                        # Construct a briefing summary prompt so Gemini Live speaks it natively
+                        import json as _json
+                        prompt = (
+                            f"[BRIEFING DATA SUMMARY]\n"
+                            f"Weather: {results.get('weather')}\n"
+                            f"Calendar: {results.get('calendar')}\n"
+                            f"News Headlines: {results.get('news')}\n"
+                            f"Memories Recalled: {results.get('memories')}\n\n"
+                            "Summarize this briefing data naturally and conversationally for the user. Keep it brief."
+                        )
+                        msg = {
+                            "client_content": {
+                                "turns": [{"parts": [{"text": prompt}]}],
+                                "turn_complete": True
+                            }
+                        }
+                        await pipeline.session.websocket.send(_json.dumps(msg))
+                        spoken = True
+                except Exception as e:
+                    logger.warning("Failed to stream briefing Phase 2 to native voice", error=str(e))
+
+            if not spoken:
+                # Fallback to local TTS
+                asyncio.create_task(self.ws.speak(summary_text))
 
         except Exception as e:
             logger.error("Briefing Phase 2 failed", error=str(e))
@@ -204,7 +293,7 @@ class MorningBriefing:
             parts.append(f"I've recalled {len(memories)} relevant memories from our past conversations.")
 
         if not parts:
-            return "Here's your briefing for today. I couldn't fetch live data, but I'm ready to help with anything you need!"
+            return "I couldn't fetch live data, but I'm ready to help with anything you need!"
 
         return "Your briefing: " + " ".join(parts)
 

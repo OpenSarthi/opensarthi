@@ -126,6 +126,7 @@ interface AssistantState {
   longTermMemories: any[];
   useLanggraph: boolean;
   useSupervisor: boolean;
+  useNativeVoice: boolean;
   nodeStatuses: Record<string, "idle" | "running" | "done">;
   
   // Remote dashboard pairing state
@@ -151,6 +152,7 @@ interface AssistantState {
   setLongTermMemories: (memories: any[]) => void;
   setUseLanggraph: (enabled: boolean) => void;
   setUseSupervisor: (enabled: boolean) => void;
+  setUseNativeVoice: (enabled: boolean) => void;
   setNodeStatus: (node: string, status: "idle" | "running" | "done", thread_id?: string) => void;
   setTranscript: (text: string | null) => void;
   
@@ -310,6 +312,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   longTermMemories: [],
   useLanggraph: true,
   useSupervisor: false,
+  useNativeVoice: false,
   nodeStatuses: {},
   planReasonings: {},
   remoteDashboardEnabled: false,
@@ -323,6 +326,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   setLongTermMemories: (longTermMemories) => set({ longTermMemories }),
   setUseLanggraph: (useLanggraph) => set({ useLanggraph }),
   setUseSupervisor: (useSupervisor) => set({ useSupervisor }),
+  setUseNativeVoice: (useNativeVoice) => set({ useNativeVoice }),
   setNodeStatus: (node, status, _thread_id) => set((s) => ({
     nodeStatuses: { ...s.nodeStatuses, [node]: status }
   })),

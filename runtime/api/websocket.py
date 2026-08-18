@@ -63,6 +63,79 @@ class Session:
         self._manual_tts = False  # True when user manually triggered TTS via listen button
         self._session_active = False  # True after onboarding complete + API key confirmed
         self._permanent_grants: set[str] = set()
+        self._briefing_sent = False
+
+    async def sync_voice_pipeline(self):
+        from config import settings
+        import os
+
+        # Don't run mic/listening streams on Android (Android handles its own native STT/TTS)
+        if os.environ.get("OPENSARTHI_PLATFORM") == "android":
+            return
+
+        if not self._session_active:
+            # onboarding page - stop everything
+            self.stop_listen_loop()
+            try:
+                from voice.native_audio import stop_native_audio
+                await stop_native_audio()
+            except Exception:
+                pass
+            return
+
+        if getattr(settings, "use_native_voice", False):
+            # Stop offline voice
+            self.stop_listen_loop()
+            
+            # Start/ensure native audio pipeline is running
+            try:
+                from voice.native_audio import initialize_native_audio, get_native_audio_pipeline, NativeAudioState
+                import base64
+                
+                pipeline = get_native_audio_pipeline(settings)
+                if not pipeline.is_connected():
+                    logger.info("Initializing native audio pipeline because use_native_voice is enabled")
+                    provider = "gemini-live" if settings.ai_provider == "google" else "auto"
+                    success = await initialize_native_audio(provider, settings)
+                    if success:
+                        pipeline = get_native_audio_pipeline(settings)
+                        pipeline.session.on_audio_chunk = lambda chunk: asyncio.create_task(
+                            self.send_message("native_audio_chunk", {"audio": base64.b64encode(chunk).decode('utf-8')})
+                        )
+                        pipeline.session.on_transcript = lambda text, is_final: asyncio.create_task(
+                            self.send_message("transcript_update", {"text": text, "is_final": is_final, "engine": "native"})
+                        )
+                        pipeline.session.on_function_call = self._handle_native_function_call
+                        pipeline.session.on_usage = lambda usage: asyncio.create_task(
+                            self.accumulate_and_update_tokens(usage)
+                        )
+                        pipeline.session.on_state_change = lambda state: asyncio.create_task(
+                            self.send_message("native_audio_state", {
+                                "connected": state == NativeAudioState.CONNECTED,
+                                "provider": pipeline.session.provider.value,
+                                "state": state.value
+                            })
+                        )
+                        await self.send_message("native_audio_state", {
+                            "connected": True,
+                            "provider": pipeline.session.provider.value,
+                            "state": "connected"
+                        })
+                    else:
+                        logger.warning("Failed to connect to native voice pipeline, falling back to offline")
+                        self.start_listen_loop()
+            except Exception as e:
+                logger.error("Failed to initialize native voice pipeline", error=str(e))
+                self.start_listen_loop()
+        else:
+            # Stop native voice
+            try:
+                from voice.native_audio import stop_native_audio
+                await stop_native_audio()
+            except Exception:
+                pass
+            # Start offline voice
+            self.start_listen_loop()
 
     async def send_message(self, msg_type: str, payload: dict, thread_id: str = None):
         if payload is None:
@@ -584,6 +657,21 @@ class Session:
                 }
             }, thread_id=tid)
 
+            # Speak if user typed the message (text) OR if we are NOT using native voice (so offline voice response needs TTS)
+            if final_output and (source != "voice" or not getattr(settings, "use_native_voice", False)):
+                try:
+                    import re
+                    clean_text = re.sub(r'<think>[\s\S]*?</think>', '', final_output)
+                    clean_text = re.sub(r'```[\s\S]*?```', '', clean_text)
+                    clean_text = re.sub(r'`([^`]+)`', r'\1', clean_text)
+                    clean_text = re.sub(r'[*#_\-]', '', clean_text)
+                    clean_text = re.sub(r'\[\s*\{[\s\S]*?\}\s*\]', '', clean_text)
+                    clean_text = clean_text.strip()
+                    if clean_text:
+                        asyncio.create_task(self.speak(clean_text, manual=False))
+                except Exception as e:
+                    logger.warning("Failed to trigger automatic TTS for response", error=str(e))
+
             # Fire-and-forget fact extraction
             try:
                 from memory.passive import extract_and_store_facts
@@ -618,12 +706,10 @@ class Session:
             logger.info("Received client page state update", page=page)
             if page == "onboarding":
                 self._session_active = False
-                self.stop_listen_loop()
+                asyncio.create_task(self.sync_voice_pipeline())
             elif page == "assistant":
                 self._session_active = True
-                import os
-                if os.environ.get("OPENSARTHI_PLATFORM") != "android":
-                    self.start_listen_loop()
+                asyncio.create_task(self.sync_voice_pipeline())
         elif msg_type == "run_json_plan":
             steps = payload.get("steps", [])
             goal = payload.get("goal", "Custom JSON Task")
@@ -896,6 +982,23 @@ class Session:
                 "messages": messages,
                 "token_totals": tokens,
             })
+            
+            # Synchronize voice pipeline to active settings
+            asyncio.create_task(self.sync_voice_pipeline())
+
+            # If briefing hasn't been sent in this connection session, trigger it now
+            if not self._briefing_sent:
+                self._briefing_sent = True
+                from briefing import get_briefing
+                from config import settings
+                memory_manager = None
+                try:
+                    from memory import MemoryManager
+                    memory_manager = MemoryManager(thread_id)
+                except Exception:
+                    pass
+                briefing_instance = get_briefing(self, settings, memory_manager, thread_id)
+                asyncio.create_task(briefing_instance.start_briefing())
         elif msg_type == "vision_analysis_request":
             # Instant Vision Acknowledgment: capture & acknowledge immediately
             prompt = payload.get("prompt", "What's on my screen?")
@@ -930,6 +1033,7 @@ class Session:
             settings.long_term_memory_enabled = bool(payload.get("long_term_memory_enabled", settings.long_term_memory_enabled))
             settings.use_langgraph = bool(payload.get("use_langgraph", settings.use_langgraph))
             settings.use_supervisor = bool(payload.get("use_supervisor", settings.use_supervisor))
+            settings.use_native_voice = bool(payload.get("use_native_voice", settings.use_native_voice))
             
             # Wake word settings
             raw_wake = payload.get("wake_words")
@@ -1005,6 +1109,7 @@ class Session:
                 settings.proactive_cooldown_minutes,
                 settings.use_langgraph,
                 settings.use_supervisor,
+                settings.use_native_voice,
             )
 
             # Propagate to running voice pipeline
@@ -1049,12 +1154,10 @@ class Session:
                 "long_term_memory_enabled": settings.long_term_memory_enabled,
                 "use_langgraph": settings.use_langgraph,
                 "use_supervisor": settings.use_supervisor,
+                "use_native_voice": settings.use_native_voice,
             })
 
-            if getattr(self, "_session_active", False):
-                import os
-                if os.environ.get("OPENSARTHI_PLATFORM") != "android":
-                    self.start_listen_loop()
+            asyncio.create_task(self.sync_voice_pipeline())
 
     def start_listen_loop(self):
         if getattr(self, "_listen_task", None) is None or self._listen_task.done():
@@ -1170,6 +1273,7 @@ class ConnectionManager:
             "remote_dashboard_enabled": getattr(settings, "remote_dashboard_enabled", False),
             "use_langgraph": getattr(settings, "use_langgraph", True),
             "use_supervisor": getattr(settings, "use_supervisor", False),
+            "use_native_voice": getattr(settings, "use_native_voice", False),
         })
         
         # Voice listening will be started via 'client_state' message from frontend

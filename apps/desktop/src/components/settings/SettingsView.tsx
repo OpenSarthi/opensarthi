@@ -34,6 +34,7 @@ interface SettingsViewProps {
   currentLongTermMemoryEnabled: boolean;
   currentUseLanggraph: boolean;
   currentUseSupervisor: boolean;
+  currentUseNativeVoice: boolean;
   runtimePort: number | null;
   onSave: (settings: {
     localModel: string;
@@ -56,6 +57,7 @@ interface SettingsViewProps {
     longTermMemoryEnabled: boolean;
     useLanggraph: boolean;
     useSupervisor: boolean;
+    useNativeVoice: boolean;
     remoteDashboardEnabled: boolean;
   }) => void;
 }
@@ -183,6 +185,7 @@ export function SettingsView({
   currentLongTermMemoryEnabled,
   currentUseLanggraph,
   currentUseSupervisor,
+  currentUseNativeVoice,
   runtimePort,
   onSave,
 }: SettingsViewProps) {
@@ -213,6 +216,7 @@ export function SettingsView({
   const [longTermMemoryEnabled, setLongTermMemoryEnabled] = useState(currentLongTermMemoryEnabled !== undefined ? currentLongTermMemoryEnabled : false);
   const [useLanggraph, setUseLanggraph] = useState(currentUseLanggraph !== undefined ? currentUseLanggraph : true);
   const [useSupervisor, setUseSupervisor] = useState(currentUseSupervisor !== undefined ? currentUseSupervisor : false);
+  const [useNativeVoice, setUseNativeVoice] = useState(currentUseNativeVoice !== undefined ? currentUseNativeVoice : false);
   const [saved, setSaved] = useState(false);
 
   const providerInfo = PROVIDER_LABELS[provider] || PROVIDER_LABELS.google;
@@ -312,6 +316,7 @@ export function SettingsView({
       longTermMemoryEnabled,
       useLanggraph,
       useSupervisor,
+      useNativeVoice,
       // Keep other settings unchanged (use original values from props)
       voiceAccent: currentVoiceAccent,
       voiceSpeed: currentVoiceSpeed,
@@ -350,6 +355,7 @@ export function SettingsView({
       longTermMemoryEnabled,
       useLanggraph,
       useSupervisor,
+      useNativeVoice,
       // Save all modified state values
       voiceAccent,
       voiceSpeed,
@@ -618,6 +624,19 @@ export function SettingsView({
                   sublabel="Filters available tools dynamically by classifying task domain(s) for safety and speed"
                 />
               </div>
+
+              {/* Native Voice Toggle (Conditional) */}
+              {provider === "google" && (
+                <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px dashed rgba(255,255,255,0.07)" }}>
+                  <Toggle
+                    id="use-native-voice-toggle"
+                    checked={useNativeVoice}
+                    onChange={setUseNativeVoice}
+                    label="USE NATIVE VOICE (GEMINI LIVE)"
+                    sublabel="Connects directly to Gemini Live for sub-second real-time bidirectional audio conversation"
+                  />
+                </div>
+              )}
 
               {/* Save AI Settings */}
               {viewMode === "all" && (

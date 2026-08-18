@@ -16,6 +16,11 @@ from typing import Optional, Callable, Any, Dict, List
 from dataclasses import dataclass, field
 from enum import Enum
 
+try:
+    import pyaudio
+except ImportError:
+    pyaudio = None
+
 logger = structlog.get_logger()
 
 
@@ -62,6 +67,7 @@ class NativeAudioSession:
     on_function_call: Optional[Callable] = None
     on_transcript: Optional[Callable] = None
     on_state_change: Optional[Callable] = None
+    on_usage: Optional[Callable] = None
     error: Optional[str] = None
 
 
@@ -89,6 +95,7 @@ class NativeAudioPipeline:
         self._mic_stream = None
         self._speaker_stream = None
         self._pyaudio = None
+        self._lock = asyncio.Lock()  # Prevent concurrent connections
 
         # Audio configuration
         self.audio_config = AudioConfig()
@@ -103,16 +110,20 @@ class NativeAudioPipeline:
         Returns:
             True if native audio initialized successfully, False if falling back to offline
         """
-        from config import settings as global_settings
-        self.settings = self.settings or global_settings
+        async with self._lock:
+            if self.is_connected():
+                return True
 
-        # Determine provider
-        if provider == "auto":
-            provider = getattr(self.settings, "native_audio_pipeline", "auto")
+            from config import settings as global_settings
+            self.settings = self.settings or global_settings
+            self._loop = asyncio.get_running_loop()
 
-        if provider == "offline":
-            logger.info("Native audio disabled, using offline pipeline")
-            return False
+            if provider == "auto":
+                provider = getattr(self.settings, "native_audio_pipeline", "auto")
+
+            if provider == "offline":
+                logger.info("Native audio disabled, using offline pipeline")
+                return False
 
         # Try providers in order
         providers_to_try = []
@@ -189,7 +200,7 @@ class NativeAudioPipeline:
             # Send initial setup message
             setup_msg = {
                 "setup": {
-                    "model": "models/gemini-2.5-flash-native-audio-preview",
+                    "model": "models/gemini-2.5-flash-native-audio-preview-12-2025",
                     "generation_config": {
                         "response_modalities": ["AUDIO"],
                         "speech_config": {
@@ -198,9 +209,7 @@ class NativeAudioPipeline:
                                     "voice_name": "Puck"  # Default voice
                                 }
                             }
-                        },
-                        "output_audio_transcription": {},
-                        "input_audio_transcription": {}
+                        }
                     },
                     "tools": [{"function_declarations": self.session.tools_schema}] if self.session.tools_schema else [],
                     "system_instruction": {
@@ -420,6 +429,19 @@ class NativeAudioPipeline:
             # Tool response handled by the provider automatically
             pass
 
+        # Handle usage metadata for token tracking
+        if "serverContent" in data:
+            sc = data["serverContent"]
+            if "usageMetadata" in sc:
+                meta = sc["usageMetadata"]
+                usage = {
+                    "request_tokens": meta.get("promptTokenCount", 0),
+                    "response_tokens": meta.get("candidatesTokenCount", 0),
+                    "total_tokens": meta.get("totalTokenCount", 0)
+                }
+                if self.session and getattr(self.session, "on_usage", None):
+                    await self.session.on_usage(usage)
+
     async def _handle_openai_message(self, data: Dict):
         """Handle incoming message from OpenAI Realtime."""
         msg_type = data.get("type", "")
@@ -465,6 +487,18 @@ class NativeAudioPipeline:
                 arguments=json.loads(data.get("arguments", "{}"))
             )
             await self._execute_function_call(func_call)
+
+        elif msg_type == "response.done":
+            response = data.get("response", {})
+            usage = response.get("usage", {})
+            if usage:
+                formatted_usage = {
+                    "request_tokens": usage.get("input_tokens", 0),
+                    "response_tokens": usage.get("output_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0)
+                }
+                if self.session and getattr(self.session, "on_usage", None):
+                    await self.session.on_usage(formatted_usage)
 
         elif msg_type == "error":
             logger.error("OpenAI Realtime error", error=data.get("error", {}))
@@ -522,7 +556,9 @@ class NativeAudioPipeline:
 
     async def _start_audio_capture(self):
         """Start capturing audio from microphone."""
-        import pyaudio
+        if not pyaudio:
+            logger.error("pyaudio is not installed or available")
+            return
 
         self._pyaudio = pyaudio.PyAudio()
 
@@ -553,11 +589,12 @@ class NativeAudioPipeline:
 
     def _mic_callback(self, in_data, frame_count, time_info, status):
         """PyAudio callback for microphone input."""
-        asyncio.run_coroutine_threadsafe(
-            self._audio_input_queue.put(in_data),
-            asyncio.get_event_loop()
-        )
-        return (None, pyaudio.paContinue)
+        if hasattr(self, "_loop") and self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(
+                self._audio_input_queue.put_nowait,
+                in_data
+            )
+        return (None, pyaudio.paContinue if pyaudio else 0)
 
     async def _playback_loop(self):
         """Play audio chunks from output queue."""
@@ -588,22 +625,23 @@ class NativeAudioPipeline:
 
     async def stop(self):
         """Stop the native audio pipeline."""
-        self._running = False
+        async with self._lock:
+            self._running = False
 
-        # Signal shutdown
-        await self._audio_input_queue.put(None)
-        await self._audio_output_queue.put(None)
+            # Signal shutdown
+            await self._audio_input_queue.put(None)
+            await self._audio_output_queue.put(None)
 
-        # Cancel tasks
-        for task in [self._receive_task, self._send_task, self._playback_task]:
-            if task and not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+            # Cancel tasks
+            for task in [self._receive_task, self._send_task, self._playback_task]:
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
 
-        await self.cleanup()
+            await self.cleanup()
 
     async def cleanup(self):
         """Clean up audio resources."""
@@ -630,12 +668,16 @@ class NativeAudioPipeline:
                 pass
             self._pyaudio = None
 
-        if self.session and self.session.websocket:
+        session = self.session
+        if session and session.websocket:
             try:
-                await self.session.websocket.close()
+                await session.websocket.close()
             except Exception:
                 pass
-            self.session.websocket = None
+            try:
+                session.websocket = None
+            except Exception:
+                pass
 
         self.session = None
         logger.info("Native audio pipeline cleaned up")
@@ -654,16 +696,13 @@ class NativeAudioPipeline:
         return None
 
 
-# Global instance for easy access
-_native_audio_pipeline: Optional[NativeAudioPipeline] = None
-
-
+# Global instance for easy access - registry on sys to prevent duplicate instance across multiple module load paths
 def get_native_audio_pipeline(settings=None) -> NativeAudioPipeline:
     """Get or create the global native audio pipeline instance."""
-    global _native_audio_pipeline
-    if _native_audio_pipeline is None:
-        _native_audio_pipeline = NativeAudioPipeline(settings)
-    return _native_audio_pipeline
+    import sys
+    if not hasattr(sys, "_opensarthi_native_audio_pipeline") or sys._opensarthi_native_audio_pipeline is None:
+        sys._opensarthi_native_audio_pipeline = NativeAudioPipeline(settings)
+    return sys._opensarthi_native_audio_pipeline
 
 
 async def initialize_native_audio(provider: str = "auto", settings=None) -> bool:
@@ -674,7 +713,8 @@ async def initialize_native_audio(provider: str = "auto", settings=None) -> bool
 
 async def stop_native_audio():
     """Stop native audio pipeline."""
-    global _native_audio_pipeline
-    if _native_audio_pipeline:
-        await _native_audio_pipeline.stop()
-        _native_audio_pipeline = None
+    import sys
+    pipeline = getattr(sys, "_opensarthi_native_audio_pipeline", None)
+    if pipeline:
+        await pipeline.stop()
+        sys._opensarthi_native_audio_pipeline = None
