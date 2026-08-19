@@ -627,18 +627,18 @@ def get_system_metrics() -> dict:
     }
 
 
-async def metrics_push_loop(broadcast_fn, interval: float = 2.0):
+async def metrics_push_loop(broadcast_fn, interval: float = 1.5):
     """
     Background asyncio task. Calls get_system_metrics() every `interval` seconds
     and passes the result to `broadcast_fn(event, data)`.
     """
     # Prime the net counter
-    _get_net_kbps()
+    await asyncio.to_thread(_get_net_kbps)
     await asyncio.sleep(interval)
 
     while True:
         try:
-            metrics = get_system_metrics()
+            metrics = await asyncio.to_thread(get_system_metrics)
             await broadcast_fn("system_metrics", metrics)
         except Exception:
             pass
