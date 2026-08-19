@@ -206,8 +206,17 @@ class MorningBriefing:
             from tools.google_tools import CalendarReadTool
             tool = CalendarReadTool()
             result = await tool.execute({"max_results": 10, "time_min": datetime.now().isoformat()})
-            if result.get("success"):
-                return result.get("events", [])
+            if result.success:
+                raw = result.raw_output or {}
+                if "events" in raw:
+                    return raw["events"]
+                # Fallback to parsing observation
+                events = []
+                if result.observation:
+                    for line in result.observation.split("\n"):
+                        if line.strip().startswith("- "):
+                            events.append({"summary": line.strip()[2:]})
+                return events
         except ImportError:
             logger.warning("Google calendar tool not available")
         except Exception as e:
@@ -221,8 +230,8 @@ class MorningBriefing:
             tool = WeatherTool()
             # Default to a generic query; user location from settings if available
             result = await tool.execute({"location": "current"})
-            if result.get("success"):
-                return result.get("data", {})
+            if result.success:
+                return {"description": result.observation}
         except Exception as e:
             logger.warning("Weather fetch failed", error=str(e))
         return None
@@ -232,9 +241,29 @@ class MorningBriefing:
         try:
             from tools.productivity import WebSearchTool
             tool = WebSearchTool()
-            result = await tool.execute({"query": "top news headlines today", "max_results": 5})
-            if result.get("success"):
-                return result.get("results", [])
+            result = await tool.execute({"query": "top news headlines today", "count": 5})
+            if result.success:
+                headlines = []
+                if result.observation:
+                    # WebSearchTool format is "**{title}**\n{snippet}\n{target_url}" separated by double newlines
+                    blocks = result.observation.split("\n\n")
+                    for block in blocks:
+                        lines = [line.strip() for line in block.split("\n") if line.strip()]
+                        if lines:
+                            title = lines[0]
+                            # Clean leading/trailing asterisks
+                            if title.startswith("**") and title.endswith("**"):
+                                title = title[2:-2].strip()
+                            
+                            snippet = lines[1] if len(lines) > 1 else ""
+                            url = lines[2] if len(lines) > 2 else ""
+                            
+                            headlines.append({
+                                "title": title,
+                                "snippet": snippet,
+                                "url": url
+                            })
+                return headlines
         except Exception as e:
             logger.warning("News fetch failed", error=str(e))
         return None
@@ -265,7 +294,49 @@ class MorningBriefing:
         }
 
     async def _generate_summary(self, results: Dict) -> str:
-        """Generate a natural-language summary of the briefing."""
+        """Generate a natural-language summary of the briefing using active LLM."""
+        has_data = results.get("calendar") or results.get("weather") or results.get("news") or results.get("memories")
+        if not has_data:
+            return "I couldn't fetch live data, but I'm ready to help with anything you need!"
+
+        try:
+            from config import settings, get_active_api_key
+            from llm import build_model
+            from pydantic_ai import Agent as PydanticAgent
+            import json as _json
+
+            provider = settings.ai_provider.lower()
+            model_name = settings.local_model if provider == "ollama" else settings.cloud_model
+            api_key = get_active_api_key()
+
+            active_model = build_model(provider, model_name, api_key)
+            
+            prompt = (
+                "You are OpenSarthi morning briefing assistant.\n"
+                "Please generate a short, friendly, and natural morning/afternoon/evening briefing summary for the user.\n"
+                "Address them by name if provided, and describe their upcoming calendar events, current weather, and top news headlines.\n\n"
+                f"User Name: {getattr(self.settings, 'user_name', '')}\n"
+                f"Weather Data: {_json.dumps(results.get('weather') or {})}\n"
+                f"Calendar Events: {_json.dumps(results.get('calendar') or [])}\n"
+                f"News Headlines: {_json.dumps(results.get('news') or [])}\n"
+                f"Recalled Memories: {_json.dumps(results.get('memories') or [])}\n\n"
+                "Rules:\n"
+                "1. Keep the summary friendly, brief, and under 3-4 sentences.\n"
+                "2. Summarize the items naturally and conversationally (do not output json or bullet points)."
+            )
+
+            agent = PydanticAgent(active_model)
+            result = await agent.run(prompt)
+            summary = result.output.strip()
+            if summary:
+                return summary
+        except Exception as e:
+            logger.warning("LLM briefing summary generation failed, falling back to python generator", error=str(e))
+
+        return self._generate_fallback_summary(results)
+
+    def _generate_fallback_summary(self, results: Dict) -> str:
+        """Fallback python-based natural-language summary generator."""
         parts = []
 
         # Calendar
@@ -277,10 +348,8 @@ class MorningBriefing:
         # Weather
         weather = results.get("weather")
         if weather:
-            temp = weather.get("temperature")
             desc = weather.get("description", "unknown conditions")
-            if temp is not None:
-                parts.append(f"It's {temp}°C with {desc}.")
+            parts.append(f"For weather: {desc}.")
 
         # News
         news = results.get("news")

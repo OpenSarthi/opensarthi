@@ -191,15 +191,18 @@ class CalendarReadTool(BaseTool):
                     "location": event.get("location", ""),
                     "description": event.get("description", ""),
                 })
-
+            obs_parts = []
+            for ev in formatted_events:
+                obs_parts.append(f"- {ev['summary']} ({ev['start']})")
             return ToolResult(
                 success=True,
-                result={"events": formatted_events},
+                observation="\n".join(obs_parts) if obs_parts else "No events",
+                raw_output={"events": formatted_events},
             )
 
         except Exception as e:
             logger.error("Calendar read failed", error=str(e))
-            return ToolResult(success=False, result=None, error=str(e))
+            return ToolResult(success=False, error=str(e))
 
 
 class GmailReadTool(BaseTool):
@@ -211,7 +214,7 @@ class GmailReadTool(BaseTool):
         "type": "object",
         "properties": {
             "max_results": {"type": "integer", "default": 10},
-            "query": {"type": "string", "default": "is:unread", "description": "Gmail search query"},
+            "query": {"type": "string", "default": "label:UNREAD", "description": "Gmail search query"},
             "include_snippets": {"type": "boolean", "default": True},
         },
         "required": [],
@@ -226,61 +229,65 @@ class GmailReadTool(BaseTool):
         if not access_token:
             return ToolResult(
                 success=False,
-                result="Google OAuth not authenticated. Please authenticate first.",
+                observation="Google OAuth not authenticated. Please authenticate first.",
                 error="no_google_auth",
             )
 
         max_results = args.get("max_results", 10)
-        query = args.get("query", "is:unread")
+        query = args.get("query", "label:UNREAD")
         include_snippets = args.get("include_snippets", True)
 
         try:
-            # Search for messages
-            search_response = httpx.get(
-                "https://www.googleapis.com/gmail/v1/users/me/messages",
+            # Get list of messages matching query
+            response = httpx.get(
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages",
                 headers={"Authorization": f"Bearer {access_token}"},
-                params={
-                    "maxResults": max_results,
-                    "q": query,
-                },
+                params={"maxResults": max_results, "q": query},
                 timeout=10,
             )
-            search_response.raise_for_status()
-            search_data = search_response.json()
-            messages = search_data.get("messages", [])
+            response.raise_for_status()
+            messages_data = response.json()
+            messages = messages_data.get("messages", [])
 
-            # Fetch message details
             formatted_messages = []
             for msg in messages:
-                msg_response = httpx.get(
-                    f"https://www.googleapis.com/gmail/v1/users/me/messages/{msg['id']}",
+                msg_id = msg.get("id")
+                # Fetch detailed message data
+                msg_detail_resp = httpx.get(
+                    f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg_id}",
                     headers={"Authorization": f"Bearer {access_token}"},
-                    params={"format": "metadata", "metadataHeaders": ["Subject", "From", "Date"]},
                     timeout=10,
                 )
-                msg_response.raise_for_status()
-                msg_data = msg_response.json()
+                msg_detail_resp.raise_for_status()
+                msg_data = msg_detail_resp.json()
 
-                headers = {h["name"]: h["value"] for h in msg_data.get("payload", {}).get("headers", [])}
+                # Parse headers
+                payload = msg_data.get("payload", {})
+                headers_list = payload.get("headers", [])
+                headers = {h.get("name"): h.get("value") for h in headers_list}
 
                 formatted = {
-                    "id": msg_data["id"],
-                    "thread_id": msg_data["threadId"],
-                    "subject": headers.get("Subject", "No subject"),
+                    "id": msg_id,
+                    "threadId": msg_data.get("threadId"),
+                    "subject": headers.get("Subject", "No Subject"),
                     "from": headers.get("From", "Unknown"),
                     "date": headers.get("Date", ""),
                     "snippet": msg_data.get("snippet", "") if include_snippets else "",
                 }
                 formatted_messages.append(formatted)
 
+            obs_parts = []
+            for m in formatted_messages:
+                obs_parts.append(f"From: {m['from']}, Subject: {m['subject']}")
             return ToolResult(
                 success=True,
-                result={"messages": formatted_messages},
+                observation="\n".join(obs_parts) if obs_parts else "No messages",
+                raw_output={"messages": formatted_messages},
             )
 
         except Exception as e:
             logger.error("Gmail read failed", error=str(e))
-            return ToolResult(success=False, result=None, error=str(e))
+            return ToolResult(success=False, error=str(e))
 
 
 class CalendarSearchTool(BaseTool):
