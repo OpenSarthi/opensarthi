@@ -83,7 +83,7 @@ class Session:
                 pass
             return
 
-        if getattr(settings, "use_native_voice", False):
+        if getattr(settings, "use_native_voice", False) and settings.ai_provider.lower() == "google":
             # Stop offline voice
             self.stop_listen_loop()
             
@@ -105,6 +105,42 @@ class Session:
                         pipeline.session.on_transcript = lambda text, is_final: asyncio.create_task(
                             self.send_message("transcript_update", {"text": text, "is_final": is_final, "engine": "native"})
                         )
+                        
+                        async def handle_user_transcript(text_val: str):
+                            import db, time
+                            msg_id = str(uuid.uuid4())
+                            timestamp = int(time.time() * 1000)
+                            db.save_message(self.thread_id, msg_id, "user", text_val, timestamp)
+                            await self.send_message("user_message", {
+                                "id": msg_id,
+                                "role": "user",
+                                "content": text_val,
+                                "timestamp": timestamp
+                            }, thread_id=self.thread_id)
+                            await self.send_message("activity_log", {"text": f"SYS: User Spoken: {text_val}"})
+
+                        async def handle_assistant_transcript(text_val: str):
+                            import db, time
+                            msg_id = str(uuid.uuid4())
+                            timestamp = int(time.time() * 1000)
+                            db.save_message(self.thread_id, msg_id, "assistant", text_val, timestamp)
+                            await self.send_message("assistant_response", {
+                                "id": msg_id,
+                                "role": "assistant",
+                                "content": text_val,
+                                "timestamp": timestamp,
+                                "is_voice": True,
+                                "usage": {"request_tokens": 0, "response_tokens": 0, "total_tokens": 0}
+                            }, thread_id=self.thread_id)
+                            await self.send_message("activity_log", {"text": f"SYS: Gemini Live: {text_val}"})
+
+                        pipeline.session.on_user_transcript = lambda text: asyncio.create_task(
+                            handle_user_transcript(text)
+                        )
+                        pipeline.session.on_assistant_transcript = lambda text: asyncio.create_task(
+                            handle_assistant_transcript(text)
+                        )
+
                         pipeline.session.on_function_call = self._handle_native_function_call
                         pipeline.session.on_usage = lambda usage: asyncio.create_task(
                             self.accumulate_and_update_tokens(usage)
@@ -657,8 +693,8 @@ class Session:
                 }
             }, thread_id=tid)
 
-            # Speak if user typed the message (text) OR if we are NOT using native voice (so offline voice response needs TTS)
-            if final_output and (source != "voice" or not getattr(settings, "use_native_voice", False)):
+            # Speak only if the user spoke the message (STT, source == "voice") AND we are not using native voice (so fallback offline voice needs TTS)
+            if final_output and source == "voice" and not getattr(settings, "use_native_voice", False):
                 try:
                     import re
                     clean_text = re.sub(r'<think>[\s\S]*?</think>', '', final_output)
@@ -1228,7 +1264,7 @@ class ConnectionManager:
             return
         if self._metrics_task is None or self._metrics_task.done():
             self._metrics_task = asyncio.create_task(
-                _metrics_push_loop(self._broadcast_to_all, interval=2.0)
+                _metrics_push_loop(self._broadcast_to_all, interval=1.5)
             )
 
     async def connect(self, websocket: WebSocket):

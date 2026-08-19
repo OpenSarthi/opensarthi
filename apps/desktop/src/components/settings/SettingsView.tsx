@@ -316,7 +316,7 @@ export function SettingsView({
       longTermMemoryEnabled,
       useLanggraph,
       useSupervisor,
-      useNativeVoice,
+      useNativeVoice: provider === "google" ? useNativeVoice : false,
       // Keep other settings unchanged (use original values from props)
       voiceAccent: currentVoiceAccent,
       voiceSpeed: currentVoiceSpeed,
@@ -355,7 +355,7 @@ export function SettingsView({
       longTermMemoryEnabled,
       useLanggraph,
       useSupervisor,
-      useNativeVoice,
+      useNativeVoice: provider === "google" ? useNativeVoice : false,
       // Save all modified state values
       voiceAccent,
       voiceSpeed,
@@ -447,7 +447,12 @@ export function SettingsView({
                   {Object.entries(PROVIDER_LABELS).map(([key, info]) => (
                     <button
                       key={key}
-                      onClick={() => setProvider(key)}
+                      onClick={() => {
+                        setProvider(key);
+                        if (key !== "google") {
+                          setUseNativeVoice(false);
+                        }
+                      }}
                       style={{
                         padding: "8px 10px",
                         background: provider === key ? "var(--accent-glow)" : "rgba(0,0,0,0.3)",

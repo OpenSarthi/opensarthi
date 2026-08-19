@@ -66,6 +66,8 @@ class NativeAudioSession:
     on_audio_chunk: Optional[Callable] = None
     on_function_call: Optional[Callable] = None
     on_transcript: Optional[Callable] = None
+    on_user_transcript: Optional[Callable] = None
+    on_assistant_transcript: Optional[Callable] = None
     on_state_change: Optional[Callable] = None
     on_usage: Optional[Callable] = None
     error: Optional[str] = None
@@ -125,31 +127,31 @@ class NativeAudioPipeline:
                 logger.info("Native audio disabled, using offline pipeline")
                 return False
 
-        # Try providers in order
-        providers_to_try = []
-        if provider == "gemini-live":
-            providers_to_try = [NativeAudioProvider.GEMINI_LIVE]
-        elif provider == "openai-realtime":
-            providers_to_try = [NativeAudioProvider.OPENAI_REALTIME]
-        else:  # auto
-            # Prefer Gemini Live if API key available
-            if getattr(self.settings, "gemini_api_key", None):
-                providers_to_try.append(NativeAudioProvider.GEMINI_LIVE)
-            if getattr(self.settings, "openai_api_key", None):
-                providers_to_try.append(NativeAudioProvider.OPENAI_REALTIME)
+            # Try providers in order
+            providers_to_try = []
+            if provider == "gemini-live":
+                providers_to_try = [NativeAudioProvider.GEMINI_LIVE]
+            elif provider == "openai-realtime":
+                providers_to_try = [NativeAudioProvider.OPENAI_REALTIME]
+            else:  # auto
+                # Prefer Gemini Live if API key available
+                if getattr(self.settings, "gemini_api_key", None):
+                    providers_to_try.append(NativeAudioProvider.GEMINI_LIVE)
+                if getattr(self.settings, "openai_api_key", None):
+                    providers_to_try.append(NativeAudioProvider.OPENAI_REALTIME)
 
-        for prov in providers_to_try:
-            try:
-                success = await self._connect_provider(prov)
-                if success:
-                    logger.info(f"Native audio connected via {prov.value}")
-                    return True
-            except Exception as e:
-                logger.warning(f"Failed to connect to {prov.value}", error=str(e))
-                continue
+            for prov in providers_to_try:
+                try:
+                    success = await self._connect_provider(prov)
+                    if success:
+                        logger.info(f"Native audio connected via {prov.value}")
+                        return True
+                except Exception as e:
+                    logger.warning(f"Failed to connect to {prov.value}", error=str(e))
+                    continue
 
-        logger.info("All native audio providers failed, falling back to offline pipeline")
-        return False
+            logger.info("All native audio providers failed, falling back to offline pipeline")
+            return False
 
     async def _connect_provider(self, provider: NativeAudioProvider) -> bool:
         """Connect to a specific native audio provider."""
@@ -403,14 +405,20 @@ class NativeAudioPipeline:
             # Transcript
             if "outputTranscription" in content:
                 text = content["outputTranscription"].get("text", "")
-                if text and self.session.on_transcript:
-                    await self.session.on_transcript(text, is_final=True)
+                if text:
+                    if self.session.on_assistant_transcript:
+                        await self.session.on_assistant_transcript(text)
+                    elif self.session.on_transcript:
+                        await self.session.on_transcript(text, is_final=True)
 
             # Input transcription (user speech)
             if "inputTranscription" in content:
                 text = content["inputTranscription"].get("text", "")
-                if text and self.session.on_transcript:
-                    await self.session.on_transcript(text, is_final=False)
+                if text:
+                    if self.session.on_user_transcript:
+                        await self.session.on_user_transcript(text)
+                    elif self.session.on_transcript:
+                        await self.session.on_transcript(text, is_final=False)
 
             # Function calls
             if "modelTurn" in content:
@@ -470,8 +478,16 @@ class NativeAudioPipeline:
         elif msg_type == "response.audio_transcript.done":
             # Final transcript
             text = data.get("transcript", "")
-            if text and self.session.on_transcript:
-                await self.session.on_transcript(text, is_final=True)
+            if text:
+                if self.session.on_assistant_transcript:
+                    await self.session.on_assistant_transcript(text)
+                elif self.session.on_transcript:
+                    await self.session.on_transcript(text, is_final=True)
+
+        elif msg_type == "conversation.item.input_audio_transcription.completed":
+            text = data.get("transcript", "")
+            if text and self.session.on_user_transcript:
+                await self.session.on_user_transcript(text)
 
         elif msg_type == "input_audio_buffer.speech_started":
             logger.debug("OpenAI VAD: speech started")
