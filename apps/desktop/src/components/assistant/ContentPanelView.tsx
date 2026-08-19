@@ -1,8 +1,16 @@
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface ContentPanelViewProps {
   contentType: string | null;
   data: any | null;
 }
+
+const mdComponents = {
+  p: ({ children }: any) => <span style={{ display: "inline" }}>{children}</span>,
+  ul: ({ children }: any) => <ul style={{ margin: 0, paddingLeft: "16px", color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: "3px" }}>{children}</ul>,
+  li: ({ children }: any) => <li style={{ marginBottom: "2px" }}>{children}</li>,
+};
 
 export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
   if (!contentType || !data) {
@@ -28,10 +36,18 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
         {hasWeather && (
           <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "6px" }}>
             <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: "4px" }}>☀️ WEATHER REPORT</div>
-            <div style={{ color: "var(--text-secondary)" }}>
-              {weather.temp ? `${weather.temp}°C` : ""}{weather.description ? ` - ${weather.description}` : ""}
-              {weather.humidity ? ` | Humidity: ${weather.humidity}%` : ""}
-              {weather.wind_speed ? ` | Wind: ${weather.wind_speed} wind` : ""}
+            <div style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>
+              {weather.description ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                  {weather.description}
+                </ReactMarkdown>
+              ) : (
+                <span>
+                  {weather.temp ? `${weather.temp}°C` : ""}
+                  {weather.humidity ? ` | Humidity: ${weather.humidity}%` : ""}
+                  {weather.wind_speed ? ` | Wind: ${weather.wind_speed} wind` : ""}
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -42,9 +58,13 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
             <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: "6px" }}>📅 UPCOMING SCHEDULE</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
               {calendar_events.map((evt: any, i: number) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: "12px", borderBottom: "1px dashed rgba(255,255,255,0.03)", paddingBottom: "3px" }}>
-                  <span style={{ color: "var(--text-primary)" }}>{evt.summary || evt.title}</span>
-                  <span style={{ color: "var(--text-muted)", fontSize: "10px", flexShrink: 0 }}>
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", borderBottom: "1px dashed rgba(255,255,255,0.03)", paddingBottom: "3px" }}>
+                  <span style={{ color: "var(--text-primary)" }}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                      {evt.summary || evt.title || ""}
+                    </ReactMarkdown>
+                  </span>
+                  <span style={{ color: "var(--text-muted)", fontSize: "10px", flexShrink: 0, marginTop: "1px" }}>
                     {evt.start ? new Date(evt.start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
                   </span>
                 </div>
@@ -61,11 +81,11 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
               {news_headlines.map((item: any, i: number) => (
                 <div key={i} style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                   <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>
-                    {i + 1}. {item.title || item.summary}
+                    {i + 1}. <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{item.title || item.summary || ""}</ReactMarkdown>
                   </span>
                   {item.snippet && (
                     <span style={{ color: "var(--text-muted)", fontSize: "10px", lineHeight: "1.3", paddingLeft: "12px" }}>
-                      {item.snippet}
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{item.snippet}</ReactMarkdown>
                     </span>
                   )}
                 </div>
@@ -80,7 +100,11 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
             <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: "4px" }}>🧠 RECALLED MEMORIES</div>
             <ul style={{ margin: 0, paddingLeft: "16px", color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: "3px" }}>
               {memories.map((m: any, i: number) => (
-                <li key={i}>{m.content}</li>
+                <li key={i}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                    {m.content}
+                  </ReactMarkdown>
+                </li>
               ))}
             </ul>
           </div>
@@ -96,7 +120,9 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
           🖥️ SCREEN ANALYSIS
         </div>
         <div style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap", lineHeight: "1.5" }}>
-          {typeof data === "string" ? data : JSON.stringify(data, null, 2)}
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+            {typeof data === "string" ? data : JSON.stringify(data, null, 2)}
+          </ReactMarkdown>
         </div>
       </div>
     );
@@ -109,7 +135,9 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
         {contentType}
       </div>
       <div style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>
-        {typeof data === "string" ? data : JSON.stringify(data, null, 2)}
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+          {typeof data === "string" ? data : JSON.stringify(data, null, 2)}
+        </ReactMarkdown>
       </div>
     </div>
   );

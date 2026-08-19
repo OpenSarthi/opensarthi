@@ -585,6 +585,23 @@ input, textarea {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
+.chat-scroll-container::-webkit-scrollbar {
+  width: 6px !important;
+  display: block !important;
+}
+.chat-scroll-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2) !important;
+  border-radius: 3px;
+}
+.chat-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--border-accent) !important;
+  border-radius: 3px;
+}
+.chat-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: var(--accent) !important;
+  box-shadow: 0 0 6px var(--accent-glow) !important;
+}
+
 /* --- HUD Panel Utilities --- */
 .hud-panel {
   background: var(--bg-glass);
@@ -1188,6 +1205,20 @@ body.settings-dropdown-open .tasks-scroll-container::-webkit-scrollbar,
 body.settings-dropdown-open .chat-scroll-container::-webkit-scrollbar,
 body.settings-dropdown-open .activity-scroll-container::-webkit-scrollbar,
 body.settings-dropdown-open .chrome-tabs-container::-webkit-scrollbar {
+  display: none !important;
+}
+
+/* Hide background scrollbars when content drawer is open to prevent WebKitGTK native scrollbar overlay bleeding bugs */
+body.content-drawer-open .tasks-scroll-container,
+body.content-drawer-open .chat-scroll-container,
+body.content-drawer-open .activity-scroll-container,
+body.content-drawer-open .chrome-tabs-container {
+  scrollbar-width: none !important;
+}
+body.content-drawer-open .tasks-scroll-container::-webkit-scrollbar,
+body.content-drawer-open .chat-scroll-container::-webkit-scrollbar,
+body.content-drawer-open .activity-scroll-container::-webkit-scrollbar,
+body.content-drawer-open .chrome-tabs-container::-webkit-scrollbar {
   display: none !important;
 }
 

@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
 import { ParticleBackground } from "./ParticleBackground";
-import { MatrixRainBackground } from "./MatrixRainBackground";
+// import { MatrixRainBackground } from "./MatrixRainBackground";
 import { MessageList } from "./ResponseBubble";
 import { ActionLog } from "../execution/ActionLog";
 import { TaskList } from "./TaskList";
@@ -759,6 +759,14 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
       document.body.classList.remove("console-open");
     };
   }, [showLogsPanel]);
+
+  // Toggle content-drawer-open body class for WebKitGTK native scrollbar clipping fixes
+  useEffect(() => {
+    document.body.classList.toggle("content-drawer-open", showContentDrawer);
+    return () => {
+      document.body.classList.remove("content-drawer-open");
+    };
+  }, [showContentDrawer]);
 
   // Handle stop task action (replaces send button when task is running)
   const handleStopTask = useCallback(() => {
@@ -1642,7 +1650,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           {/* LEFT PANEL */}
           <div data-panel="left" style={{ width: `${leftWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
             <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <MatrixRainBackground voiceState={voiceState} />
+              {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>// AGENT TASKS</span>
@@ -1687,7 +1695,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
             {/* AGENT STATUS & SYSTEMS */}
             <div className="hud-panel" style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <MatrixRainBackground voiceState={voiceState} />
+              {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div className="hud-panel-title">// AGENT STATUS & SYSTEMS</div>
                 <div style={{ display: "flex", flexDirection: "column", padding: "12px", gap: "8px", overflowY: "auto" }} className="custom-scrollbar">
@@ -2520,7 +2528,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
             {/* ACTIVITY LOG */}
             <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <MatrixRainBackground voiceState={voiceState} />
+              {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
                 <div className="hud-panel-title">// ACTIVITY LOG</div>
                 <ActivityLogPanel logs={activityLogs} />
@@ -2528,8 +2536,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             </div>
 
             {/* ACTIVE TASK PLAN */}
-            <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <MatrixRainBackground voiceState={voiceState} />
+            <div className="hud-panel" style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
                   <div className="hud-panel-title">// ACTIVE TASK PLAN</div>
@@ -2577,7 +2585,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
 
             <div className="hud-panel" style={{ padding: "12px", display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0, overflow: "hidden" }}>
-              <MatrixRainBackground voiceState={voiceState} />
+              {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: "8px", flex: 1 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
@@ -2616,32 +2624,33 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               </div>
             </div>
 
+
             {/* Content View Side Panel Overlay */}
             <AnimatePresence>
               {showContentDrawer && contentPanel.contentType && (
                 <motion.div
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 15 }}
-                  transition={{ duration: 0.2 }}
+                  initial={{ x: "100%", opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: "100%", opacity: 0 }}
+                  transition={{ type: "spring", damping: 26, stiffness: 280 }}
                   className="hud-panel"
                   style={{
                     position: "absolute",
-                    top: "calc(50% + 8px)", // top of Active Task Plan
+                    top: "250px",
                     bottom: 0,
-                    left: 0,
                     right: 0,
+                    width: "350px",
                     background: "rgba(10, 12, 10, 0.98)",
                     backdropFilter: "blur(20px)",
                     border: "1px solid var(--border-accent)",
                     boxShadow: "0 10px 40px rgba(0,0,0,0.8)",
-                    zIndex: 50,
+                    zIndex: 150,
                     display: "flex",
                     flexDirection: "column",
                     overflow: "hidden",
                   }}
                 >
-                  <MatrixRainBackground voiceState={voiceState} />
+                  {/* <MatrixRainBackground voiceState={voiceState} /> */}
                   <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
                     {/* Header */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", borderBottom: "1px solid var(--border)" }}>
