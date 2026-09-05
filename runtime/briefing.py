@@ -44,6 +44,17 @@ class MorningBriefing:
         await self.ws.send_message("activity_log", {"text": "SYS: Initializing startup briefing..."})
         greeting = self._generate_greeting()
 
+        # Resolve effective thread ID
+        effective_tid = self.thread_id or getattr(self.ws, "thread_id", None)
+        if not effective_tid:
+            try:
+                import db
+                threads = db.get_all_threads()
+                effective_tid = threads[0]["id"] if threads else db.create_thread()
+            except Exception:
+                pass
+        self.thread_id = effective_tid
+
         # Save Phase 1 greeting message to DB so it persists in active thread history
         try:
             import db
@@ -51,15 +62,16 @@ class MorningBriefing:
             import uuid
             msg_id = str(uuid.uuid4())
             timestamp = int(time.time() * 1000)
-            db.save_message(self.thread_id, msg_id, "assistant", greeting, timestamp)
+            if effective_tid:
+                db.save_message(effective_tid, msg_id, "assistant", greeting, timestamp, 0, 0, 0)
         except Exception as e:
             logger.warning("Failed to save briefing Phase 1 message to db", error=str(e))
 
         await self.ws.send_message("briefing_phase1", {
             "text": greeting,
-            "thread_id": self.thread_id,
+            "thread_id": effective_tid,
         })
-        logger.info("Briefing Phase 1 sent", thread_id=self.thread_id)
+        logger.info("Briefing Phase 1 sent", thread_id=effective_tid)
         await self.ws.send_message("activity_log", {"text": "SYS: Fetching weather, calendar, news, and long-term memory in parallel..."})
 
         # Speak Phase 1
@@ -115,17 +127,28 @@ class MorningBriefing:
             content_data = self._build_content_data(results)
             await self.ws.send_message("activity_log", {"text": "SYS: Gathering complete. Compiling summary..."})
 
-            # Generate summary text using LLM (if available)
-            summary_text = await self._generate_summary(results)
+            # Generate summary text using LLM (if available) with token tracking
+            summary_text, req_tok, res_tok, tot_tok = await self._generate_summary(results)
 
-            # Save Phase 2 summary message to DB so it persists in active thread history
+            effective_tid = self.thread_id or getattr(self.ws, "thread_id", None)
+            if not effective_tid:
+                try:
+                    import db
+                    threads = db.get_all_threads()
+                    effective_tid = threads[0]["id"] if threads else db.create_thread()
+                except Exception:
+                    pass
+            self.thread_id = effective_tid
+
+            # Save Phase 2 summary message to DB so it persists in active thread history with tokens
             try:
                 import db
                 import time
                 import uuid
                 msg_id = str(uuid.uuid4())
                 timestamp = int(time.time() * 1000)
-                db.save_message(self.thread_id, msg_id, "assistant", summary_text, timestamp)
+                if effective_tid:
+                    db.save_message(effective_tid, msg_id, "assistant", summary_text, timestamp, req_tok, res_tok, tot_tok)
             except Exception as e:
                 logger.warning("Failed to save briefing Phase 2 message to db", error=str(e))
 
@@ -133,17 +156,17 @@ class MorningBriefing:
             await self.ws.send_message("briefing_phase2", {
                 "text": summary_text,
                 "content_panel_data": content_data,
-                "thread_id": self.thread_id,
+                "thread_id": effective_tid,
             })
 
             # Also send content_update for the Content Panel
             await self.ws.send_message("content_update", {
                 "content_type": "briefing",
                 "data": content_data,
-                "thread_id": self.thread_id,
+                "thread_id": effective_tid,
             })
 
-            logger.info("Briefing Phase 2 sent", thread_id=self.thread_id)
+            logger.info("Briefing Phase 2 sent", thread_id=effective_tid, tokens=tot_tok)
             await self.ws.send_message("activity_log", {"text": "SYS: Startup briefing ready."})
 
             # Speak Phase 2
@@ -180,9 +203,10 @@ class MorningBriefing:
 
         except Exception as e:
             logger.error("Briefing Phase 2 failed", error=str(e))
+            effective_tid = self.thread_id or getattr(self.ws, "thread_id", None)
             await self.ws.send_message("briefing_phase2", {
                 "text": "I had trouble gathering your full briefing, but I'm here to help!",
-                "thread_id": self.thread_id,
+                "thread_id": effective_tid,
             })
 
     def _generate_greeting(self) -> str:
@@ -293,20 +317,27 @@ class MorningBriefing:
             "memories": results.get("memories") or [],
         }
 
-    async def _generate_summary(self, results: Dict) -> str:
-        """Generate a natural-language summary of the briefing using active LLM."""
+    async def _generate_summary(self, results: Dict) -> tuple[str, int, int, int]:
+        """Generate a natural-language summary of the briefing using active LLM and return (summary, req_tok, res_tok, tot_tok)."""
         has_data = results.get("calendar") or results.get("weather") or results.get("news") or results.get("memories")
         if not has_data:
-            return "I couldn't fetch live data, but I'm ready to help with anything you need!"
+            return (self._generate_fallback_summary(results), 0, 0, 0)
 
         try:
             from config import settings, get_active_api_key
             from llm import build_model
             from pydantic_ai import Agent as PydanticAgent
+            from pydantic_ai.settings import ModelSettings
             import json as _json
+            import re
 
             provider = settings.ai_provider.lower()
-            model_name = settings.local_model if provider == "ollama" else settings.cloud_model
+            if provider == "custom_openai":
+                model_name = settings.cloud_model or settings.local_model or "auto/fast"
+            elif provider == "ollama":
+                model_name = settings.local_model
+            else:
+                model_name = settings.cloud_model
             api_key = get_active_api_key()
 
             active_model = build_model(provider, model_name, api_key)
@@ -322,18 +353,58 @@ class MorningBriefing:
                 f"Recalled Memories: {_json.dumps(results.get('memories') or [])}\n\n"
                 "Rules:\n"
                 "1. Keep the summary friendly, brief, and under 3-4 sentences.\n"
-                "2. Summarize the items naturally and conversationally (do not output json or bullet points)."
+                "2. Summarize the items naturally and conversationally (do not output json or bullet points).\n"
+                "3. Do not output thinking traces, <think> tags, internal monologue, or analysis; output only the final spoken text."
             )
 
-            agent = PydanticAgent(active_model)
+            # Cap max_tokens to 600 to prevent provider OTPM / rate-limit failures (e.g. Groq 1000 OTPM limit)
+            agent = PydanticAgent(active_model, model_settings=ModelSettings(max_tokens=600))
             result = await agent.run(prompt)
-            summary = result.output.strip()
+            raw_summary = result.output.strip() if hasattr(result, "output") else str(result).strip()
+
+            # Clean reasoning / thinking blocks
+            summary = re.sub(r'<think>[\s\S]*?</think>', '', raw_summary).strip()
+            if not summary:
+                summary = raw_summary
+
+            # Track token usage from briefing LLM call
+            req_tok, res_tok, tot_tok = 0, 0, 0
+            try:
+                usage = getattr(result, "usage", None)
+                if callable(usage):
+                    try:
+                        usage = usage()
+                    except Exception:
+                        pass
+                if usage:
+                    req_tok = getattr(usage, "input_tokens", getattr(usage, "request_tokens", 0)) or 0
+                    res_tok = getattr(usage, "output_tokens", getattr(usage, "response_tokens", 0)) or 0
+                    tot_tok = getattr(usage, "total_tokens", 0) or (req_tok + res_tok)
+                    
+                    effective_tid = self.thread_id or getattr(self.ws, "thread_id", None)
+                    if hasattr(self.ws, "accumulate_and_update_tokens"):
+                        await self.ws.accumulate_and_update_tokens(usage, thread_id=effective_tid)
+                    elif effective_tid and tot_tok > 0:
+                        import db
+                        db.accumulate_thread_tokens(effective_tid, req_tok, res_tok, tot_tok)
+                        totals = db.get_thread_tokens(effective_tid)
+                        await self.ws.send_message("token_update", {
+                            "request_tokens": totals.get("request_tokens", 0),
+                            "response_tokens": totals.get("response_tokens", 0),
+                            "total_tokens": totals.get("total_tokens", 0),
+                            "delta_total_tokens": tot_tok
+                        }, thread_id=effective_tid)
+                    logger.info("Briefing LLM token usage tracked", req=req_tok, res=res_tok, total=tot_tok, thread_id=effective_tid)
+            except Exception as te:
+                logger.warning("Failed to track briefing token usage", error=str(te))
+
             if summary:
-                return summary
+                return (summary, req_tok, res_tok, tot_tok)
         except Exception as e:
             logger.warning("LLM briefing summary generation failed, falling back to python generator", error=str(e))
 
-        return self._generate_fallback_summary(results)
+        return (self._generate_fallback_summary(results), 0, 0, 0)
+
 
     def _generate_fallback_summary(self, results: Dict) -> str:
         """Fallback python-based natural-language summary generator."""
@@ -375,4 +446,11 @@ def get_briefing(ws_handler, settings, memory_manager=None, thread_id: str = Non
     global _briefing_instance
     if _briefing_instance is None:
         _briefing_instance = MorningBriefing(ws_handler, settings, memory_manager, thread_id)
+    else:
+        _briefing_instance.ws = ws_handler
+        _briefing_instance.settings = settings
+        if memory_manager is not None:
+            _briefing_instance.memory = memory_manager
+        if thread_id:
+            _briefing_instance.thread_id = thread_id
     return _briefing_instance
