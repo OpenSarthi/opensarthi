@@ -114,6 +114,8 @@ interface AssistantState {
   anthropicApiKey: string;
   groqApiKey: string;
   openrouterApiKey: string;
+  customOpenaiBaseUrl: string;
+  customOpenaiApiKey: string;
   activeTheme: string;
 
   voiceAccent: string;
@@ -174,7 +176,7 @@ interface AssistantState {
   setActiveModels: (local: string, cloud: string) => void;
   setActiveProvider: (provider: string) => void;
   setCloudApiKey: (key: string) => void;
-  setAllApiKeys: (keys: { gemini: string; openai: string; anthropic: string; groq: string; openrouter: string }) => void;
+  setAllApiKeys: (keys: { gemini: string; openai: string; anthropic: string; groq: string; openrouter: string; customOpenaiBaseUrl?: string; customOpenaiKey?: string }) => void;
   setActiveTheme: (theme: string) => void;
   setVoiceSettings: (accent: string, speed: number, continuous: boolean) => void;
   setWakeWordSettings: (enabled: boolean, threshold: number, phrases: string[]) => void;
@@ -281,6 +283,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   anthropicApiKey: "",
   groqApiKey: "",
   openrouterApiKey: "",
+  customOpenaiBaseUrl: "",
+  customOpenaiApiKey: "",
   activeTheme: "theme-green-black",
   voiceAccent: "ie",
   voiceSpeed: 1.35,
@@ -492,22 +496,41 @@ export const useAssistantStore = create<AssistantState>((set) => ({
 
   updateTokenUsageFromWS: (thread_id, usage) => set((s) => {
     const tid = thread_id || s.activeThreadId;
+    let found = false;
     const updatedTabs = s.tabs.map(t => {
       if (t.id === tid) {
+        found = true;
         return {
           ...t,
           tokenUsage: {
             requestTokens: usage.request_tokens,
             responseTokens: usage.response_tokens,
             totalTokens: usage.total_tokens,
-            sessionTotalTokens: t.tokenUsage.sessionTotalTokens + (usage.delta_total_tokens || 0),
+            sessionTotalTokens: (t.tokenUsage?.sessionTotalTokens || 0) + (usage.delta_total_tokens || 0),
           }
         };
       }
       return t;
     });
-    const activeTab = updatedTabs.find(t => t.id === s.activeThreadId)!;
-    const modelKey = s.activeProvider === "ollama" || s.activeProvider === "local" ? s.activeLocalModel : s.activeCloudModel;
+
+    const finalTabs = found ? updatedTabs : updatedTabs.map(t => {
+      if (t.id === s.activeThreadId) {
+        return {
+          ...t,
+          tokenUsage: {
+            requestTokens: usage.request_tokens,
+            responseTokens: usage.response_tokens,
+            totalTokens: usage.total_tokens,
+            sessionTotalTokens: (t.tokenUsage?.sessionTotalTokens || 0) + (usage.delta_total_tokens || 0),
+          }
+        };
+      }
+      return t;
+    });
+
+    const activeTab = finalTabs.find(t => t.id === s.activeThreadId) || finalTabs[0];
+    const isLocal = s.activeProvider === "ollama" || s.activeProvider === "local" || s.activeProvider === "custom_openai";
+    const modelKey = isLocal ? s.activeLocalModel : s.activeCloudModel;
     const addedTokens = usage.delta_total_tokens || 0;
     const currentGlobal = s.globalSessionTokens[modelKey] || 0;
     const updatedGlobal = currentGlobal + addedTokens;
@@ -519,8 +542,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       localStorage.setItem(`opensarthi_global_tokens_${modelKey}`, updatedGlobal.toString());
     }
     return {
-      tabs: updatedTabs,
-      tokenUsage: activeTab.tokenUsage,
+      tabs: finalTabs,
+      tokenUsage: activeTab ? activeTab.tokenUsage : s.tokenUsage,
       globalSessionTokens: nextGlobalSessionTokens,
     };
   }),
@@ -618,6 +641,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     anthropicApiKey: keys.anthropic,
     groqApiKey: keys.groq,
     openrouterApiKey: keys.openrouter,
+    ...(keys.customOpenaiBaseUrl !== undefined ? { customOpenaiBaseUrl: keys.customOpenaiBaseUrl } : {}),
+    ...(keys.customOpenaiKey !== undefined ? { customOpenaiApiKey: keys.customOpenaiKey } : {}),
   }),
   setActiveTheme: (activeTheme) => set({ activeTheme }),
   setVoiceSettings: (voiceAccent, voiceSpeed, continuousListening) => set({ voiceAccent, voiceSpeed, continuousListening }),
@@ -625,22 +650,41 @@ export const useAssistantStore = create<AssistantState>((set) => ({
 
   updateTokenUsage: (usage, thread_id) => set((s) => {
     const tid = thread_id || s.activeThreadId;
+    let found = false;
     const updatedTabs = s.tabs.map(t => {
       if (t.id === tid) {
+        found = true;
         return {
           ...t,
           tokenUsage: {
-            requestTokens: t.tokenUsage.requestTokens + (usage.request_tokens || 0),
-            responseTokens: t.tokenUsage.responseTokens + (usage.response_tokens || 0),
-            totalTokens: t.tokenUsage.totalTokens + (usage.total_tokens || 0),
-            sessionTotalTokens: t.tokenUsage.sessionTotalTokens + (usage.total_tokens || 0),
+            requestTokens: (t.tokenUsage?.requestTokens || 0) + (usage.request_tokens || 0),
+            responseTokens: (t.tokenUsage?.responseTokens || 0) + (usage.response_tokens || 0),
+            totalTokens: (t.tokenUsage?.totalTokens || 0) + (usage.total_tokens || 0),
+            sessionTotalTokens: (t.tokenUsage?.sessionTotalTokens || 0) + (usage.total_tokens || 0),
           }
         };
       }
       return t;
     });
-    const activeTab = updatedTabs.find(t => t.id === s.activeThreadId)!;
-    const modelKey = s.activeProvider === "ollama" || s.activeProvider === "local" ? s.activeLocalModel : s.activeCloudModel;
+
+    const finalTabs = found ? updatedTabs : updatedTabs.map(t => {
+      if (t.id === s.activeThreadId) {
+        return {
+          ...t,
+          tokenUsage: {
+            requestTokens: (t.tokenUsage?.requestTokens || 0) + (usage.request_tokens || 0),
+            responseTokens: (t.tokenUsage?.responseTokens || 0) + (usage.response_tokens || 0),
+            totalTokens: (t.tokenUsage?.totalTokens || 0) + (usage.total_tokens || 0),
+            sessionTotalTokens: (t.tokenUsage?.sessionTotalTokens || 0) + (usage.total_tokens || 0),
+          }
+        };
+      }
+      return t;
+    });
+
+    const activeTab = finalTabs.find(t => t.id === s.activeThreadId) || finalTabs[0];
+    const isLocal = s.activeProvider === "ollama" || s.activeProvider === "local" || s.activeProvider === "custom_openai";
+    const modelKey = isLocal ? s.activeLocalModel : s.activeCloudModel;
     const addedTokens = usage.total_tokens || 0;
     const currentGlobal = s.globalSessionTokens[modelKey] || 0;
     const updatedGlobal = currentGlobal + addedTokens;
@@ -652,8 +696,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       localStorage.setItem(`opensarthi_global_tokens_${modelKey}`, updatedGlobal.toString());
     }
     return {
-      tabs: updatedTabs,
-      tokenUsage: activeTab.tokenUsage,
+      tabs: finalTabs,
+      tokenUsage: activeTab ? activeTab.tokenUsage : s.tokenUsage,
       globalSessionTokens: nextGlobalSessionTokens,
     };
   }),

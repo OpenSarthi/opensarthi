@@ -38,7 +38,7 @@
       "tooltip": "OpenSarthi"
     },
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:* http://127.0.0.1:* http://localhost:* https://wttr.in https://api.duckduckgo.com https://html.duckduckgo.com; script-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'none'"
+      "csp": "default-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:* http://127.0.0.1:* http://localhost:* https://api.groq.com https://api.openai.com https://api.anthropic.com https://openrouter.ai https://generativelanguage.googleapis.com https://wttr.in https://api.duckduckgo.com https://html.duckduckgo.com; script-src 'self'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'none'"
     }
   },
   "bundle": {

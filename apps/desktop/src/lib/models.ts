@@ -29,8 +29,8 @@ export interface ProviderMeta {
 
 export const PROVIDER_LABELS: Record<string, ProviderMeta> = {
   ollama: {
-    label: "Ollama (Local)",
-    icon: "🦙",
+    label: "Local LLM (Ollama)",
+    icon: "🏠",
     apiKeyLabel: "",
     apiKeyPlaceholder: "",
     docsUrl: "https://ollama.ai",
@@ -42,7 +42,7 @@ export const PROVIDER_LABELS: Record<string, ProviderMeta> = {
     apiKeyLabel: "GOOGLE AI API KEY",
     apiKeyPlaceholder: "AIza...",
     docsUrl: "https://aistudio.google.com/apikey",
-    supportsModelFetch: false,
+    supportsModelFetch: true,
   },
   openai: {
     label: "OpenAI",
@@ -58,7 +58,7 @@ export const PROVIDER_LABELS: Record<string, ProviderMeta> = {
     apiKeyLabel: "ANTHROPIC API KEY",
     apiKeyPlaceholder: "sk-ant-...",
     docsUrl: "https://console.anthropic.com/settings/keys",
-    supportsModelFetch: false,
+    supportsModelFetch: true,
   },
   groq: {
     label: "Groq (Ultra-Fast)",
@@ -66,7 +66,7 @@ export const PROVIDER_LABELS: Record<string, ProviderMeta> = {
     apiKeyLabel: "GROQ API KEY",
     apiKeyPlaceholder: "gsk_...",
     docsUrl: "https://console.groq.com/keys",
-    supportsModelFetch: false,
+    supportsModelFetch: true,
   },
   openrouter: {
     label: "OpenRouter",
@@ -76,7 +76,16 @@ export const PROVIDER_LABELS: Record<string, ProviderMeta> = {
     docsUrl: "https://openrouter.ai/settings/keys",
     supportsModelFetch: true,
   },
+  custom_openai: {
+    label: "Custom OpenAI Endpoint",
+    icon: "🔧",
+    apiKeyLabel: "API KEY (optional)",
+    apiKeyPlaceholder: "sk-... (leave blank if not required)",
+    docsUrl: "",
+    supportsModelFetch: true,
+  },
 };
+
 
 // ─── Curated static model lists ──────────────────────────────────────────────
 
@@ -138,8 +147,9 @@ export const PROVIDER_MODELS: Record<string, ModelEntry[]> = {
     { value: "z-ai/glm-5.2",                 label: "GLM-5.2",              tags: ["🧠"],             note: "" },
   ],
 
-  // Ollama entries are curated suggestions; actual list is fetched dynamically
+  // Ollama & Custom OpenAI entries are fetched dynamically or suggested
   ollama: [],
+  custom_openai: [],
 };
 
 // ─── Ollama curated suggestions (shown when Ollama is offline / unfetched) ───

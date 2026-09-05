@@ -335,7 +335,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     }
   };
 
-  const modelKey = activeProvider === "ollama" || activeProvider === "local" ? activeLocalModel : activeCloudModel;
+  const isLocal = activeProvider === "ollama" || activeProvider === "local" || activeProvider === "custom_openai";
+  const modelKey = isLocal ? activeLocalModel : activeCloudModel;
   const globalSessionCount = globalSessionTokens[modelKey] || 0;
 
   const [isMaximized, setIsMaximized] = useState(false);
@@ -2265,7 +2266,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                       bottom: "calc(100% + 4px)",
                       left: "16px",
                       right: "16px",
-                      height: "52px",
+                      height: "96px",
                       pointerEvents: "none",
                       zIndex: 5,
                     }}

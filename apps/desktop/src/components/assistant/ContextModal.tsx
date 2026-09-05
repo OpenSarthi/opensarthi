@@ -222,7 +222,7 @@ ${skillsList || "(none)"}
 
 [RUNTIME CONTEXT]
 Provider: ${activeProvider?.toUpperCase() ?? "GROQ"}
-Model: ${activeProvider === "local" ? activeLocalModel : activeCloudModel}
+Model: ${(activeProvider === "local" || activeProvider === "ollama" || activeProvider === "custom_openai") ? activeLocalModel : activeCloudModel}
 Thread: ${activeThreadId?.slice(0, 8)}...`;
   })();
 
@@ -616,7 +616,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                     <div>
                       <KVRow label="ACTIVE THREAD ID" value={activeThreadId} />
                       <KVRow label="PROVIDER" value={activeProvider?.toUpperCase()} accent />
-                      <KVRow label="MODEL" value={activeProvider === "local" ? activeLocalModel : activeCloudModel} />
+                      <KVRow label="MODEL" value={(activeProvider === "local" || activeProvider === "ollama" || activeProvider === "custom_openai") ? activeLocalModel : activeCloudModel} />
                       <KVRow label="LAST INTENT" value={lastClassification ?? "IDLE"} />
                       <KVRow label="EXECUTING STEP" value={executingStepIndex != null ? `${executingStepIndex}` : "none"} />
                       <KVRow label="THREAD MSGS" value={messages.length} />

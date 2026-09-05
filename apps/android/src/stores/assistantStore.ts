@@ -217,9 +217,33 @@ export const useAssistantStore = create<AssistantState>((set) => ({
 
   updateTokenUsageFromWS: (thread_id, usage) => set((s) => {
     const tid = thread_id || s.activeThreadId;
-    const updatedTabs = s.tabs.map(t => t.id === tid ? { ...t, tokenUsage: { requestTokens: usage.request_tokens, responseTokens: usage.response_tokens, totalTokens: usage.total_tokens, sessionTotalTokens: t.tokenUsage.sessionTotalTokens + (usage.delta_total_tokens || 0) } } : t);
-    const activeTab = updatedTabs.find(t => t.id === s.activeThreadId)!;
-    return { tabs: updatedTabs, tokenUsage: activeTab.tokenUsage };
+    let found = false;
+    const updatedTabs = s.tabs.map(t => {
+      if (t.id === tid) {
+        found = true;
+        return {
+          ...t,
+          tokenUsage: {
+            requestTokens: usage.request_tokens,
+            responseTokens: usage.response_tokens,
+            totalTokens: usage.total_tokens,
+            sessionTotalTokens: (t.tokenUsage?.sessionTotalTokens || 0) + (usage.delta_total_tokens || 0),
+          },
+        };
+      }
+      return t;
+    });
+    const finalTabs = found ? updatedTabs : updatedTabs.map(t => t.id === s.activeThreadId ? {
+      ...t,
+      tokenUsage: {
+        requestTokens: usage.request_tokens,
+        responseTokens: usage.response_tokens,
+        totalTokens: usage.total_tokens,
+        sessionTotalTokens: (t.tokenUsage?.sessionTotalTokens || 0) + (usage.delta_total_tokens || 0),
+      },
+    } : t);
+    const activeTab = finalTabs.find(t => t.id === s.activeThreadId) || finalTabs[0];
+    return { tabs: finalTabs, tokenUsage: activeTab ? activeTab.tokenUsage : s.tokenUsage };
   }),
 
   addMessage: (msg, thread_id) => set((s) => {

@@ -43,7 +43,8 @@ export function useWebSocket(port: number | null) {
             // Load or initialize the active thread on the backend!
             const activeId = useAssistantStore.getState().activeThreadId;
             if (activeId) {
-              wsClient.send("load_thread", { thread_id: activeId });
+              const isOnboarded = useAssistantStore.getState().onboardingCompleted;
+              wsClient.send("load_thread", { thread_id: activeId, onboarding_complete: isOnboarded });
             }
           } else {
             useAssistantStore.getState().addActivityLog("SYS: Disconnected from backend runtime.");
@@ -342,6 +343,8 @@ export function useWebSocket(port: number | null) {
           anthropic: p.anthropic_api_key || "",
           groq: p.groq_api_key || "",
           openrouter: p.openrouter_api_key || "",
+          customOpenaiBaseUrl: p.custom_openai_base_url || "",
+          customOpenaiKey: p.custom_openai_api_key || "",
         });
 
         if (p.user_name !== undefined || p.user_skills !== undefined || p.custom_prompt !== undefined) {

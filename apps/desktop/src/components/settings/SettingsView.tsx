@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { X, Save, Volume2, Bell, Cpu, ChevronRight, CheckCircle2, RefreshCw } from "lucide-react";
+import { X, Save, Volume2, Bell, Cpu, ChevronRight, CheckCircle2, RefreshCw, Globe } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { playCue } from "../../hooks/useAudioCues";
 import { useAssistantStore } from "../../stores/assistantStore";
@@ -22,6 +22,8 @@ interface SettingsViewProps {
   currentAnthropicKey: string;
   currentGroqKey: string;
   currentOpenrouterKey: string;
+  currentCustomOpenaiBaseUrl?: string;
+  currentCustomOpenaiApiKey?: string;
   currentVoiceAccent: string;
   currentVoiceSpeed: number;
   currentContinuousListening: boolean;
@@ -45,6 +47,8 @@ interface SettingsViewProps {
     anthropicKey: string;
     groqKey: string;
     openrouterKey: string;
+    customOpenaiBaseUrl: string;
+    customOpenaiApiKey: string;
     voiceAccent: string;
     voiceSpeed: number;
     continuousListening: boolean;
@@ -154,6 +158,239 @@ function Toggle({ id, checked, onChange, label, sublabel }: { id: string; checke
   );
 }
 
+/**
+ * Client-side direct validator & model discovery (inspired by MultiLLMService in ai-social-agent).
+ * Used for local custom_openai endpoints and as resilient fallback when Python runtime is offline or restarting.
+ */
+async function validateClientDirect(
+  provider: string,
+  apiKey?: string,
+  baseUrl?: string
+): Promise<{ valid: boolean; message: string; models: FetchedModel[] }> {
+  try {
+    if (provider === "custom_openai") {
+      const targetUrl = (baseUrl || "http://localhost:20128/v1").trim().replace(/\/+$/, "");
+      if (!targetUrl) {
+        return { valid: false, message: "❌ Base URL is required", models: [] };
+      }
+      const modelsUrl = `${targetUrl}/models`;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (apiKey) {
+        headers["Authorization"] = `Bearer ${apiKey}`;
+      }
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch(modelsUrl, { method: "GET", headers, signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (res.status === 401 || res.status === 403) {
+        return { valid: false, message: "❌ Unauthorized (401/403): Check your API key", models: [] };
+      }
+      if (!res.ok) {
+        return { valid: false, message: `❌ Server returned HTTP ${res.status}`, models: [] };
+      }
+      const data = await res.json();
+      let rawList: any[] = [];
+      if (Array.isArray(data)) {
+        rawList = data;
+      } else if (Array.isArray(data?.data)) {
+        rawList = data.data;
+      } else if (Array.isArray(data?.models)) {
+        rawList = data.models;
+      }
+      const models: FetchedModel[] = rawList
+        .filter((m) => m && (m.id || m.name || typeof m === "string"))
+        .map((m) => {
+          const val = typeof m === "string" ? m : m.id || m.name;
+          const lbl = typeof m === "string" ? m : m.name || m.id;
+          return { value: String(val), label: String(lbl) };
+        });
+      return {
+        valid: true,
+        message: `✅ Connected! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    if (provider === "ollama") {
+      const targetUrl = (baseUrl || "http://127.0.0.1:11434").trim().replace(/\/+$/, "");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      let res: Response;
+      try {
+        res = await fetch(`${targetUrl}/api/tags`, { method: "GET", signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (!res.ok) {
+        return { valid: false, message: `❌ Ollama HTTP ${res.status}`, models: [] };
+      }
+      const data = await res.json();
+      const models: FetchedModel[] = (data.models || []).map((m: any) => ({
+        value: String(m.name),
+        label: String(m.name),
+      }));
+      return {
+        valid: true,
+        message: `✅ Ollama running with ${models.length} models.`,
+        models,
+      };
+    }
+
+    if (provider === "groq") {
+      if (!apiKey) return { valid: false, message: "API key is required", models: [] };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch("https://api.groq.com/openai/v1/models", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (res.status === 401) return { valid: false, message: "❌ Invalid API key", models: [] };
+      if (!res.ok) return { valid: false, message: `❌ Groq HTTP ${res.status}`, models: [] };
+      const data = await res.json();
+      const models: FetchedModel[] = (data.data || [])
+        .filter((m: any) => m.id && !m.id.startsWith("whisper") && !m.id.startsWith("distil"))
+        .map((m: any) => ({ value: String(m.id), label: String(m.id) }))
+        .sort((a: any, b: any) => a.value.localeCompare(b.value));
+      return {
+        valid: true,
+        message: `✅ Groq API key valid! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    if (provider === "openai") {
+      if (!apiKey) return { valid: false, message: "API key is required", models: [] };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch("https://api.openai.com/v1/models", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (res.status === 401) return { valid: false, message: "❌ Invalid API key", models: [] };
+      if (!res.ok) return { valid: false, message: `❌ OpenAI HTTP ${res.status}`, models: [] };
+      const data = await res.json();
+      const models: FetchedModel[] = (data.data || [])
+        .filter((m: any) => m.id && (m.id.startsWith("gpt-") || m.id.startsWith("o1") || m.id.startsWith("o3") || m.id.startsWith("chatgpt-")))
+        .map((m: any) => ({ value: String(m.id), label: String(m.id) }))
+        .sort((a: any, b: any) => a.value.localeCompare(b.value));
+      return {
+        valid: true,
+        message: `✅ OpenAI API key valid! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    if (provider === "openrouter") {
+      if (!apiKey) return { valid: false, message: "API key is required", models: [] };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch("https://openrouter.ai/api/v1/models", {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "HTTP-Referer": "https://opensarthi.app",
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (res.status === 401) return { valid: false, message: "❌ Invalid API key", models: [] };
+      if (!res.ok) return { valid: false, message: `❌ OpenRouter HTTP ${res.status}`, models: [] };
+      const data = await res.json();
+      const models: FetchedModel[] = (data.data || [])
+        .filter((m: any) => m.id)
+        .map((m: any) => ({ value: String(m.id), label: String(m.name || m.id) }))
+        .sort((a: any, b: any) => a.value.localeCompare(b.value));
+      return {
+        valid: true,
+        message: `✅ OpenRouter API key valid! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    if (provider === "google") {
+      if (!apiKey) return { valid: false, message: "API key is required", models: [] };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (!res.ok) return { valid: false, message: `❌ Google HTTP ${res.status}`, models: [] };
+      const data = await res.json();
+      const models: FetchedModel[] = (data.models || [])
+        .filter((m: any) => (m.supportedGenerationMethods || []).includes("generateContent"))
+        .map((m: any) => ({
+          value: String(m.name.replace("models/", "")),
+          label: String(m.displayName || m.name.replace("models/", "")),
+        }))
+        .sort((a: any, b: any) => a.value.localeCompare(b.value));
+      return {
+        valid: true,
+        message: `✅ Google API key valid! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    if (provider === "anthropic") {
+      if (!apiKey) return { valid: false, message: "API key is required", models: [] };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch("https://api.anthropic.com/v1/models", {
+          headers: {
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (res.status === 401) return { valid: false, message: "❌ Invalid API key", models: [] };
+      if (!res.ok) return { valid: false, message: `❌ Anthropic HTTP ${res.status}`, models: [] };
+      const data = await res.json();
+      const models: FetchedModel[] = (data.data || []).map((m: any) => ({
+        value: String(m.id),
+        label: String(m.display_name || m.id),
+      }));
+      return {
+        valid: true,
+        message: `✅ Anthropic API key valid! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    return { valid: false, message: `Unsupported provider: ${provider}`, models: [] };
+  } catch (err: any) {
+    return { valid: false, message: `Connection failed: ${err.message || String(err)}`, models: [] };
+  }
+}
+
 function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
     <h3 style={{ fontSize: "11px", color: "var(--text-secondary)", letterSpacing: "0.05em", margin: 0, display: "flex", alignItems: "center", gap: "6px" }}>
@@ -173,6 +410,8 @@ export function SettingsView({
   currentAnthropicKey,
   currentGroqKey,
   currentOpenrouterKey,
+  currentCustomOpenaiBaseUrl = "",
+  currentCustomOpenaiApiKey = "",
   currentVoiceAccent,
   currentVoiceSpeed,
   currentContinuousListening,
@@ -200,6 +439,12 @@ export function SettingsView({
   const [anthropicKey, setAnthropicKey] = useState("");
   const [groqKey, setGroqKey] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
+  const [customOpenaiBaseUrl, setCustomOpenaiBaseUrl] = useState(currentCustomOpenaiBaseUrl);
+  const [customOpenaiApiKey, setCustomOpenaiApiKey] = useState("");
+
+  // Test API key state
+  const [testKeyState, setTestKeyState] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
+  const [testKeyMessage, setTestKeyMessage] = useState("");
 
   // Dynamic model discovery
   const [dynamicModels, setDynamicModels] = useState<FetchedModel[]>([]);
@@ -221,6 +466,44 @@ export function SettingsView({
 
   const providerInfo = PROVIDER_LABELS[provider] || PROVIDER_LABELS.google;
   const isLocal = provider === "ollama";
+  const isCustomOpenai = provider === "custom_openai";
+
+  const getCurrentKeyForProvider = useCallback(() => {
+    switch (provider) {
+      case "google": return currentGeminiKey;
+      case "openai": return currentOpenaiKey;
+      case "anthropic": return currentAnthropicKey;
+      case "groq": return currentGroqKey;
+      case "openrouter": return currentOpenrouterKey;
+      case "custom_openai": return customOpenaiApiKey || currentCustomOpenaiApiKey;
+      default: return "";
+    }
+  }, [provider, currentGeminiKey, currentOpenaiKey, currentAnthropicKey, currentGroqKey, currentOpenrouterKey, customOpenaiApiKey, currentCustomOpenaiApiKey]);
+
+  const getCurrentKeyInput = useCallback(() => {
+    switch (provider) {
+      case "google": return geminiKey;
+      case "openai": return openaiKey;
+      case "anthropic": return anthropicKey;
+      case "groq": return groqKey;
+      case "openrouter": return openrouterKey;
+      case "custom_openai": return customOpenaiApiKey;
+      default: return "";
+    }
+  }, [provider, geminiKey, openaiKey, anthropicKey, groqKey, openrouterKey, customOpenaiApiKey]);
+
+  const setCurrentKeyInput = (val: string) => {
+    switch (provider) {
+      case "google": setGeminiKey(val); break;
+      case "openai": setOpenaiKey(val); break;
+      case "anthropic": setAnthropicKey(val); break;
+      case "groq": setGroqKey(val); break;
+      case "openrouter": setOpenrouterKey(val); break;
+      case "custom_openai": setCustomOpenaiApiKey(val); break;
+    }
+  };
+
+  const hasSavedKey = !!getCurrentKeyForProvider();
 
   // When provider changes, reset model and trigger dynamic discovery
   useEffect(() => {
@@ -233,73 +516,196 @@ export function SettingsView({
     setModelFetchState("idle");
   }, [provider]);
 
-  // Fetch dynamic models from backend proxy
-  const fetchDynamicModels = useCallback(async () => {
-    if (!runtimePort || !PROVIDER_LABELS[provider]?.supportsModelFetch) return;
-    const apiKey = provider === "openai" ? (openaiKey || currentOpenaiKey)
-                 : provider === "openrouter" ? (openrouterKey || currentOpenrouterKey)
-                 : undefined;
-    setModelFetchState("loading");
-    try {
-      const params = new URLSearchParams({ provider });
-      if (apiKey) params.set("api_key", apiKey);
-      const res = await fetch(`http://127.0.0.1:${runtimePort}/models?${params}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: { models: FetchedModel[]; source: string } = await res.json();
-      setDynamicModels(data.models);
-      setModelFetchState(data.source === "offline" ? "offline" : data.models.length > 0 ? "live" : "offline");
-      if (data.models.length > 0) {
-        const modelExists = data.models.some(m => m.value === (isLocal ? localModel : cloudModel));
-        if (!modelExists) {
-          if (isLocal) setLocalModel(data.models[0].value);
-          else setCloudModel(data.models[0].value);
-        }
-      }
-    } catch {
-      setModelFetchState("error");
-    }
-  }, [provider, runtimePort, openaiKey, openrouterKey, currentOpenaiKey, currentOpenrouterKey, isLocal, cloudModel, localModel]);
-
-  // Auto-fetch on provider change if supported
+  // Reset test state when provider changes
   useEffect(() => {
-    if (PROVIDER_LABELS[provider]?.supportsModelFetch) {
-      fetchDynamicModels();
-    }
+    setTestKeyState("idle");
+    setTestKeyMessage("");
   }, [provider]);
 
-  const getCurrentKeyForProvider = () => {
-    switch (provider) {
-      case "google": return currentGeminiKey;
-      case "openai": return currentOpenaiKey;
-      case "anthropic": return currentAnthropicKey;
-      case "groq": return currentGroqKey;
-      case "openrouter": return currentOpenrouterKey;
-      default: return "";
-    }
-  };
+  // Fetch dynamic models from backend proxy or direct client fallback (matching ai-social-agent)
+  const fetchDynamicModels = useCallback(async () => {
+    if (!PROVIDER_LABELS[provider]?.supportsModelFetch) return;
+    const keyInput = getCurrentKeyInput();
+    const effectiveKey = keyInput || getCurrentKeyForProvider();
+    const effectiveBaseUrl = (customOpenaiBaseUrl || currentCustomOpenaiBaseUrl || "").trim() ||
+      (isCustomOpenai ? "http://localhost:20128/v1" : "http://127.0.0.1:11434");
 
-  const getCurrentKeyInput = () => {
-    switch (provider) {
-      case "google": return geminiKey;
-      case "openai": return openaiKey;
-      case "anthropic": return anthropicKey;
-      case "groq": return groqKey;
-      case "openrouter": return openrouterKey;
-      default: return "";
-    }
-  };
+    setModelFetchState("loading");
 
-  const setCurrentKeyInput = (val: string) => {
-    switch (provider) {
-      case "google": setGeminiKey(val); break;
-      case "openai": setOpenaiKey(val); break;
-      case "anthropic": setAnthropicKey(val); break;
-      case "groq": setGroqKey(val); break;
-      case "openrouter": setOpenrouterKey(val); break;
+    // For custom_openai, try direct fetch first since local server responds immediately
+    if (isCustomOpenai) {
+      try {
+        const directResult = await validateClientDirect("custom_openai", effectiveKey, effectiveBaseUrl);
+        if (directResult.valid && directResult.models.length > 0) {
+          setDynamicModels(directResult.models);
+          setModelFetchState("live");
+          const currentSelected = cloudModel || localModel;
+          const modelExists = directResult.models.some((m) => m.value === currentSelected);
+          if (!modelExists) {
+            setCloudModel(directResult.models[0].value);
+            setLocalModel(directResult.models[0].value);
+          }
+          return;
+        }
+      } catch {
+        // Fall back to backend proxy below
+      }
     }
-  };
 
-  const hasSavedKey = !!getCurrentKeyForProvider();
+    // Try backend proxy if runtimePort is available
+    if (runtimePort) {
+      try {
+        const params = new URLSearchParams({ provider });
+        if (effectiveKey) params.set("api_key", effectiveKey);
+        if (isCustomOpenai || provider === "ollama") {
+          params.set("base_url", effectiveBaseUrl);
+        }
+        const res = await fetch(`http://127.0.0.1:${runtimePort}/models?${params}`);
+        if (res.ok) {
+          const data: { models: FetchedModel[]; source: string } = await res.json();
+          if (data.models && data.models.length > 0) {
+            setDynamicModels(data.models);
+            setModelFetchState(data.source === "offline" ? "offline" : "live");
+            const currentSelected = isLocal ? localModel : cloudModel;
+            const modelExists = data.models.some((m) => m.value === currentSelected);
+            if (!modelExists) {
+              if (isLocal) {
+                setLocalModel(data.models[0].value);
+              } else if (isCustomOpenai) {
+                setCloudModel(data.models[0].value);
+                setLocalModel(data.models[0].value);
+              } else {
+                setCloudModel(data.models[0].value);
+              }
+            }
+            return;
+          }
+        }
+      } catch {
+        // Fall back to direct client fetch
+      }
+    }
+
+    // Fallback: Direct client fetch (mirroring ai-social-agent MultiLLMService)
+    try {
+      const direct = await validateClientDirect(provider, effectiveKey, effectiveBaseUrl);
+      if (direct.valid && direct.models.length > 0) {
+        setDynamicModels(direct.models);
+        setModelFetchState("live");
+        const currentSelected = isLocal ? localModel : cloudModel;
+        const modelExists = direct.models.some((m) => m.value === currentSelected);
+        if (!modelExists) {
+          if (isLocal) {
+            setLocalModel(direct.models[0].value);
+          } else {
+            setCloudModel(direct.models[0].value);
+            if (isCustomOpenai) setLocalModel(direct.models[0].value);
+          }
+        }
+        return;
+      }
+    } catch {
+      // Ignore
+    }
+
+    setModelFetchState("error");
+  }, [provider, runtimePort, getCurrentKeyInput, getCurrentKeyForProvider, isCustomOpenai, customOpenaiBaseUrl, currentCustomOpenaiBaseUrl, isLocal, cloudModel, localModel]);
+
+  // Test API key handler (Dual-resilience: Backend Proxy + Direct Client Validation)
+  const handleTestKey = useCallback(async () => {
+    const keyInput = getCurrentKeyInput();
+    const effectiveKey = keyInput || getCurrentKeyForProvider();
+    const effectiveBaseUrl = (customOpenaiBaseUrl || currentCustomOpenaiBaseUrl || "").trim() ||
+      (isCustomOpenai ? "http://localhost:20128/v1" : "http://127.0.0.1:11434");
+
+    setTestKeyState("checking");
+    setTestKeyMessage("Testing...");
+
+    const applySuccess = (models: FetchedModel[], message: string) => {
+      setTestKeyState("valid");
+      setTestKeyMessage(message);
+      if (models.length > 0) {
+        setDynamicModels(models);
+        setModelFetchState("live");
+        const currentSelected = isLocal ? localModel : cloudModel;
+        const modelExists = models.some((m) => m.value === currentSelected);
+        if (!modelExists) {
+          if (isLocal) {
+            setLocalModel(models[0].value);
+          } else if (isCustomOpenai) {
+            setCloudModel(models[0].value);
+            setLocalModel(models[0].value);
+          } else {
+            setCloudModel(models[0].value);
+          }
+        }
+      }
+      setTimeout(() => {
+        setTestKeyState("idle");
+        setTestKeyMessage("");
+      }, 6000);
+    };
+
+    // For custom_openai, try direct fetch first (ultra-fast for local servers like OmniRoute)
+    if (isCustomOpenai) {
+      try {
+        const direct = await validateClientDirect("custom_openai", effectiveKey, effectiveBaseUrl);
+        if (direct.valid) {
+          applySuccess(direct.models, direct.message);
+          return;
+        } else if (direct.message.includes("401") || direct.message.includes("403")) {
+          setTestKeyState("invalid");
+          setTestKeyMessage(direct.message);
+          setTimeout(() => { setTestKeyState("idle"); setTestKeyMessage(""); }, 6000);
+          return;
+        }
+      } catch {
+        // Continue to try backend proxy if available
+      }
+    }
+
+    // Try backend proxy if runtimePort is available
+    if (runtimePort) {
+      try {
+        const params = new URLSearchParams({ provider });
+        if (effectiveKey) params.set("api_key", effectiveKey);
+        if (isCustomOpenai || provider === "ollama") {
+          params.set("base_url", effectiveBaseUrl);
+        }
+        const res = await fetch(`http://127.0.0.1:${runtimePort}/validate_key?${params}`);
+        if (res.ok) {
+          const data: { valid: boolean; message: string; models: { value: string; label: string }[] } = await res.json();
+          if (data.valid) {
+            applySuccess(data.models || [], data.message || "API key valid!");
+            return;
+          } else {
+            setTestKeyState("invalid");
+            setTestKeyMessage(data.message || "Validation failed");
+            setTimeout(() => { setTestKeyState("idle"); setTestKeyMessage(""); }, 6000);
+            return;
+          }
+        }
+      } catch {
+        // Backend failed or errored, fall through to direct client validation
+      }
+    }
+
+    // Direct client validation (mirroring ai-social-agent MultiLLMService)
+    try {
+      const direct = await validateClientDirect(provider, effectiveKey, effectiveBaseUrl);
+      if (direct.valid) {
+        applySuccess(direct.models, direct.message);
+      } else {
+        setTestKeyState("invalid");
+        setTestKeyMessage(direct.message || "Connection failed");
+        setTimeout(() => { setTestKeyState("idle"); setTestKeyMessage(""); }, 6000);
+      }
+    } catch (err: any) {
+      setTestKeyState("invalid");
+      setTestKeyMessage(`Connection failed: ${err.message || String(err)}`);
+      setTimeout(() => { setTestKeyState("idle"); setTestKeyMessage(""); }, 6000);
+    }
+  }, [provider, runtimePort, getCurrentKeyInput, getCurrentKeyForProvider, customOpenaiBaseUrl, currentCustomOpenaiBaseUrl, isCustomOpenai, isLocal, localModel, cloudModel]);
 
   const handleSaveAI = () => {
     // Only send the key that's being actively edited — don't overwrite other saved keys with empty strings
@@ -313,6 +719,8 @@ export function SettingsView({
       anthropicKey:  provider === "anthropic"   ? (currentKey || currentAnthropicKey)  : currentAnthropicKey,
       groqKey:       provider === "groq"        ? (currentKey || currentGroqKey)        : currentGroqKey,
       openrouterKey: provider === "openrouter"  ? (currentKey || currentOpenrouterKey) : currentOpenrouterKey,
+      customOpenaiBaseUrl: provider === "custom_openai" ? (customOpenaiBaseUrl || currentCustomOpenaiBaseUrl) : currentCustomOpenaiBaseUrl,
+      customOpenaiApiKey:  provider === "custom_openai" ? (currentKey || currentCustomOpenaiApiKey || "") : currentCustomOpenaiApiKey,
       longTermMemoryEnabled,
       useLanggraph,
       useSupervisor,
@@ -351,7 +759,9 @@ export function SettingsView({
       openaiKey:     provider === "openai"      ? (currentKey || currentOpenaiKey)      : currentOpenaiKey,
       anthropicKey:  provider === "anthropic"   ? (currentKey || currentAnthropicKey)  : currentAnthropicKey,
       groqKey:       provider === "groq"        ? (currentKey || currentGroqKey)        : currentGroqKey,
-      openrouterKey: provider === "openrouter"  ? (currentKey || currentOpenrouterKey) : openrouterKey,
+      openrouterKey: provider === "openrouter"  ? (currentKey || currentOpenrouterKey) : currentOpenrouterKey,
+      customOpenaiBaseUrl: provider === "custom_openai" ? (customOpenaiBaseUrl || currentCustomOpenaiBaseUrl) : currentCustomOpenaiBaseUrl,
+      customOpenaiApiKey:  provider === "custom_openai" ? (currentKey || currentCustomOpenaiApiKey || "") : currentCustomOpenaiApiKey,
       longTermMemoryEnabled,
       useLanggraph,
       useSupervisor,
@@ -477,20 +887,150 @@ export function SettingsView({
                 </div>
               </div>
 
-              {/* Step 2: Model */}
+              {/* Step 2: API Endpoint & Key (Credentials) — Above Model Selection */}
               <AnimatePresence mode="wait">
                 <motion.div
-                  key={provider}
+                  key={`${provider}-credentials`}
                   initial={{ opacity: 0, y: -6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -6 }}
                   transition={{ duration: 0.15 }}
-                  style={{ display: "flex", flexDirection: "column", gap: "5px" }}
+                  style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                >
+                  <label style={labelStyle}>
+                    <ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />
+                    2. {isLocal ? "LOCAL SERVER ENDPOINT" : isCustomOpenai ? "API ENDPOINT & CREDENTIALS" : "API CREDENTIALS"}
+                  </label>
+
+                  {/* Custom OpenAI Base URL */}
+                  {isCustomOpenai && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}>
+                        <Globe size={10} style={{ opacity: 0.7 }} />
+                        API ENDPOINT / BASE URL (required)
+                      </label>
+                      <input
+                        value={customOpenaiBaseUrl}
+                        onChange={(e) => {
+                          setCustomOpenaiBaseUrl(e.target.value);
+                          setTestKeyState("idle");
+                          setTestKeyMessage("");
+                        }}
+                        type="text"
+                        placeholder="e.g. http://localhost:20128/v1 or http://127.0.0.1:8000/v1"
+                        style={inputStyle}
+                      />
+                    </div>
+                  )}
+
+                  {/* Ollama Base URL */}
+                  {isLocal && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}>
+                        <Globe size={10} style={{ opacity: 0.7 }} />
+                        OLLAMA SERVER URL (optional)
+                      </label>
+                      <input
+                        value={customOpenaiBaseUrl}
+                        onChange={(e) => {
+                          setCustomOpenaiBaseUrl(e.target.value);
+                          setTestKeyState("idle");
+                          setTestKeyMessage("");
+                        }}
+                        type="text"
+                        placeholder="http://127.0.0.1:11434"
+                        style={inputStyle}
+                      />
+                    </div>
+                  )}
+
+                  {/* API Key (for all cloud providers & custom_openai) */}
+                  {!isLocal && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <label style={{ ...labelStyle, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>{providerInfo.apiKeyLabel || (isCustomOpenai ? "API KEY (optional / required by server)" : "API KEY")}</span>
+                        {hasSavedKey && (
+                          <span style={{ fontSize: "9px", color: "var(--success)", display: "flex", alignItems: "center", gap: "3px" }}>
+                            <CheckCircle2 size={10} /> KEY SAVED
+                          </span>
+                        )}
+                      </label>
+                      <input
+                        value={getCurrentKeyInput()}
+                        onChange={(e) => {
+                          setCurrentKeyInput(e.target.value);
+                          setTestKeyState("idle");
+                          setTestKeyMessage("");
+                        }}
+                        type="password"
+                        placeholder={hasSavedKey ? "•••••••••• (leave blank to keep)" : providerInfo.apiKeyPlaceholder}
+                        style={inputStyle}
+                      />
+                    </div>
+                  )}
+
+                  {/* Test Key / Test Connection Button */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: 2 }}>
+                    <button
+                      id={`test-key-btn-${provider}`}
+                      onClick={handleTestKey}
+                      disabled={testKeyState === "checking" || (!getCurrentKeyInput() && !hasSavedKey && !isCustomOpenai && !isLocal)}
+                      style={{
+                        padding: "6px 12px",
+                        background: testKeyState === "valid" ? "rgba(0,200,80,0.15)" : testKeyState === "invalid" ? "rgba(255,50,50,0.15)" : "rgba(255,255,255,0.06)",
+                        border: `1px solid ${testKeyState === "valid" ? "var(--success)" : testKeyState === "invalid" ? "var(--danger)" : "var(--border)"}`,
+                        color: testKeyState === "valid" ? "var(--success)" : testKeyState === "invalid" ? "var(--danger)" : "var(--text-secondary)",
+                        borderRadius: "4px",
+                        fontSize: "10px",
+                        fontFamily: "var(--font-mono)",
+                        cursor: testKeyState === "checking" ? "wait" : "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        letterSpacing: "0.05em",
+                        transition: "all 0.2s",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {testKeyState === "checking" ? (
+                        <><RefreshCw size={10} style={{ animation: "spin 1s linear infinite" }} /> TESTING...</>
+                      ) : testKeyState === "valid" ? (
+                        <><CheckCircle2 size={10} /> VALID</>  
+                      ) : testKeyState === "invalid" ? (
+                        <>✕ FAILED</>
+                      ) : (
+                        <>{isLocal ? "TEST CONNECTION" : "TEST KEY"}</>
+                      )}
+                    </button>
+                    {testKeyMessage && (
+                      <span style={{ fontSize: "10px", color: testKeyState === "valid" ? "var(--success)" : testKeyState === "invalid" ? "var(--danger)" : "var(--text-secondary)", opacity: 0.9 }}>
+                        {testKeyMessage}
+                      </span>
+                    )}
+                  </div>
+
+                  {providerInfo.docsUrl && (
+                    <span style={{ fontSize: "10px", color: "var(--text-secondary)", opacity: 0.8 }}>
+                      Get your key at: <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{providerInfo.docsUrl}</span>
+                    </span>
+                  )}
+                </motion.div>
+              </AnimatePresence>
+
+              {/* Step 3: Model Selection — Below Credentials & Endpoint */}
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={`${provider}-model`}
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.15 }}
+                  style={{ display: "flex", flexDirection: "column", gap: "5px", marginTop: "6px" }}
                 >
                   {isLocal ? (
                     <>
                       <label style={{ ...labelStyle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <span><ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />2. LOCAL MODEL (Ollama)</span>
+                        <span><ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />3. LOCAL MODEL (Ollama)</span>
                         <button
                           onClick={fetchDynamicModels}
                           title="Refresh local Ollama models"
@@ -530,10 +1070,52 @@ export function SettingsView({
                         style={{ ...inputStyle, marginTop: 4, fontSize: 12 }}
                       />
                     </>
+                  ) : isCustomOpenai ? (
+                    <>
+                      <label style={{ ...labelStyle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span><ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />3. SELECT MODEL</span>
+                        <button
+                          onClick={fetchDynamicModels}
+                          title="Fetch live models from endpoint"
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4, fontSize: 10 }}
+                        >
+                          <RefreshCw size={11} style={{ animation: modelFetchState === "loading" ? "spin 1s linear infinite" : "none" }} />
+                          {modelFetchState === "live" ? `LIVE (${dynamicModels.length})` : modelFetchState === "loading" ? "FETCHING…" : "FETCH LIVE"}
+                        </button>
+                      </label>
+                      {dynamicModels.length > 0 && (
+                        <select
+                          value={cloudModel}
+                          onChange={(e) => {
+                            setCloudModel(e.target.value);
+                            setLocalModel(e.target.value);
+                          }}
+                          style={selectStyle}
+                        >
+                          {dynamicModels.map((m) => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                          ))}
+                        </select>
+                      )}
+                      <input
+                        value={cloudModel}
+                        onChange={(e) => {
+                          setCloudModel(e.target.value);
+                          setLocalModel(e.target.value);
+                        }}
+                        placeholder="Model ID: e.g. auto/fast, cw/claude-sonnet-4-6, gpt-4o"
+                        style={{ ...inputStyle, marginTop: dynamicModels.length > 0 ? 4 : 0, fontSize: 12 }}
+                      />
+                      {dynamicModels.length > 0 ? (
+                        <span style={{ fontSize: 10, color: "var(--accent)", opacity: 0.7 }}>✓ Live model catalog from endpoint ({dynamicModels.length} models)</span>
+                      ) : (
+                        <span style={{ fontSize: 10, color: "var(--text-secondary)", opacity: 0.6 }}>Click &apos;Test Key&apos; above or &apos;Fetch Live&apos; to load models, or type model ID manually</span>
+                      )}
+                    </>
                   ) : (
                     <>
                       <label style={{ ...labelStyle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <span><ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />2. SELECT MODEL</span>
+                        <span><ChevronRight size={10} style={{ display: "inline", marginRight: 4 }} />3. SELECT MODEL</span>
                         {PROVIDER_LABELS[provider]?.supportsModelFetch && (
                           <button
                             onClick={fetchDynamicModels}
@@ -541,7 +1123,7 @@ export function SettingsView({
                             style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4, fontSize: 10 }}
                           >
                             <RefreshCw size={11} style={{ animation: modelFetchState === "loading" ? "spin 1s linear infinite" : "none" }} />
-                            {modelFetchState === "live" ? "LIVE" : modelFetchState === "loading" ? "FETCHING…" : "FETCH LIVE"}
+                            {modelFetchState === "live" ? `LIVE (${dynamicModels.length})` : modelFetchState === "loading" ? "FETCHING…" : "FETCH LIVE"}
                           </button>
                         )}
                       </label>
@@ -555,47 +1137,12 @@ export function SettingsView({
                         ))}
                       </select>
                       {dynamicModels.length > 0 && (
-                        <span style={{ fontSize: 10, color: "var(--accent)", opacity: 0.7 }}>✓ Live model list from {provider}</span>
+                        <span style={{ fontSize: 10, color: "var(--accent)", opacity: 0.7 }}>✓ Live model list from {provider} ({dynamicModels.length} models)</span>
                       )}
                     </>
                   )}
                 </motion.div>
               </AnimatePresence>
-
-              {/* Step 3: API Key */}
-              {!isLocal && (
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={`${provider}-key`}
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.15 }}
-                    style={{ display: "flex", flexDirection: "column", gap: "5px", marginTop: "4px" }}
-                  >
-                    <label style={{ ...labelStyle, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span>{providerInfo.apiKeyLabel}</span>
-                      {hasSavedKey && (
-                        <span style={{ fontSize: "9px", color: "var(--success)", display: "flex", alignItems: "center", gap: "3px" }}>
-                          <CheckCircle2 size={10} /> KEY SAVED
-                        </span>
-                      )}
-                    </label>
-                    <input
-                      value={getCurrentKeyInput()}
-                      onChange={(e) => setCurrentKeyInput(e.target.value)}
-                      type="password"
-                      placeholder={hasSavedKey ? "•••••••••• (leave blank to keep)" : providerInfo.apiKeyPlaceholder}
-                      style={inputStyle}
-                    />
-                    {providerInfo.docsUrl && (
-                      <span style={{ fontSize: "10px", color: "var(--text-secondary)", opacity: 0.8 }}>
-                        Get your key at: <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{providerInfo.docsUrl}</span>
-                      </span>
-                    )}
-                  </motion.div>
-                </AnimatePresence>
-              )}
 
               {/* Long Term Memory Toggle */}
               <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px dashed rgba(255,255,255,0.07)" }}>

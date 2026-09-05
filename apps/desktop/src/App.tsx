@@ -41,6 +41,8 @@ export default function App() {
     anthropicApiKey,
     groqApiKey,
     openrouterApiKey,
+    customOpenaiBaseUrl,
+    customOpenaiApiKey,
     voiceAccent,
     voiceSpeed,
     continuousListening,
@@ -194,6 +196,8 @@ export default function App() {
     anthropicKey: string;
     groqKey: string;
     openrouterKey: string;
+    customOpenaiBaseUrl: string;
+    customOpenaiApiKey: string;
     voiceAccent: string;
     voiceSpeed: number;
     continuousListening: boolean;
@@ -235,6 +239,8 @@ export default function App() {
       anthropic_api_key: settings.anthropicKey,
       groq_api_key: settings.groqKey,
       openrouter_api_key: settings.openrouterKey,
+      custom_openai_base_url: settings.customOpenaiBaseUrl || "",
+      custom_openai_api_key: settings.customOpenaiApiKey || "",
       voice_accent: settings.voiceAccent,
       voice_speed: settings.voiceSpeed,
       continuous_listening: settings.continuousListening,
@@ -297,6 +303,10 @@ export default function App() {
           openrouter_api_key: data.provider === "openrouter" ? (data.apiKey || openrouterApiKey) : openrouterApiKey,
         } : {})
       });
+      const activeId = useAssistantStore.getState().activeThreadId;
+      if (activeId) {
+        wsClient.send("load_thread", { thread_id: activeId, onboarding_complete: true });
+      }
     };
     if (isConnected) {
       sendPersonalization();
@@ -373,6 +383,8 @@ export default function App() {
             currentAnthropicKey={anthropicApiKey}
             currentGroqKey={groqApiKey}
             currentOpenrouterKey={openrouterApiKey}
+            currentCustomOpenaiBaseUrl={customOpenaiBaseUrl}
+            currentCustomOpenaiApiKey={customOpenaiApiKey}
             currentVoiceAccent={voiceAccent}
             currentVoiceSpeed={voiceSpeed}
             currentContinuousListening={continuousListening}
