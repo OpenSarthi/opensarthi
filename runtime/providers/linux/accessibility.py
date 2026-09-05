@@ -192,6 +192,105 @@ class AccessibilityProvider:
             lines.append(f"  [{el.role}] '{el.name}' at ({el.x},{el.y}) {state}".rstrip())
         return "\n".join(lines)
 
+    def get_window_tree_summary(self, max_depth: int = 8, max_elements: int = 300):
+        """
+        Build an indented, hierarchical accessibility tree scoped to the ACTIVE
+        window — a DOM-like structure the LLM can act on. Skips invisible nodes.
+
+        Returns (text, total_elements, truncated):
+            text:       multi-line indented tree
+            total:      number of elements walked before truncation
+            truncated:  True if the walk was cut short at `max_elements`
+        """
+        if not self._available:
+            return "No accessible UI elements found.", 0, False
+
+        Atspi = self._Atspi
+        active_win = None
+
+        # Locate the raw AT-SPI object for the currently active window.
+        try:
+            for i in range(self._desktop.get_child_count()):
+                app = self._desktop.get_child_at_index(i)
+                if not app:
+                    continue
+                for j in range(app.get_child_count()):
+                    win = app.get_child_at_index(j)
+                    if not win:
+                        continue
+                    states = win.get_state_set()
+                    if states.contains(Atspi.StateType.ACTIVE):
+                        active_win = win
+                        break
+                if active_win:
+                    break
+        except Exception:
+            pass
+
+        lines = []
+        total = 0
+        truncated = False
+
+        def _label(obj) -> str:
+            try:
+                role = obj.get_role_name() or "unknown"
+                name = (obj.get_name() or "").strip()
+                states = obj.get_state_set()
+                bbox_str = ""
+                try:
+                    bbox = obj.get_extents(Atspi.CoordType.SCREEN)
+                    bbox_str = f" ({bbox.x},{bbox.y},{bbox.width}x{bbox.height})"
+                except Exception:
+                    pass
+                label = f"[{role}]{bbox_str}"
+                if name:
+                    label = f"{label} '{name[:80]}'"
+                if states.contains(Atspi.StateType.FOCUSED):
+                    label = f"{label} [FOCUSED]"
+                return label
+            except Exception:
+                return "[unknown]"
+
+        def _walk(obj, depth):
+            nonlocal total, truncated
+            if total >= max_elements:
+                truncated = True
+                return
+            if depth > max_depth:
+                return
+            try:
+                states = obj.get_state_set()
+                if not states.contains(Atspi.StateType.VISIBLE):
+                    return  # skip invisible / minimized subtree
+            except Exception:
+                pass
+            total += 1
+            lines.append("  " * depth + _label(obj))
+            try:
+                n = obj.get_child_count()
+            except Exception:
+                n = 0
+            for i in range(min(n, 100)):
+                child = obj.get_child_at_index(i)
+                if child is not None:
+                    _walk(child, depth + 1)
+
+        try:
+            if active_win is not None:
+                _walk(active_win, 1)
+        except Exception:
+            pass
+
+        if not lines:
+            # No scoped tree — fall back to the flat full-desktop summary.
+            return self.get_tree_summary(max_elements=max_elements), 0, False
+
+        header = f"Accessible UI Tree (active window, {total} elements, depth≤{max_depth}):"
+        text = "\n".join([header] + lines)
+        if truncated:
+            text += f"\n[... tree truncated at {max_elements} elements — call observe_desktop to refresh ...]"
+        return text, total, truncated
+
     def _to_element(self, obj) -> UIElement:
         """Convert an Atspi.Accessible object to UIElement."""
         Atspi = self._Atspi
