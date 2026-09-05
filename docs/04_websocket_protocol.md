@@ -104,13 +104,15 @@ Update one or more settings. Empty string values for API keys are ignored (no ac
   "type": "update_settings",
   "payload": {
     "ai_provider": "google",
-    "cloud_model": "gemini-2.5-flash",
+    "cloud_model": "gemini-3.6-flash",
     "local_model": "qwen2.5-coder:3b",
     "gemini_api_key": "AIza...",
     "openai_api_key": "",
     "anthropic_api_key": "",
     "groq_api_key": "",
     "openrouter_api_key": "",
+    "custom_openai_base_url": "http://127.0.0.1:8000/v1",
+    "custom_openai_api_key": "",
     "voice_accent": "af_heart",
     "voice_speed": 1.35,
     "continuous_listening": false,
@@ -178,9 +180,14 @@ Load a specific past thread into the current session.
 ```json
 {
   "type": "load_thread",
-  "payload": { "thread_id": "8558d1f1-..." }
+  "payload": {
+    "thread_id": "8558d1f1-...",
+    "onboarding_complete": true
+  }
 }
 ```
+
+*Note: Passing `onboarding_complete: false` (e.g. during fresh startup) prevents the morning briefing from executing before the user has completed onboarding and configured an API key.*
 
 ### `manual_voice_trigger`
 
@@ -426,12 +433,14 @@ Full settings state pushed to frontend on connect or after any update.
   "payload": {
     "ai_provider": "google",
     "local_model": "qwen2.5-coder:3b",
-    "cloud_model": "gemini-2.5-flash",
+    "cloud_model": "gemini-3.6-flash",
     "has_gemini_key": true,
     "has_openai_key": false,
     "has_anthropic_key": false,
     "has_groq_key": false,
     "has_openrouter_key": false,
+    "custom_openai_base_url": "",
+    "custom_openai_api_key": "",
     "voice_accent": "af_heart",
     "voice_speed": 1.35,
     "continuous_listening": false,
@@ -461,7 +470,7 @@ Full settings state pushed to frontend on connect or after any update.
     "proactive_enabled": false,
     "proactive_cooldown_minutes": 20,
     "use_langgraph": true,
-    "use_supervisor": false,
+    "use_supervisor": true,
     "use_native_voice": false
   }
 }

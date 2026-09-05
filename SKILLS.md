@@ -3,7 +3,7 @@
 > **Purpose:** This file is the single source of truth for any LLM (Gemini, Claude, GPT, Copilot, Cursor, Codex, etc.) working on this codebase.  
 > Read this **first** before writing or modifying any code. It captures architecture, conventions, invariants, contracts, and pitfalls that are not obvious from the code alone.
 
-> **Last updated:** July 2026 — Dual execution engine (AgentRuntime + LangGraph), SileroVAD ONNX (no PyTorch), 32-tool registry, conversational settings tool (`update_settings`), long-term memory toggle + model caching, audio cues engine, multi-tab threads, smart overlay mode with edge snapping, full markdown response rendering + clickable URLs, separate AI/All save in settings, `DevLogger` structured run logs, `OverlayIdleView` compact strip.
+> **Last updated:** September 2026 — Dual execution engine (AgentRuntime + LangGraph), SileroVAD ONNX (no PyTorch), **70-tool registry** across 10 tool domains, browser automation (Playwright, 20+ tools), terminal-first URL opening (`open_url`), multimodal screenshot analysis, instant vision acknowledgment, LangGraph as default engine (`USE_LANGGRAPH=true`), Supervisor multi-agent orchestration (default on), conversational settings tool (`update_settings`), long-term memory toggle + model caching, audio cues engine, multi-tab threads, smart overlay mode with edge snapping, full markdown response rendering + clickable URLs, separate AI/All save in settings, `DevLogger` structured run logs, `OverlayIdleView` compact strip.
 
 ---
 
@@ -53,7 +53,7 @@
 
 1. **Two-process model (Desktop)** — Tauri (Rust + WebView) spawns the Python runtime as a sidecar process. They communicate exclusively over a **local WebSocket** on a dynamically negotiated port.
 2. **In-process model (Android)** — Chaquopy embeds Python inside the APK. The Python FastAPI server runs in a `RuntimeService` foreground service on port 8765. `OPENSARTHI_PLATFORM=android` **must be set before any imports** in `main_android.py`.
-3. **No REST API** — All communication is WebSocket-based. There are no HTTP endpoints used by the frontend.
+3. **WebSocket-first Communication with Local Proxy Helpers** — Primary messaging is WebSocket-based (`/ws`). Lightweight local HTTP endpoints (`/models`, `/validate_key`) serve as local proxies for dynamic model discovery and credential verification without CSP violations.
 4. **Monorepo** — pnpm workspaces. `apps/desktop/` is the Tauri+React app. `apps/android/` is the Capacitor+React app. `runtime/` is the Python sidecar/embedded server.
 5. **Linux-first, Windows in progress, Android active** — Android uses `OPENSARTHI_PLATFORM=android` env var to switch tool registry and voice pipeline.
 6. **Dual execution mode** — `USE_LANGGRAPH=true` activates `runtime/graph/` (LangGraph stateful graph with `SqliteSaver` checkpointing). Default is the legacy `AgentRuntime` agentic loop.
@@ -162,7 +162,13 @@ opensarthi/
 │   │   ├── self_fix.py             # SelfFixTool: AI code rewrite + rollback
 │   │   ├── settings_tool.py        # UpdateSettingsTool: conversational settings control
 │   │   ├── productivity.py         # WebSearch, Weather, Timer, ListFiles, Volume, Battery, WiFi
-│   │   └── registry.py             # 32-tool registry (all_tools, get, get_schemas)
+│   │   ├── browser.py              # Playwright browser automation (20+ tools)
+│   │   ├── open_url.py             # Terminal-first URL opening (system handler)
+│   │   ├── google_tools.py         # Google Integration: calendar_read/search, gmail_read/search
+│   │   ├── music.py                # Music/YouTube: youtube_search, youtube_control, music_play
+│   │   ├── social.py               # Social Media: twitter, linkedin, telegram, whatsapp, discord, email
+│   │   ├── system_monitor.py       # System Monitoring: system_status, weather, reminders, monitor_control
+│   │   └── registry.py             # 70-tool registry across 10 domains (all_tools, get, get_schemas)
 │   ├── memory/
 │   │   ├── long_term.py            # Semantic SQLite memory (all-MiniLM-L6-v2, cached model)
 │   │   ├── manager.py              # Unified MemoryManager (recall, store)

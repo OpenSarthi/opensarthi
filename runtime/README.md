@@ -2,9 +2,12 @@
 
 The intelligence layer of OpenSarthi. Runs as a **headless sidecar process** spawned by the Tauri shell. Built with **FastAPI + PydanticAI + LangGraph**, it handles all AI orchestration, tool execution, voice processing, real-time WebSocket communication, memory, and persistent storage.
 
-**New Architecture (Mark-L Inspired):**
-- **Native Audio Pipeline** — Gemini Live / OpenAI Realtime streaming for sub-500ms voice latency
-- **Multi-Agent Supervisor** — Routes to WebAgent, CalendarAgent, MailAgent, CodeAgent, BrowserAgent, MusicAgent, SocialAgent
+**Key Capabilities:**
+- **70-Tool Registry** — Desktop automation, browser automation (20 Playwright tools), Google OAuth, music, social media, system monitoring, shell, memory
+- **Multi-Agent Supervisor** — Classifies task domain and scopes the planner to that domain's tools (default: on, toggle via UI)
+- **Terminal-First Browser Opening** — `open_url` hands the URL to `xdg-open` / browser binary; no GUI click path needed
+- **Browser DOM/Snapshot** — Playwright accessibility tree (`browser_snapshot`) for reliable element targeting
+- **Multimodal Screenshots to LLM** — Desktop screenshots downscaled to 1280px PNG and injected as `ImageUrl` for vision-capable models
 - **Two-Phase Morning Briefing** — Phase 1: instant greeting (<1s, no tools); Phase 2: full briefing + Content Panel
 - **Instant Vision Acknowledgment** — Immediate "looking" state while screen analysis runs in background
 - **Parallel Search** — Multi-engine (DuckDuckGo, Gemini, Brave) first-wins pattern
@@ -30,7 +33,7 @@ Tauri Shell  ──WebSocket──►  FastAPI / api/websocket.py
        ┌───────┴────────┐
        ▼                ▼
  planner/agent.py    tools/registry.py
- (PydanticAI)        (32+ tools registered)
+ (PydanticAI)        (70 tools registered)
        │
        ▼
 ┌──────┴────────────────────────────────────────┐
@@ -41,7 +44,7 @@ Tauri Shell  ──WebSocket──►  FastAPI / api/websocket.py
 └───────────────────────────────────────────────┘
        │
        ▼
- LLM Provider (Gemini · GPT-4o · Claude · Groq · OpenRouter · Ollama)
+ LLM Provider (Gemini · GPT-4o · Claude · Groq · OpenRouter · Ollama · Custom OpenAI / OmniRoute)
         │
         ├─ gemini-2.5-flash-native-audio-preview (Native Audio)
         └─ gpt-4o-realtime-preview (Native Audio)
@@ -50,6 +53,16 @@ Tauri Shell  ──WebSocket──►  FastAPI / api/websocket.py
 ### Startup & Port Negotiation
 
 `main.py` binds to an OS-assigned free port and prints `PORT:<number>` to stdout. The Tauri Rust layer (`sidecar.rs`) reads this, stores the port, and the frontend WebSocket client connects automatically.
+
+FastAPI is configured with `CORSMiddleware` (`allow_origins=["*"]`) so that requests from both local Tauri dev webview (`http://localhost:1420`) and production shell (`tauri://localhost`) can communicate with the runtime HTTP endpoints.
+
+### HTTP Endpoints (`api/routes.py`)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/health` | GET | Runtime health check. |
+| `/models` | GET | Model discovery proxy for cloud providers (Groq, OpenAI, Anthropic, Google, OpenRouter) and local endpoints (Ollama, Custom OpenAI / OmniRoute). |
+| `/validate_key` | GET | Validates API key and base URL by hitting provider model endpoints and returning discovered models list. |
 
 In packaged production builds (AppImage):
 1. A compiled Rust bootstrap runner executes first.
@@ -92,23 +105,25 @@ In packaged production builds (AppImage):
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### Tool Registry Expansion (74+ Tools)
+### Tool Registry (70 Tools)
 
-**Original 32 Tools:**
-Desktop Automation (7), System (1), Wait (2), Memory (3), Notes (2), Self-Improvement (1), Settings (1), Productivity (10), Media (1)
+**Core 49 Tools** (`tools/registry.py` — desktop, system, wait, memory, notes, self-improvement, settings, productivity, media):
 
-**New 42+ Tools by Category:**
+Desktop Automation (7), System (1), Wait (2), Memory (3), Notes (2), Self-Improvement (1), Settings (1), Productivity (11), Media (1), plus generalization helpers.
+
+**Generalization Tools (21) by Category:**
 
 | Category | Tools |
 |----------|-------|
-| **Calendar (Google OAuth)** | `calendar_list_events`, `calendar_get_event`, `calendar_search_events` |
-| **Mail (Google OAuth)** | `gmail_list_messages`, `gmail_get_message`, `gmail_search_messages` |
-| **Browser Automation** | `browser_navigate`, `browser_click`, `browser_type`, `browser_scroll`, `browser_get_text`, `browser_screenshot`, `browser_extract_links`, `browser_fill_form`, `browser_wait_for_selector`, `browser_execute_js`, `browser_new_tab`, `browser_close_tab`, `browser_switch_tab`, `browser_get_html`, `browser_pdf` |
-| **Command Execution** | `command_run`, `command_run_background`, `command_get_output`, `command_kill` |
-| **Music Playback** | `music_play`, `music_pause`, `music_next`, `music_previous`, `music_search`, `music_queue`, `music_volume`, `music_shuffle` |
-| **Social Media** | `social_post_twitter`, `social_post_linkedin`, `social_post_mastodon`, `social_schedule_post` |
-| **Code Agent** | `code_run_claude`, `code_analyze_repo`, `code_generate_file`, `code_edit_file`, `code_run_tests`, `code_lint` |
-| **System Monitoring** | `system_get_processes`, `system_get_network`, `system_get_disk`, `system_get_sensors` |
+| **Browser Automation (Playwright, 20)** | `browser_go_to`, `browser_back`, `browser_forward`, `browser_reload`, `browser_get_url`, `browser_click`, `browser_type`, `browser_press`, `browser_scroll`, `browser_fill_form`, `browser_smart_click`, `browser_get_text`, `browser_snapshot`, `browser_screenshot`, `browser_new_tab`, `browser_close_tab`, `browser_switch_tab`, `browser_list_tabs`, `browser_close`, `browser_close_all` |
+| **Terminal-First URL Opening** | `open_url` — system default handler / browser binary with URL arg (preferred over GUI open+type path) |
+| **Calendar (Google OAuth)** | `calendar_read`, `calendar_search` |
+| **Mail (Google OAuth)** | `gmail_read`, `gmail_search` |
+| **Music / YouTube** | `youtube_search`, `youtube_control`, `music_play` |
+| **Social Media** | `twitter_post`, `linkedin_post`, `telegram_send`, `whatsapp_send`, `discord_send`, `email_send` |
+| **System Monitoring & Control** | `system_status`, `weather_report`, `flight_finder`, `reminder_set`, `reminder_cancel`, `monitor_control`, `agent_shutdown` |
+
+**Domain Routing:** tools carry a `ToolDomain` (`WEB`, `CALENDAR`, `MAIL`, `BROWSER`, `MUSIC`, `SOCIAL`, `CODE`, `DESKTOP_UI`, `SHELL`, `MONITORING`, `GENERAL`). When the Supervisor is on, `get_tools_by_domain()` returns the task domain's tools + all `GENERAL` tools, so the planner never sees out-of-scope tools.
 
 ### Session Memory Manager
 
@@ -292,9 +307,9 @@ Providers configured in `config.py` (reads `~/.config/opensarthi/.env`):
 
 | Provider | Default Model | Key Setting |
 |----------|-------------|-------------|
-| **Google** | `gemini-2.5-flash` | `GEMINI_API_KEY` |
+| **Google** | `gemini-3.6-flash` | `GEMINI_API_KEY` |
 | **OpenAI** | `gpt-4o` | `OPENAI_API_KEY` |
-| **Anthropic** | `claude-opus-4-5` | `ANTHROPIC_API_KEY` |
+| **Anthropic** | `claude-sonnet-5` | `ANTHROPIC_API_KEY` |
 | **Groq** | `llama-3.3-70b-versatile` | `GROQ_API_KEY` |
 | **OpenRouter** | any via `openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
 | **Ollama** | `qwen2.5-coder:3b` (local) | no key needed |
@@ -360,27 +375,66 @@ Microphone (PyAudio, 16kHz, 512-sample chunks)
 
 ---
 
-### 5. Tool Registry (32 Tools)
+### 5. Tool Registry (70 Tools)
 
-All tools registered in `tools/registry.py`:
+All tools registered in `tools/registry.py` with `validate_registry()` at import.
 
-**Desktop Automation:** `click`, `type_text`, `press_key`, `open_app`, `focus_window`, `click_element`, `observe_desktop`
+#### Core 49 Tools
 
-**System:** `shell` (bubblewrap-sandboxed on Linux)
+| Category | Tools |
+|----------|-------|
+| **Desktop Automation** | `click`, `type_text`, `press_key`, `open_app`, `focus_window`, `click_element`, `observe_desktop` |
+| **System** | `shell` (bubblewrap-sandboxed on Linux) |
+| **Wait Utilities** | `wait_for_window`, `wait_for_text` (OCR polling via pytesseract) |
+| **Memory** | `remember`, `recall`, `forget_memory` |
+| **Notes** | `save_note`, `get_notes` |
+| **Self-Improvement** | `self_fix` (AI-powered runtime self-modification with rollback) |
+| **Conversational Settings** | `update_settings` — change any setting by voice/text |
+| **Productivity** | `web_search`, `get_weather`, `set_timer`, `list_timers`, `cancel_timer`, `list_files`, `open_path`, `read_file`, `set_volume`, `get_battery`, `toggle_wifi` |
+| **Media** | `media_control` (play/pause/next/previous) |
 
-**Wait Utilities:** `wait_for_window`, `wait_for_text` (OCR polling via pytesseract)
+#### Browser Automation (21 tools, Playwright backend)
 
-**Memory:** `remember`, `recall`, `forget_memory`
+**Navigation:** `browser_go_to`, `browser_back`, `browser_forward`, `browser_reload`, `browser_get_url`
 
-**Notes:** `save_note`, `get_notes`
+**Interaction:** `browser_click`, `browser_type`, `browser_press`, `browser_scroll`, `browser_fill_form`, `browser_smart_click`
 
-**Self-Improvement:** `self_fix` (AI-powered runtime self-modification with rollback)
+**Extraction:** `browser_get_text`, `browser_snapshot` (accessibility/DOM tree), `browser_screenshot`
 
-**Conversational Settings:** `update_settings` — change any setting by voice/text
+**Tab Management:** `browser_new_tab`, `browser_close_tab`, `browser_switch_tab`, `browser_list_tabs`
 
-**Productivity:** `web_search`, `get_weather`, `set_timer`, `list_timers`, `cancel_timer`, `list_files`, `open_path`, `read_file`, `set_volume`, `get_battery`, `toggle_wifi`
+**Session:** `browser_close`, `browser_close_all`
 
-**Media:** `media_control` (play/pause/next/previous)
+**Security:** Runs in sandboxed headless Chromium (Playwright); no access to user profiles; `--no-sandbox` gated to root-only; URL scheme restricted to `http`/`https`.
+
+**Terminal-First URL Opening:** `open_url` — hands the URL to `xdg-open` or a known browser binary (`google-chrome`, `chromium`, `brave`, etc.) with `--force-renderer-accessibility`. **Preferred** over `open_app` + GUI typing for "open X page" requests.
+
+#### Google Integration (4 tools, read-only OAuth2)
+
+| Tool | Scope | Purpose |
+|------|-------|---------|
+| `calendar_read` | `calendar.readonly` | Upcoming events, free/busy |
+| `calendar_search` | `calendar.readonly` | Search events by query |
+| `gmail_read` | `gmail.readonly` | Unread subjects/snippets, search |
+| `gmail_search` | `gmail.readonly` | Search emails by query |
+
+#### Music / YouTube (3 tools)
+
+`youtube_search` — search and play YouTube videos.
+`youtube_control` — play/pause/next/previous/volume/seek.
+`music_play` — local music file playback (MP3, FLAC via system player).
+
+#### Social Media Posting (6 tools)
+
+`twitter_post`, `linkedin_post`, `telegram_send`, `whatsapp_send`, `discord_send`, `email_send`
+
+#### System Monitoring & Control (7 tools)
+
+`system_status`, `weather_report`, `flight_finder`, `reminder_set`, `reminder_cancel`, `monitor_control`, `agent_shutdown`
+
+#### Domain Routing
+
+Every tool carries a `ToolDomain`. When the Supervisor is enabled (`use_supervisor: true`, default), `get_tools_by_domain()` scopes the planner to that domain's tools + `GENERAL`. The planner never sees out-of-scope tools. See Section 3 (Multi-Agent Supervisor).
 
 ---
 
@@ -428,13 +482,15 @@ class Settings(BaseSettings):
     wake_word_enabled: bool = True
     wake_word_threshold: float = 0.5
     local_model: str = "qwen2.5-coder:3b"
-    cloud_model: str = "gemini-2.5-flash"
+    cloud_model: str = "gemini-3.6-flash"
     ai_provider: str = "google"
     gemini_api_key: str | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     groq_api_key: str | None = None
     openrouter_api_key: str | None = None
+    custom_openai_base_url: str | None = None
+    custom_openai_api_key: str | None = None
     voice_accent: str = "ie"
     voice_speed: float = 1.35
     continuous_listening: bool = False
@@ -443,7 +499,14 @@ class Settings(BaseSettings):
     user_skills: list[str] = ["general", "desktop_automation", "developer", "home_user"]
     long_term_memory_enabled: bool = True
     custom_prompt: str = ""
+    # Execution engine selection
+    use_langgraph: bool = True        # Use LangGraph stateful graph (default) vs legacy AgentRuntime
+    use_supervisor: bool = True       # Multi-Agent Supervisor: classify task domain, scope tools (toggle via UI)
+    send_screenshots_to_llm: bool = True  # Send downscaled desktop screenshot to planner for vision-capable models
+    use_native_voice: bool = False    # Gemini Live / OpenAI Realtime streaming audio (Google provider only)
 ```
+
+`save_settings_to_env()` persists all fields to `~/.config/opensarthi/.env` and emits `settings_sync` to the frontend.
 
 Empty API key inputs on `update_settings` are filtered out — no accidental key deletion.
 
@@ -475,9 +538,11 @@ SQLite at `~/.config/opensarthi/opensarthi.db`:
 ### 10. Desktop Observation (`observation.py` + `observer/screen.py`)
 
 `DesktopObserver.snapshot()` captures:
-- **Screenshots** via `mss` → base64 JPEG, saved to temp file, path included in context
+- **Screenshots** via `mss` → downscaled to 1280px wide PNG, base64-encoded and stored in `DesktopSnapshot.screenshot_base64`. The downscaled PNG is also saved to a temp file for local inspection.
 - **Active window** via AT-SPI (Wayland-compatible) or `xdotool`/`ydotool`
 - **Window list** — all open windows with titles and geometry
+
+**Multimodal Screenshots to LLM:** When `send_screenshots_to_llm` is true and the model supports vision (see `model_supports_vision()` in `llm/factory.py`), the planner injects the base64 screenshot as an `ImageUrl` content part alongside the text context. Ollama is never treated as vision-capable; cloud providers are detected by class name.
 
 On Wayland: `ydotool` is used for focus/input operations when `xdotool` is unavailable.
 
@@ -530,7 +595,7 @@ runtime/
 │   └── schemas.py        # Plan, PlanStep, ToolResult Pydantic models
 │
 ├── tools/
-│   ├── base.py           # BaseTool abstract class, RiskLevel enum
+│   ├── base.py           # BaseTool abstract class, RiskLevel enum, ToolDomain enum
 │   ├── desktop.py        # click, type_text, open_app, focus_window, click_element, observe_desktop
 │   ├── system.py         # ShellTool (bubblewrap-sandboxed)
 │   ├── wait_tools.py     # wait_for_window, wait_for_text
@@ -540,7 +605,13 @@ runtime/
 │   ├── self_fix.py       # AI-powered self-modification + rollback
 │   ├── settings_tool.py  # UpdateSettingsTool — conversational settings control
 │   ├── productivity.py   # WebSearch, Weather, Timer, ListFiles, Volume, Battery, WiFi
-│   └── registry.py       # TOOL_REGISTRY (32 tools), get_schemas(), validate_registry()
+│   ├── browser.py        # 20 Playwright headless browser tools (browser_go_to, browser_click, browser_snapshot, …)
+│   ├── open_url.py       # Terminal-first browser opener (xdg-open / browser binary + URL)
+│   ├── google_tools.py   # Google OAuth read-only: calendar_read, calendar_search, gmail_read, gmail_search
+│   ├── music.py          # youtube_search, youtube_control, music_play
+│   ├── social.py         # twitter_post, linkedin_post, telegram_send, whatsapp_send, discord_send, email_send
+│   ├── system_monitor.py # system_status, weather_report, flight_finder, reminders, monitor_control, agent_shutdown
+│   └── registry.py       # 70 tools registered, get_tools_by_domain(), validate_registry()
 │
 ├── memory/
 │   ├── long_term.py      # Semantic SQLite memory (all-MiniLM-L6-v2, cached model)
@@ -619,20 +690,20 @@ The runtime hosts an auxiliary FastAPI server (`dashboard/server.py`) binding to
 - [x] **Instant Vision Acknowledgment** — Immediate "looking" response
 - [x] **Parallel Search** — Multi-engine first-wins pattern
 - [x] **Session Memory Manager** — Consumed after use (1-2 sentence summaries)
-- [x] **Multi-Agent Supervisor** — WebAgent, CalendarAgent, MailAgent, CodeAgent, BrowserAgent, MusicAgent, SocialAgent
+- [x] **Multi-Agent Supervisor** — Domain classification, scoped tool routing, frontend toggle
 - [x] **Content Panel** — 4th panel for rich content (8 content types)
 - [x] **Phone Audio Relay** — Native audio on Android via Chaquopy bridge
-- [ ] **Google OAuth (Read-Only)** — calendar.readonly + gmail.readonly
-- [ ] **ElevenLabs TTS** — replace gTTS for high-quality streaming voice
+- [x] **Google OAuth (Read-Only)** — `calendar.readonly` + `gmail.readonly` (4 tools)
 - [x] **Web Search Tool** — DuckDuckGo scraping with ad-filtering
+- [x] **Browser Automation (20 tools, Playwright)** — navigate, click, type, scroll, extract text, accessibility snapshot, screenshot, tab management
+- [x] **Terminal-First URL Opening** — `open_url` via `xdg-open` / browser binary (preferred over GUI path)
+- [x] **Music / YouTube Playback** — `youtube_search`, `youtube_control`, `music_play`
+- [x] **Social Media Posting** — Twitter, LinkedIn, Telegram, WhatsApp, Discord, email
+- [x] **System Monitoring** — CPU/RAM/disk/GPU/network, weather, flights, reminders, shutdown
+- [x] **Multimodal Screenshots to LLM** — Desktop screenshot as `ImageUrl` in planner context (vision-capable models only)
+- [ ] **ElevenLabs TTS** — replace gTTS for high-quality streaming voice
 - [ ] **Security** — bubblewrap profile expansion, per-app rules
-- [ ] **MCP** — expose tools as Model Context Protocol server
+- [ ] **MCP Server Exposure** — expose OpenSarthi tools as Model Context Protocol server
 - [ ] **Streaming Shell Output** — stream shell stdout live to UI console view
-- [x] **Morning Briefing** — daily context summary from memory + calendar + weather + news + mail
-- [ ] **Browser Automation (15+ actions)** — navigate, click, type, scroll, extract, screenshot, PDF
-- [ ] **Command Execution** — run, background, get_output, kill
-- [ ] **Music Playback** — play, pause, search, queue, volume, shuffle
-- [ ] **Social Media Posting** — Twitter, LinkedIn, Mastodon
 - [ ] **Code Agent (Claude Code subprocess)** — run, analyze, generate, edit, test, lint
 - [ ] **Proactive 2.0 / Background Monitoring** — periodic checks, notifications
-- [ ] **MCP Server Exposure** — expose OpenSarthi tools as MCP server

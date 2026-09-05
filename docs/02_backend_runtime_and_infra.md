@@ -1,6 +1,6 @@
 # OpenSarthi — Backend Runtime & Infrastructure
 
-> **Updated:** August 2026 — Dual execution engine (AgentRuntime + LangGraph), SileroVAD ONNX (no PyTorch), 32-tool registry, long-term memory toggle, DevLogger structured run logs, smart overlay minimize, cancellation/pause architecture, token tracking, Android Chaquopy path, Mobile Control Dashboard Server with auto-boot lifecycle and connection telemetry, **Native Audio Pipeline (Gemini Live/OpenAI Realtime), Multi-Agent Supervisor, Browser Automation (Playwright), Google OAuth (Calendar/Gmail), Two-Phase Morning Briefing, Content Panel, Session Memory (consumed after use), Parallel Search**.
+> **Updated:** September 2026 — 70-tool registry (browser automation via Playwright, Google OAuth, music, social media, system monitoring), Multi-Agent Supervisor (task domain classification + scoped tool routing), Terminal-first URL opener (`open_url`), Multimodal screenshots to LLM (vision-capable models only), LangGraph (default), SileroVAD ONNX (no PyTorch), long-term memory toggle, DevLogger structured run logs, smart overlay minimize, cancellation/pause architecture, token tracking, Mobile Control Dashboard Server with auto-boot lifecycle and connection telemetry, **Native Audio Pipeline (Gemini Live/OpenAI Realtime), Two-Phase Morning Briefing, Content Panel, Session Memory (consumed after use), Parallel Search**.
 
 ---
 
@@ -23,7 +23,7 @@ AgentRuntime              LangGraph Graph
      ┌──────────┴────────────────────────────┐
      │           Shared Services             │
      ├── planner/agent.py  (PydanticAI)      │
-     ├── tools/registry.py (32 tools)        │
+     ├── tools/registry.py (70 tools)        │
      ├── memory/manager.py (semantic SQLite) │
      ├── observation.py    (desktop snapshot)│
      ├── voice/pipeline.py (full pipeline)   │
@@ -51,7 +51,8 @@ AgentRuntime              LangGraph Graph
 | `/` | GET | Health check |
 | `/health` | GET | Returns `{status: "ok"}` |
 | `/port` | GET | Returns `{port: <n>}` |
-| `/models` | GET | Proxies model discovery for Ollama, OpenAI, and OpenRouter |
+| `/models` | GET | Proxies model discovery for Google, OpenAI, Anthropic, Groq, OpenRouter, Ollama, and Custom OpenAI |
+| `/validate_key` | GET | Validates provider credentials and discovers available models (`{valid: bool, message: str, models: [...]}`) |
 
 ### CORS Policy
 
@@ -211,7 +212,7 @@ Converts the flat `Plan.steps` list into parallel execution groups using **topol
 
 ## 6. Tool System (`tools/`)
 
-> **Current Registry:** 32 tools. **Target (after generalization):** 60+ tools spanning desktop, system, web, calendar, gmail, browser, music, social, file, code, and monitoring domains.
+> **Current Registry:** 70 tools across 10 domains: desktop, system, web, calendar, mail, browser, music, social, monitoring, and general. The Supervisor scopes tool access by task domain (default: on).
 
 ### BaseTool (`tools/base.py`)
 
@@ -240,7 +241,7 @@ class BaseTool(ABC):
 
 ### Tool Registry (`tools/registry.py`)
 
-32 tools registered at import time. `validate_registry()` runs at import → logs warning for any tool missing a schema.
+70 tools registered at import time. `validate_registry()` runs at import → logs warning for any tool missing a schema.
 
 Key registry functions:
 - `get(name: str) → BaseTool | None`
@@ -269,7 +270,9 @@ Key registry functions:
 
 ---
 
-### Planned Tool Categories (Generalization Roadmap)
+### Implemented Tool Categories (Generalization — as of September 2026)
+
+All categories below are now registered in `tools/registry.py` (70 tools total):
 
 **Google Integration (4 tools, read-only OAuth2):**
 - `calendar_read` — upcoming events, free/busy (`calendar.readonly`)
@@ -277,20 +280,21 @@ Key registry functions:
 - `calendar_search` — find events by query
 - `gmail_search` — find emails by query
 
-**Browser Automation (15+ tools, Playwright backend):**
+**Browser Automation (21 tools, Playwright backend):**
 - Navigation: `browser_go_to`, `browser_back`, `browser_forward`, `browser_reload`, `browser_get_url`
 - Interaction: `browser_click`, `browser_type`, `browser_press`, `browser_scroll`, `browser_fill_form`, `browser_smart_click`
-- Extraction: `browser_get_text`, `browser_screenshot`
+- Extraction: `browser_get_text`, `browser_snapshot` (accessibility/DOM tree), `browser_screenshot`
 - Tab Management: `browser_new_tab`, `browser_close_tab`, `browser_switch_tab`, `browser_list_tabs`
 - Session: `browser_close`, `browser_close_all`
-- **Security**: Runs in sandboxed browser context; no access to user profiles by default
+- Terminal-First: `open_url` — system default handler with URL (preferred over GUI open+type path)
+- **Security**: Headless Chromium only; no access to user profiles; `--no-sandbox` gated to root; URL restricted to `http`/`https`
 
 **Music / YouTube (3 tools):**
 - `youtube_search` — search and play YouTube videos
 - `youtube_control` — play/pause/next/previous/volume/seek
 - `music_play` — local music file playback (MP3, FLAC via system player)
 
-**Social Media Posting (6+ tools):**
+**Social Media Posting (6 tools):**
 - `twitter_post` — post tweet / reply / delete
 - `linkedin_post` — post to LinkedIn
 - `telegram_send` — send to channel/group/DM
@@ -306,6 +310,8 @@ Key registry functions:
 - `monitor_control` — brightness, resolution, multi-monitor layout
 - `agent_shutdown` — graceful agent shutdown
 
+### Remaining Planned Tool Categories
+
 **File Processing (1 tool):**
 - `file_processor` — read/summarize PDF, DOCX, XLSX, CSV, images (OCR); extract text/tables/metadata; convert formats
 
@@ -317,7 +323,7 @@ Key registry functions:
 
 ### Tool Registry Expansion Strategy
 
-To support 60+ tools without token bloat:
+To support 70 tools without token bloat:
 
 1. **RAG-Based Dynamic Tool Injection** (Tier 1.8): Embed all tool descriptions → at plan time, retrieve top 6-8 most relevant tools by cosine similarity
 2. **Multi-Agent Supervisor** (Tier 2.11): Sub-agents only see their domain-specific tool subset (ShellAgent, DesktopUIAgent, WebAgent, CalendarAgent, MusicAgent, SocialAgent, BrowserAgent)
@@ -549,14 +555,16 @@ class Settings(BaseSettings):
     wake_word_threshold: float = 0.5
     # LLM selection
     local_model: str = "qwen2.5-coder:3b"
-    cloud_model: str = "gemini-2.5-flash"
-    ai_provider: str = "google"  # google|openai|anthropic|groq|openrouter|ollama
+    cloud_model: str = "gemini-3.6-flash"
+    ai_provider: str = "google"  # google|openai|anthropic|groq|openrouter|ollama|custom_openai
     # API keys (optional, provider-dependent)
     gemini_api_key: str | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     groq_api_key: str | None = None
     openrouter_api_key: str | None = None
+    custom_openai_base_url: str | None = None
+    custom_openai_api_key: str | None = None
     # Voice settings
     voice_accent: str = "ie"
     voice_speed: float = 1.35

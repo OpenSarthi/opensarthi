@@ -33,9 +33,9 @@
 OpenSarthi is an **agentic AI assistant** that executes local commands, automates workflows, and intercepts hardware events — built for speed, extensibility, and true multi-modal desktop + mobile automation.
 
 - 🗣️ **Speak and listen** — Full voice pipeline with wake word detection, local STT (FasterWhisper), TTS (Kokoro), and **native audio streaming** (Gemini Live / OpenAI Realtime) for sub-500ms latency.
-- 🖥️ **Automate your desktop** — Cursor clicking, keyboard emulation, screen snapshots, shell command parsing, app launching, **browser automation (15+ actions)**, **command execution**, **social media posting**, **music playback**, and **coding agent** (Claude Code subprocess).
+- 🖥️ **Automate your desktop** — Cursor clicking, keyboard emulation, screen snapshots, shell command parsing, app launching, **browser automation (20+ tools, Playwright)**, **terminal-first URL opening**, **social media posting**, **music playback**, and **coding agent** (Claude Code subprocess).
 - 📱 **Run on Android** — Integrated mobile agent powered by Capacitor + Chaquopy with **phone audio relay** for native audio on mobile.
-- 🦾 **Flexible LLM Backend** — Model-agnostic configuration supporting Gemini, Claude, GPT, Groq, OpenRouter, and Ollama.
+- 🦾 **Flexible LLM Backend** — Model-agnostic configuration supporting Gemini, Claude, GPT, Groq, OpenRouter, Ollama, and custom OpenAI-compatible endpoints (vLLM, llama-server, Together AI) with integrated credential validation and model discovery.
 - 🪙 **Token Accounting** — Real-time tracking separating requests and active model session aggregates.
 - 🔧 **Customizable Skills** — Gated capability sets mapped to specific user authorization groups.
 - 🔀 **LangGraph Orchestration** — Advanced stateful graph scheduling with transaction-level crash-healing loops.

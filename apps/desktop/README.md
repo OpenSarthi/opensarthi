@@ -178,20 +178,22 @@ Settings are organized in four tabs:
 
 ### AI Settings Tab
 
-- **Provider** dropdown: Ollama · Google · OpenAI · Anthropic · Groq · OpenRouter
-- **Model** dropdown: pre-populated with curated models per provider; free-text for Ollama/OpenRouter
-- Currently selected model displayed in the dropdown
-- **API Key** field (masked, preserved if left blank)
-- **"Save AI Details"** → saves only AI-related settings (provider, model, API key) without affecting voice/UI settings
+- **Provider** selection: Google Gemini · OpenAI · Anthropic Claude · Groq · OpenRouter · Custom OpenAI Endpoint (OmniRoute / vLLM / LM Studio) · Local LLM (Ollama)
+- **API Endpoint / Base URL**: Configurable for Custom OpenAI and Ollama (e.g. `http://localhost:20128/v1` for OmniRoute)
+- **API Key** input: Masked with "KEY SAVED" badge and test button
+- **Test Key**: Dual-resilient key validation. Attempts backend proxy `/validate_key`, and gracefully falls back to direct client-side fetch (matching the `ai-social-agent` multi-LLM architecture)
+- **Dynamic Model Discovery**: "FETCH LIVE" button loads available models directly from the server or provider API, updating the model selector automatically
+- **Model** selection: Pre-populated with curated models or live fetched models from the active provider / custom endpoint
 
-| Provider | Curated Models |
-|----------|---------------|
-| Google | gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash, gemini-1.5-pro |
-| OpenAI | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo |
-| Anthropic | claude-opus-4-5, claude-sonnet-4-5, claude-haiku-3-5 |
-| Groq | llama-3.3-70b, llama-3.1-8b, Qwen3 32B, Llama 4 Scout |
-| OpenRouter | gpt-4o, claude-opus-4, gemini-2.5-pro, deepseek-chat, mistral-large |
-| Ollama | Free-form text |
+| Provider | Default / Curated Models | Discovery Endpoint |
+|---|---|---|
+| Google Gemini | gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash, gemini-1.5-pro | `generativelanguage.googleapis.com` |
+| OpenAI | gpt-4o, gpt-4o-mini, o1, o3-mini | `api.openai.com/v1/models` |
+| Anthropic Claude | claude-3-7-sonnet, claude-3-5-sonnet, claude-3-5-haiku | `api.anthropic.com/v1/models` |
+| Groq | llama-3.3-70b-versatile, llama-3.1-8b-instant, deepseek-r1-distill-llama-70b | `api.groq.com/openai/v1/models` |
+| OpenRouter | claude-3.5-sonnet, gpt-4o, gemini-2.5-pro, deepseek-chat | `openrouter.ai/api/v1/models` |
+| Custom OpenAI | OmniRoute, vLLM, LM Studio, or self-hosted endpoint models | `{base_url}/models` |
+| Local LLM (Ollama) | Local pulled models (`llama3.2`, `deepseek-r1`, `qwen2.5-coder`) | `{base_url}/api/tags` |
 
 ### Voice & Wake Word Tab
 
@@ -220,6 +222,16 @@ The Header Settings Cog Dropdown Menu houses direct UI customization and integra
 - **Remote Control Option**: Opens the **Remote Access Modal** displaying connection status, active client device list, PIN code, and QR pairing code. Automatically boots up the backend remote pairing server on port `8765` when opened.
 - **Create Shortcut Option**: Creates a system desktop shortcut icon on click via a direct Tauri command.
 - **Themes Sub-menu**: Allows selecting preset UI matrix themes, and includes a **Custom Color Override** conic circle color picker. Hovering/dragging on the custom color wheel dynamically previews and animates the UI accent color in real-time, with Save/Discard controls.
+- **Custom OpenAI Endpoint (OmniRoute, vLLM, llama-server, LiteLLM)**: Full support for any OpenAI-compatible inference server with customizable Base URL and API key. Explicitly sets `stream=False` in request settings to ensure non-streaming compatibility with gateways that stream by default (such as OmniRoute).
+- **Credentials & Endpoint First Layout**: Endpoint URL and API Key inputs are positioned above Model Selection, enabling users to enter credentials, click "Test Key" (or "Fetch Live"), and select from the discovered model catalog below or specify custom model IDs.
+- **Test Key & Live Model Discovery**: Dedicated "Test Key" button validates credentials via the `/validate_key` proxy endpoint and auto-populates the dynamic model selector with live models from Google, Anthropic, OpenAI, Groq, OpenRouter, or Custom endpoints.
+
+### Dynamic Audio Waveform (`Waveform.tsx`)
+
+- **Bidirectional Oscilloscope (Ups & Downs)**: Symmetrical dual-sided vertical bars expanding both upward and downward with full intensity, matching rounded tips, and neon glow.
+- **Speaking Mode (Forward Propagation & Tall Peaks)**: Multi-harmonic wave propagating forward (left-to-right) at brisk speed, with sustained tall amplitude peaks throughout assistant speech.
+- **Listening Mode (Backward Propagation & Controlled Height)**: Real-time microphone frequency-bin reactivity propagating backward (right-to-left), with calm ambient movement during silence and responsive surges to speech.
+- **Enhanced Dimensions & Dynamic Glow**: 88px vertical canvas with height-proportional bar glow for an immersive cyberpunk HUD look.
 
 ### Save Behavior
 
@@ -300,7 +312,7 @@ userOverrodeMinimize: boolean
 activeProvider: string
 activeLocalModel: string
 activeCloudModel: string
-geminiApiKey / openaiApiKey / anthropicApiKey / groqApiKey / openrouterApiKey: string
+geminiApiKey / openaiApiKey / anthropicApiKey / groqApiKey / openrouterApiKey / customOpenaiApiKey / customOpenaiBaseUrl: string
 activeTheme: string
 
 // Voice
