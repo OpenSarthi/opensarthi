@@ -156,15 +156,17 @@ class InstantVision:
         # Convert base64 to inline data
         image_data = image_b64
 
-        # Build request
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        # Build request — use the configured cloud model so this tracks the user's
+        # provider choice (e.g. gemini-3.6-flash) instead of a hardcoded flash model.
+        model_for_vision = self.settings.cloud_model or "gemini-1.5-flash"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_for_vision}:generateContent"
         payload = {
             "contents": [{
                 "parts": [
                     {"text": f"{prompt}\nDescribe what you see in 2-3 sentences. List any clickable UI elements (buttons, links, inputs) with their approximate locations."},
                     {
                         "inline_data": {
-                            "mime_type": "image/jpeg",
+                            "mime_type": "image/png",
                             "data": image_data
                         }
                     }
@@ -198,17 +200,20 @@ class InstantVision:
         if not api_key:
             return self._fallback_analysis(prompt), []
 
+        model = self._resolve_vision_model(
+            "openai", "gpt-4o",
+        )
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},
                 json={
-                    "model": "gpt-4o",
+                    "model": model,
                     "messages": [{
                         "role": "user",
                         "content": [
                             {"type": "text", "text": f"{prompt}\nDescribe what you see in 2-3 sentences. List any clickable UI elements."},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}}
                         ]
                     }],
                     "max_tokens": 500,
@@ -229,22 +234,26 @@ class InstantVision:
         if not api_key:
             return self._fallback_analysis(prompt), []
 
+        model = self._resolve_vision_model(
+            "anthropic", "claude-sonnet-5",
+        )
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={
-                    "Authorization": f"Bearer {api_key}",
+                    # Anthropic uses x-api-key — Authorization: Bearer returns 401.
+                    "x-api-key": api_key,
                     "anthropic-version": "2023-06-01",
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": model,
                     "max_tokens": 500,
                     "messages": [{
                         "role": "user",
                         "content": [
                             {"type": "text", "text": f"{prompt}\nDescribe what you see in 2-3 sentences. List any clickable UI elements."},
-                            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}}
+                            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image_b64}}
                         ]
                     }]
                 },
@@ -256,6 +265,18 @@ class InstantVision:
 
         ui_elements = self._extract_ui_elements(text)
         return text, ui_elements
+
+    def _resolve_vision_model(self, provider: str, fallback: str) -> str:
+        """Vision model for a provider.
+
+        Respect the user's configured cloud_model when it is a real override —
+        the config default (gemini-3.6-flash) would be meaningless for the
+        OpenAI/Anthropic providers and must not be sent to them.
+        """
+        configured = (self.settings.cloud_model or "").strip()
+        if configured and "gemini-" not in configured:
+            return configured
+        return fallback
 
     def _extract_ui_elements(self, text: str) -> List[Dict]:
         """Extract UI elements from vision model output (best effort)."""
@@ -281,8 +302,14 @@ class InstantVision:
 _vision_instances: Dict[str, InstantVision] = {}
 
 def get_instant_vision(ws_handler, settings, thread_id: str = None) -> InstantVision:
-    """Get or create instant vision instance."""
+    """Get or create instant vision instance.
+
+    Keyed per thread, but never reuse an entry whose ws_handler belongs to a
+    previous connection — screen_analysis would be delivered to a dead socket.
+    Rebuild the instance when the handler differs.
+    """
     key = thread_id or "default"
-    if key not in _vision_instances:
+    existing = _vision_instances.get(key)
+    if existing is None or existing.ws is not ws_handler:
         _vision_instances[key] = InstantVision(ws_handler, settings, thread_id)
     return _vision_instances[key]

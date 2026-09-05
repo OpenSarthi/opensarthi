@@ -27,7 +27,8 @@ class DesktopSnapshot:
     screen_text_summary: Optional[str] = None   # OCR on visible area
     accessibility_tree: Optional[dict] = None    # AT-SPI tree (when available)
     screenshot_path: Optional[str] = None        # Saved to temp dir for LLM vision
-    screenshot_base64: Optional[str] = None      # Base64 representation of desktop screenshot
+    screenshot_base64: Optional[str] = None      # Base64 representation of desktop screenshot (downscaled ≤1280px wide)
+    screenshot_size: Optional[tuple] = None      # (width, height) of the encoded screenshot
     error: Optional[str] = None
 
     def to_prompt_context(self) -> str:
@@ -62,11 +63,33 @@ class DesktopObserver:
         obs_res = await self._pipeline.observe()
         snap.active_window_title = obs_res.active_window
 
-        # Encode screenshot to base64 if available
+        # Encode screenshot to base64 if available.
+        # Downscale wide/multi-monitor captures before encoding: the base64 sits
+        # in LangGraph checkpoint state and goes to the vision model, and a full
+        # 8K capture would be several MB. 1280px wide is ample for GUI context.
         if obs_res.screenshot_bytes:
             import base64
-            snap.screenshot_base64 = base64.b64encode(obs_res.screenshot_bytes).decode("utf-8")
-            
+            import io
+            encoded = obs_res.screenshot_bytes
+            size = None
+            try:
+                from PIL import Image
+                img = Image.open(io.BytesIO(obs_res.screenshot_bytes))
+                width, height = img.size
+                size = (width, height)
+                max_w = 1280
+                if width > max_w:
+                    new_height = int(height * (max_w / width))
+                    img = img.resize((max_w, new_height), Image.LANCZOS)
+                    buf = io.BytesIO()
+                    img.save(buf, format="PNG")
+                    encoded = buf.getvalue()
+                    size = img.size
+            except Exception:
+                pass
+            snap.screenshot_base64 = base64.b64encode(encoded).decode("utf-8")
+            snap.screenshot_size = size
+
             # Save to temporary path
             import tempfile
             import os
@@ -74,7 +97,7 @@ class DesktopObserver:
                 temp_dir = tempfile.gettempdir()
                 screenshot_file = os.path.join(temp_dir, f"opensarthi_snap_{int(time.time())}.png")
                 with open(screenshot_file, "wb") as f:
-                    f.write(obs_res.screenshot_bytes)
+                    f.write(encoded)
                 snap.screenshot_path = screenshot_file
             except Exception:
                 pass
@@ -86,10 +109,20 @@ class DesktopObserver:
                 if focused:
                     snap.focused_element_role = focused.role
                     snap.focused_element_text = focused.name
-                
-                # Include UI tree summary for LLM
+
+                # Include scoped, hierarchical accessibility tree for the LLM —
+                # the active window's DOM-like structure, not a 30-element skim.
+                if hasattr(self._a11y, "get_window_tree_summary"):
+                    tree_text, total, truncated = self._a11y.get_window_tree_summary(
+                        max_depth=8, max_elements=300
+                    )
+                else:
+                    tree_text = self._a11y.get_tree_summary(max_elements=120)
+                    total, truncated = None, False
                 snap.accessibility_tree = {
-                    "summary": self._a11y.get_tree_summary(max_elements=30)
+                    "summary": tree_text,
+                    "total": total,
+                    "truncated": truncated,
                 }
             except Exception:
                 pass
