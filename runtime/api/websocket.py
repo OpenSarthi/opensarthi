@@ -209,12 +209,12 @@ class Session:
             return
         try:
             if isinstance(usage, dict):
-                request_tokens = usage.get("request_tokens", usage.get("input_tokens", usage.get("req", 0))) or 0
-                response_tokens = usage.get("response_tokens", usage.get("output_tokens", usage.get("res", 0))) or 0
+                request_tokens = usage.get("input_tokens", usage.get("request_tokens", usage.get("req", 0))) or 0
+                response_tokens = usage.get("output_tokens", usage.get("response_tokens", usage.get("res", 0))) or 0
                 total_tokens = usage.get("total_tokens", usage.get("tot", 0)) or (request_tokens + response_tokens)
             else:
-                request_tokens = getattr(usage, "request_tokens", getattr(usage, "input_tokens", 0)) or 0
-                response_tokens = getattr(usage, "response_tokens", getattr(usage, "output_tokens", 0)) or 0
+                request_tokens = getattr(usage, "input_tokens", getattr(usage, "request_tokens", 0)) or 0
+                response_tokens = getattr(usage, "output_tokens", getattr(usage, "response_tokens", 0)) or 0
                 total_tokens = getattr(usage, "total_tokens", 0) or (request_tokens + response_tokens)
         except Exception:
             request_tokens = 0
@@ -455,11 +455,16 @@ class Session:
             self.deps.user_name = getattr(settings, 'user_name', '')
             self.deps.custom_prompt = getattr(settings, 'custom_prompt', '')
             provider = settings.ai_provider.lower()
-            model_name = settings.local_model if provider == "ollama" else settings.cloud_model
+            if provider == "custom_openai":
+                model_name = settings.cloud_model or settings.local_model or "auto/fast"
+            elif provider == "ollama":
+                model_name = settings.local_model
+            else:
+                model_name = settings.cloud_model
             api_key = get_active_api_key()
 
             # Guard: require API key before processing any message
-            if not api_key and provider != "ollama":
+            if not api_key and provider not in ("ollama", "custom_openai"):
                 error_msg = "⚠️ No API key configured. Please add an API key in Settings before using the assistant."
                 err_id = str(uuid.uuid4())
                 err_ts = int(time.time() * 1000)
@@ -1023,18 +1028,26 @@ class Session:
             asyncio.create_task(self.sync_voice_pipeline())
 
             # If briefing hasn't been sent in this connection session, trigger it now
-            if not self._briefing_sent:
-                self._briefing_sent = True
-                from briefing import get_briefing
-                from config import settings
-                memory_manager = None
-                try:
-                    from memory import MemoryManager
-                    memory_manager = MemoryManager(thread_id)
-                except Exception:
-                    pass
-                briefing_instance = get_briefing(self, settings, memory_manager, thread_id)
-                asyncio.create_task(briefing_instance.start_briefing())
+            # Guard: only fire if onboarding is complete and a valid API key is present
+            onboarding_complete = payload.get("onboarding_complete", True)  # Default True for backwards compat
+            if not self._briefing_sent and onboarding_complete:
+                from config import settings, get_active_api_key
+                active_key = get_active_api_key()
+                is_local = settings.ai_provider.lower() in ("ollama", "custom_openai")
+                has_key = bool(active_key) or is_local
+                if has_key:
+                    self._briefing_sent = True
+                    from briefing import get_briefing
+                    memory_manager = None
+                    try:
+                        from memory import MemoryManager
+                        memory_manager = MemoryManager(thread_id)
+                    except Exception:
+                        pass
+                    briefing_instance = get_briefing(self, settings, memory_manager, thread_id)
+                    asyncio.create_task(briefing_instance.start_briefing())
+                else:
+                    logger.info("Skipping briefing: no API key configured for active provider", provider=settings.ai_provider)
         elif msg_type == "vision_analysis_request":
             # Instant Vision Acknowledgment: capture & acknowledge immediately
             prompt = payload.get("prompt", "What's on my screen?")
@@ -1061,7 +1074,13 @@ class Session:
             _update_key("anthropic_api_key", "ANTHROPIC_API_KEY")
             _update_key("groq_api_key", "GROQ_API_KEY")
             _update_key("openrouter_api_key", "OPENROUTER_API_KEY")
-                
+            _update_key("custom_openai_api_key", "CUSTOM_OPENAI_API_KEY")
+
+            # Custom OpenAI base URL
+            new_base_url = payload.get("custom_openai_base_url")
+            if new_base_url and new_base_url.strip():
+                settings.custom_openai_base_url = new_base_url.strip()
+
             settings.voice_accent = payload.get("voice_accent", settings.voice_accent)
             settings.voice_speed = float(payload.get("voice_speed", settings.voice_speed))
             settings.continuous_listening = bool(payload.get("continuous_listening", settings.continuous_listening))
@@ -1146,7 +1165,10 @@ class Session:
                 settings.use_langgraph,
                 settings.use_supervisor,
                 settings.use_native_voice,
+                custom_openai_base_url=settings.custom_openai_base_url,
+                custom_openai_api_key=settings.custom_openai_api_key,
             )
+
 
             # Propagate to running voice pipeline
             # pending wake words so they are applied automatically on initialize().
@@ -1177,6 +1199,8 @@ class Session:
                 "anthropic_api_key": settings.anthropic_api_key or "",
                 "groq_api_key": settings.groq_api_key or "",
                 "openrouter_api_key": settings.openrouter_api_key or "",
+                "custom_openai_base_url": settings.custom_openai_base_url or "",
+                "custom_openai_api_key": settings.custom_openai_api_key or "",
                 "voice_accent": settings.voice_accent,
                 "voice_speed": settings.voice_speed,
                 "continuous_listening": settings.continuous_listening,
@@ -1192,6 +1216,7 @@ class Session:
                 "use_supervisor": settings.use_supervisor,
                 "use_native_voice": settings.use_native_voice,
             })
+
 
             asyncio.create_task(self.sync_voice_pipeline())
 
@@ -1295,6 +1320,8 @@ class ConnectionManager:
             "anthropic_api_key": settings.anthropic_api_key or "",
             "groq_api_key": settings.groq_api_key or "",
             "openrouter_api_key": settings.openrouter_api_key or "",
+            "custom_openai_base_url": getattr(settings, "custom_openai_base_url", None) or "",
+            "custom_openai_api_key": getattr(settings, "custom_openai_api_key", None) or "",
             "voice_accent": settings.voice_accent,
             "voice_speed": settings.voice_speed,
             "continuous_listening": settings.continuous_listening,

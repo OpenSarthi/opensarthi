@@ -4,6 +4,7 @@ import sys
 from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import structlog
 
 from api.routes import router as api_router
@@ -27,6 +28,15 @@ async def lifespan(application: FastAPI):
 
 
 app = FastAPI(title="OpenSarthi Runtime", lifespan=lifespan)
+
+# Allow requests from Tauri frontend (dev: localhost:1420, prod: tauri://localhost)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(api_router)
 app.include_router(ws_router)
