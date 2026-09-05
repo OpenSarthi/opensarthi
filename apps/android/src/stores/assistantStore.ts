@@ -207,12 +207,24 @@ export const useAssistantStore = create<AssistantState>((set) => ({
 
   loadThreadToTab: (id, messages, tokenTotals) => set((s) => {
     const existingIndex = s.tabs.findIndex(t => t.id === id);
+    const existingTab = existingIndex >= 0 ? s.tabs[existingIndex] : null;
+    const seenIds = new Set<string>();
+    const mergedMessages: Message[] = [];
+    const candidateMessages = [...(messages || []), ...(existingTab?.messages || [])];
+    for (const m of candidateMessages) {
+      if (!seenIds.has(m.id)) {
+        seenIds.add(m.id);
+        mergedMessages.push(m);
+      }
+    }
+    mergedMessages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
     const tokenUsage = tokenTotals ? { requestTokens: tokenTotals.token_request || 0, responseTokens: tokenTotals.token_response || 0, totalTokens: tokenTotals.token_total || 0, sessionTotalTokens: tokenTotals.token_total || 0 } : { requestTokens: 0, responseTokens: 0, totalTokens: 0, sessionTotalTokens: 0 };
-    const title = computeTabTitle(messages, `Thread ${existingIndex >= 0 ? existingIndex + 1 : s.tabs.length + 1}`);
-    const tab: ThreadTab = { id, title, messages, currentPlan: null, executingStepIndex: null, taskPaused: false, tokenUsage };
+    const title = computeTabTitle(mergedMessages, `Thread ${existingIndex >= 0 ? existingIndex + 1 : s.tabs.length + 1}`);
+    const tab: ThreadTab = { id, title, messages: mergedMessages, currentPlan: null, executingStepIndex: null, taskPaused: false, tokenUsage };
     const newTabs = [...s.tabs];
     if (existingIndex >= 0) newTabs[existingIndex] = tab; else newTabs.push(tab);
-    return { tabs: newTabs, activeThreadId: id, messages: tab.messages, currentPlan: null, executingStepIndex: null, taskPaused: false, tokenUsage };
+    return { tabs: newTabs, activeThreadId: id, messages: mergedMessages, currentPlan: null, executingStepIndex: null, taskPaused: false, tokenUsage };
   }),
 
   updateTokenUsageFromWS: (thread_id, usage) => set((s) => {
@@ -247,9 +259,17 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   }),
 
   addMessage: (msg, thread_id) => set((s) => {
-    const tid = thread_id || s.activeThreadId;
-    const updatedTabs = s.tabs.map(t => t.id === tid ? { ...t, messages: [...t.messages, msg], title: computeTabTitle([...t.messages, msg], t.title) } : t);
-    return { tabs: updatedTabs, messages: updatedTabs.find(t => t.id === s.activeThreadId)!.messages };
+    const tid = (thread_id && s.tabs.some(t => t.id === thread_id)) ? thread_id : s.activeThreadId;
+    const updatedTabs = s.tabs.map(t => {
+      if (t.id === tid) {
+        if (t.messages.some(m => m.id === msg.id)) return t;
+        const nextMsgs = [...t.messages, msg];
+        return { ...t, messages: nextMsgs, title: computeTabTitle(nextMsgs, t.title) };
+      }
+      return t;
+    });
+    const activeTab = updatedTabs.find(t => t.id === s.activeThreadId) || updatedTabs[0];
+    return { tabs: updatedTabs, messages: activeTab ? activeTab.messages : [...s.messages, msg] };
   }),
 
   setMessages: (messages) => set((s) => {

@@ -40,10 +40,12 @@ export function useWebSocket(port: number | null) {
           if (connected) {
             setVoiceState("idle");
             useAssistantStore.getState().addActivityLog("SYS: Connected to backend runtime.");
-            // Load or initialize the active thread on the backend!
+            // Sync client page state immediately with active thread ID
+            const isOnboarded = useAssistantStore.getState().onboardingCompleted;
             const activeId = useAssistantStore.getState().activeThreadId;
+            wsClient.send("client_state", { page: isOnboarded ? "assistant" : "onboarding", thread_id: activeId });
+            // Load or initialize the active thread on the backend!
             if (activeId) {
-              const isOnboarded = useAssistantStore.getState().onboardingCompleted;
               wsClient.send("load_thread", { thread_id: activeId, onboarding_complete: isOnboarded });
             }
           } else {
@@ -310,10 +312,18 @@ export function useWebSocket(port: number | null) {
             else if (pending.provider === "groq") p.groq_api_key = pending.apiKey;
             else if (pending.provider === "openrouter") p.openrouter_api_key = pending.apiKey;
           }
+          if (pending.provider === "custom_openai") {
+            p.custom_openai_base_url = (pending as any).customOpenaiBaseUrl || p.custom_openai_base_url;
+            p.custom_openai_api_key = (pending as any).customOpenaiApiKey || pending.apiKey || p.custom_openai_api_key;
+            p.custom_openai_provider_name = (pending as any).customOpenaiProviderName || p.custom_openai_provider_name;
+          }
         }
 
         if (p.local_model && p.cloud_model) store.setActiveModels(p.local_model, p.cloud_model);
         if (p.ai_provider) store.setActiveProvider(p.ai_provider);
+        if (p.custom_openai_provider_name !== undefined) {
+          store.setCustomOpenaiProviderName(p.custom_openai_provider_name || "");
+        }
         if (p.voice_accent !== undefined && p.voice_speed !== undefined && p.continuous_listening !== undefined) {
           store.setVoiceSettings(p.voice_accent, p.voice_speed, p.continuous_listening);
         }
@@ -345,6 +355,8 @@ export function useWebSocket(port: number | null) {
           openrouter: p.openrouter_api_key || "",
           customOpenaiBaseUrl: p.custom_openai_base_url || "",
           customOpenaiKey: p.custom_openai_api_key || "",
+          customOpenaiApiKey: p.custom_openai_api_key || "",
+          customOpenaiProviderName: p.custom_openai_provider_name || "",
         });
 
         if (p.user_name !== undefined || p.user_skills !== undefined || p.custom_prompt !== undefined) {
@@ -370,6 +382,9 @@ export function useWebSocket(port: number | null) {
             anthropic_api_key: p.anthropic_api_key || "",
             groq_api_key: p.groq_api_key || "",
             openrouter_api_key: p.openrouter_api_key || "",
+            custom_openai_base_url: p.custom_openai_base_url || "",
+            custom_openai_api_key: p.custom_openai_api_key || "",
+            custom_openai_provider_name: p.custom_openai_provider_name || "",
           });
         }
       }),
@@ -503,20 +518,21 @@ export function useWebSocket(port: number | null) {
       }),
 
       wsClient.on("briefing_phase1", (msg) => {
-        const { text, thread_id } = msg.payload as { text: string; thread_id?: string };
+        const { text, thread_id, id, timestamp } = msg.payload as { text: string; thread_id?: string; id?: string; timestamp?: number };
         const store = useAssistantStore.getState();
         store.addActivityLog("SYS: Briefing phase 1 (greeting) sent.");
         store.addActivityLog(`SARTHI: ${text}`);
-        addMessage({
-          id: crypto.randomUUID(),
+        const targetTid = (thread_id && store.tabs.some(t => t.id === thread_id)) ? thread_id : store.activeThreadId;
+        store.addMessage({
+          id: id || crypto.randomUUID(),
           role: "assistant",
           content: text,
-          timestamp: Date.now()
-        }, thread_id);
+          timestamp: timestamp || Date.now()
+        }, targetTid);
       }),
 
       wsClient.on("briefing_phase2", (msg) => {
-        const { text, content_panel_data, thread_id } = msg.payload as { text: string; content_panel_data: any; thread_id?: string };
+        const { text, content_panel_data, thread_id, id, timestamp } = msg.payload as { text: string; content_panel_data: any; thread_id?: string; id?: string; timestamp?: number };
         const store = useAssistantStore.getState();
         store.addActivityLog("SYS: Briefing phase 2 (news/weather/calendar) sent.");
         if (content_panel_data) {
@@ -525,12 +541,13 @@ export function useWebSocket(port: number | null) {
 
         if (text) {
           store.addActivityLog(`SARTHI: ${text}`);
-          addMessage({
-            id: crypto.randomUUID(),
+          const targetTid = (thread_id && store.tabs.some(t => t.id === thread_id)) ? thread_id : store.activeThreadId;
+          store.addMessage({
+            id: id || crypto.randomUUID(),
             role: "assistant",
             content: text,
-            timestamp: Date.now()
-          }, thread_id);
+            timestamp: timestamp || Date.now()
+          }, targetTid);
         }
       }),
 

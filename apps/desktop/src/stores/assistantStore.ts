@@ -116,6 +116,7 @@ interface AssistantState {
   openrouterApiKey: string;
   customOpenaiBaseUrl: string;
   customOpenaiApiKey: string;
+  customOpenaiProviderName: string;
   activeTheme: string;
 
   voiceAccent: string;
@@ -176,7 +177,8 @@ interface AssistantState {
   setActiveModels: (local: string, cloud: string) => void;
   setActiveProvider: (provider: string) => void;
   setCloudApiKey: (key: string) => void;
-  setAllApiKeys: (keys: { gemini: string; openai: string; anthropic: string; groq: string; openrouter: string; customOpenaiBaseUrl?: string; customOpenaiKey?: string }) => void;
+  setCustomOpenaiProviderName: (name: string) => void;
+  setAllApiKeys: (keys: { gemini: string; openai: string; anthropic: string; groq: string; openrouter: string; customOpenaiBaseUrl?: string; customOpenaiKey?: string; customOpenaiApiKey?: string; customOpenaiProviderName?: string }) => void;
   setActiveTheme: (theme: string) => void;
   setVoiceSettings: (accent: string, speed: number, continuous: boolean) => void;
   setWakeWordSettings: (enabled: boolean, threshold: number, phrases: string[]) => void;
@@ -285,6 +287,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   openrouterApiKey: "",
   customOpenaiBaseUrl: "",
   customOpenaiApiKey: "",
+  customOpenaiProviderName: "",
   activeTheme: "theme-green-black",
   voiceAccent: "ie",
   voiceSpeed: 1.35,
@@ -436,6 +439,20 @@ export const useAssistantStore = create<AssistantState>((set) => ({
 
   loadThreadToTab: (id, messages, tokenTotals) => set((s) => {
     const existingIndex = s.tabs.findIndex(t => t.id === id);
+    const existingTab = existingIndex >= 0 ? s.tabs[existingIndex] : null;
+    
+    // Merge database messages with existing in-memory messages to prevent wiping startup briefings
+    const seenIds = new Set<string>();
+    const mergedMessages: Message[] = [];
+    const candidateMessages = [...(messages || []), ...(existingTab?.messages || [])];
+    for (const m of candidateMessages) {
+      if (!seenIds.has(m.id)) {
+        seenIds.add(m.id);
+        mergedMessages.push(m);
+      }
+    }
+    mergedMessages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
     const tokenUsage = tokenTotals ? {
       requestTokens: tokenTotals.token_request || tokenTotals.request_tokens || 0,
       responseTokens: tokenTotals.token_response || tokenTotals.response_tokens || 0,
@@ -448,19 +465,19 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       sessionTotalTokens: 0,
     };
 
-    const title = computeTabTitle(messages, `Thread ${existingIndex >= 0 ? existingIndex + 1 : s.tabs.length + 1}`);
+    const title = computeTabTitle(mergedMessages, `Thread ${existingIndex >= 0 ? existingIndex + 1 : s.tabs.length + 1}`);
 
     // Restore any historical plan reasonings stored in messages
-    const restoredReasonings = messages
+    const restoredReasonings = mergedMessages
       .filter(m => m.plan?.reasoning)
       .map(m => ({ text: m.plan!.reasoning!, attempt: 0, thread_id: id }));
 
     // Find the most recent plan in messages
     let restoredPlan: Plan | null = null;
     let restoredExecutingStepIndex: number | null = null;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].plan) {
-        restoredPlan = messages[i].plan as Plan;
+    for (let i = mergedMessages.length - 1; i >= 0; i--) {
+      if (mergedMessages[i].plan) {
+        restoredPlan = mergedMessages[i].plan as Plan;
         const steps = restoredPlan.steps || [];
         const firstPending = steps.findIndex((step: any) => step.status === "pending" || step.status === "running");
         restoredExecutingStepIndex = firstPending >= 0 ? firstPending : null;
@@ -471,7 +488,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     const tab: ThreadTab = {
       id,
       title,
-      messages,
+      messages: mergedMessages,
       currentPlan: restoredPlan,
       executingStepIndex: restoredExecutingStepIndex,
       taskPaused: false,
@@ -483,7 +500,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       tabs: existingIndex >= 0
         ? s.tabs.map((t, idx) => idx === existingIndex ? tab : t)
         : [...s.tabs, tab],
-      messages,
+      messages: mergedMessages,
       currentPlan: restoredPlan,
       executingStepIndex: restoredExecutingStepIndex,
       taskPaused: false,
@@ -493,7 +510,6 @@ export const useAssistantStore = create<AssistantState>((set) => ({
         : s.planReasonings,
     };
   }),
-
   updateTokenUsageFromWS: (thread_id, usage) => set((s) => {
     const tid = thread_id || s.activeThreadId;
     let found = false;
@@ -549,9 +565,12 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   }),
 
   addMessage: (msg, thread_id) => set((s) => {
-    const tid = thread_id || s.activeThreadId;
+    const tid = (thread_id && s.tabs.some(t => t.id === thread_id)) ? thread_id : s.activeThreadId;
     const updatedTabs = s.tabs.map(t => {
       if (t.id === tid) {
+        if (t.messages.some(m => m.id === msg.id)) {
+          return t;
+        }
         const nextMsgs = [...t.messages, msg];
         return {
           ...t,
@@ -561,10 +580,10 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       }
       return t;
     });
-    const activeTab = updatedTabs.find(t => t.id === s.activeThreadId)!;
+    const activeTab = updatedTabs.find(t => t.id === s.activeThreadId) || updatedTabs[0];
     return {
       tabs: updatedTabs,
-      messages: activeTab.messages,
+      messages: activeTab ? activeTab.messages : [...s.messages, msg],
     };
   }),
 
@@ -642,8 +661,10 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     groqApiKey: keys.groq,
     openrouterApiKey: keys.openrouter,
     ...(keys.customOpenaiBaseUrl !== undefined ? { customOpenaiBaseUrl: keys.customOpenaiBaseUrl } : {}),
-    ...(keys.customOpenaiKey !== undefined ? { customOpenaiApiKey: keys.customOpenaiKey } : {}),
+    ...((keys.customOpenaiApiKey ?? keys.customOpenaiKey) !== undefined ? { customOpenaiApiKey: (keys.customOpenaiApiKey ?? keys.customOpenaiKey)! } : {}),
+    ...(keys.customOpenaiProviderName !== undefined ? { customOpenaiProviderName: keys.customOpenaiProviderName } : {}),
   }),
+  setCustomOpenaiProviderName: (customOpenaiProviderName) => set({ customOpenaiProviderName }),
   setActiveTheme: (activeTheme) => set({ activeTheme }),
   setVoiceSettings: (voiceAccent, voiceSpeed, continuousListening) => set({ voiceAccent, voiceSpeed, continuousListening }),
   setWakeWordSettings: (wakeWordEnabled, wakeWordThreshold, wakeWords) => set({ wakeWordEnabled, wakeWordThreshold, wakeWords }),
