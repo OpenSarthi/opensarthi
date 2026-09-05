@@ -70,5 +70,87 @@ class TestLLMFactory(unittest.TestCase):
             build_model("groq", "llama-3")
             mock_groq.assert_called_once()
 
+        # custom_openai
+        with patch("pydantic_ai.models.openai.OpenAIModel") as mock_openai, \
+             patch("pydantic_ai.providers.openai.OpenAIProvider") as mock_provider:
+            build_model("custom_openai", "my-custom-model", api_key="sk-custom-key")
+            mock_openai.assert_called_once()
+            mock_provider.assert_called_once()
+
+    def test_validate_key_route(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from api.routes import router
+
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+
+        # Missing key for google returns valid: False
+        res = client.get("/validate_key?provider=google")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertFalse(data["valid"])
+
+        # Missing base_url for custom_openai returns valid: False
+        res = client.get("/validate_key?provider=custom_openai")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertFalse(data["valid"])
+        self.assertIn("Base URL is required", data["message"])
+
+class TestBriefing(unittest.TestCase):
+    def test_get_briefing_singleton_updates(self):
+        from briefing import get_briefing, MorningBriefing
+        import briefing
+
+        ws1 = Mock()
+        settings1 = Mock()
+        b1 = get_briefing(ws1, settings1, thread_id="t1")
+        self.assertEqual(b1.thread_id, "t1")
+        self.assertEqual(b1.ws, ws1)
+
+        ws2 = Mock()
+        settings2 = Mock()
+        b2 = get_briefing(ws2, settings2, thread_id="t2")
+        self.assertIs(b1, b2)
+        self.assertEqual(b2.thread_id, "t2")
+        self.assertEqual(b2.ws, ws2)
+
+    def test_briefing_phase2_token_tracking(self):
+        async def run_test():
+            from briefing import MorningBriefing
+            import db
+
+            ws = Mock()
+            ws.accumulate_and_update_tokens = AsyncMock()
+            ws.send_message = AsyncMock()
+            ws.speak = AsyncMock()
+            settings = Mock()
+            settings.use_native_voice = False
+
+            b = MorningBriefing(ws, settings, thread_id="test-thread-briefing")
+
+            # Mock _generate_summary to return summary and tokens
+            b._generate_summary = AsyncMock(return_value=("Good morning!", 40, 200, 240))
+            b._get_calendar_events = AsyncMock(return_value=[])
+            b._get_weather = AsyncMock(return_value={"description": "sunny"})
+            b._get_news_headlines = AsyncMock(return_value=[])
+            b._get_relevant_memories = AsyncMock(return_value=[])
+
+            with patch("db.save_message") as mock_save:
+                await b._run_phase2()
+                mock_save.assert_called_once()
+                args, kwargs = mock_save.call_args
+                # args: (thread_id, msg_id, role, content, timestamp, req_tok, res_tok, tot_tok)
+                self.assertEqual(args[0], "test-thread-briefing")
+                self.assertEqual(args[2], "assistant")
+                self.assertEqual(args[3], "Good morning!")
+                self.assertEqual(args[5], 40)
+                self.assertEqual(args[6], 200)
+                self.assertEqual(args[7], 240)
+
+        asyncio.run(run_test())
+
 if __name__ == "__main__":
     unittest.main()
