@@ -40,6 +40,7 @@ from tools.browser import (
     browser_fill_form,
     browser_smart_click,
     browser_get_text,
+    browser_snapshot,
     browser_screenshot,
     browser_new_tab,
     browser_close_tab,
@@ -48,6 +49,7 @@ from tools.browser import (
     browser_close,
     browser_close_all,
 )
+from tools.open_url import open_url_tool
 from tools.music import (
     youtube_search_tool,
     youtube_control_tool,
@@ -135,6 +137,7 @@ _register(
     browser_fill_form,
     browser_smart_click,
     browser_get_text,
+    browser_snapshot,
     browser_screenshot,
     browser_new_tab,
     browser_close_tab,
@@ -142,6 +145,8 @@ _register(
     browser_list_tabs,
     browser_close,
     browser_close_all,
+    # URL — terminal-first browser launch (preferred over GUI path)
+    open_url_tool,
     # Music / YouTube
     youtube_search_tool,
     youtube_control_tool,

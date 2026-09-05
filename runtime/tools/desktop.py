@@ -374,7 +374,7 @@ class YdotoolProvider:
             pyautogui.click(x, y, button=button)
             return True
         except Exception:
-            return True
+            return False
 
     async def get_window_id(self, title: str) -> Optional[str]:
         if shutil.which("xdotool"):
@@ -392,18 +392,20 @@ class YdotoolProvider:
         return None
 
     async def refocus_window(self, window_id: str) -> bool:
-        if shutil.which("xdotool") and window_id:
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    "xdotool", "windowactivate", "--sync", window_id,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                await proc.communicate()
-                return proc.returncode == 0
-            except Exception:
-                pass
-        return True
+        # This is a "did we actually refocus" predicate, not a no-op protocol:
+        # don't claim success when nothing happened (xdotool absent or failed).
+        if not shutil.which("xdotool") or not window_id:
+            return False
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "xdotool", "windowactivate", "--sync", window_id,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            return proc.returncode == 0
+        except Exception:
+            return False
 
 
 class PyAutoGUIProvider:
@@ -537,13 +539,17 @@ class MacOSProvider:
                 return True
         except Exception:
             pass
-        # Fallback: pyautogui typewrite
+        # Fallback: pyautogui typewrite (ASCII-only — pyautogui can't reliably
+        # type unicode). Never claim success for text we didn't actually type:
+        # the osascript/clipboard paths above already failed for non-ASCII input.
         try:
             import pyautogui
-            pyautogui.typewrite(text, interval=0.05) if text.isascii() else None
-            return True
+            if text.isascii():
+                pyautogui.typewrite(text, interval=0.05)
+                return True
         except Exception:
-            return False
+            pass
+        return False
 
     async def press_key(self, key: str, window_id: Optional[str] = None) -> bool:
         # Handle combos like ctrl+c -> command+c on macOS
@@ -1463,7 +1469,15 @@ class ClickElementTool(BaseTool):
 
         target = elements[0]
         cx, cy = target.center
-        
+
+        # Refocus the pinned window (if any) before clicking — same as the OCR
+        # path below. An element found via AT-SPI lives in the window the tree
+        # was read from; coordinates are relative to it and the click would land
+        # elsewhere if another window has focus.
+        window_id = _get_pinned_window_id()
+        if window_id:
+            await _ensure_window_focus(window_id)
+
         if permission_manager:
             try:
                 await permission_manager.send_message("click_event", {"x": int(cx), "y": int(cy), "button": "left"})
