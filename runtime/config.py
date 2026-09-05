@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     # Custom OpenAI-compatible endpoint
     custom_openai_base_url: str | None = None
     custom_openai_api_key: str | None = None
+    custom_openai_provider_name: str | None = None
     
     voice_accent: str = "ie"
     voice_speed: float = 1.35
@@ -138,6 +139,7 @@ def save_settings_to_env(
     use_native_voice: bool = False,
     custom_openai_base_url: str | None = None,
     custom_openai_api_key: str | None = None,
+    custom_openai_provider_name: str | None = None,
 ):
     import json
     # Always write to the writable user's home configuration directory (safe for read-only AppImage filesystems!)
@@ -189,6 +191,8 @@ def save_settings_to_env(
             f.write(f"CUSTOM_OPENAI_BASE_URL={custom_openai_base_url}\n")
         if custom_openai_api_key:
             f.write(f"CUSTOM_OPENAI_API_KEY={custom_openai_api_key}\n")
+        if custom_openai_provider_name:
+            f.write(f"CUSTOM_OPENAI_PROVIDER_NAME={custom_openai_provider_name}\n")
         if user_name:
             f.write(f"USER_NAME={user_name}\n")
         if user_skills:

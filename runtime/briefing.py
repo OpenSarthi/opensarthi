@@ -45,7 +45,8 @@ class MorningBriefing:
         greeting = self._generate_greeting()
 
         # Resolve effective thread ID
-        effective_tid = self.thread_id or getattr(self.ws, "thread_id", None)
+        ws_tid = getattr(self.ws, "thread_id", None)
+        effective_tid = (ws_tid if isinstance(ws_tid, str) and ws_tid else None) or (self.thread_id if isinstance(self.thread_id, str) and self.thread_id else None)
         if not effective_tid:
             try:
                 import db
@@ -68,7 +69,9 @@ class MorningBriefing:
             logger.warning("Failed to save briefing Phase 1 message to db", error=str(e))
 
         await self.ws.send_message("briefing_phase1", {
+            "id": msg_id,
             "text": greeting,
+            "timestamp": timestamp,
             "thread_id": effective_tid,
         })
         logger.info("Briefing Phase 1 sent", thread_id=effective_tid)
@@ -130,7 +133,8 @@ class MorningBriefing:
             # Generate summary text using LLM (if available) with token tracking
             summary_text, req_tok, res_tok, tot_tok = await self._generate_summary(results)
 
-            effective_tid = self.thread_id or getattr(self.ws, "thread_id", None)
+            ws_tid = getattr(self.ws, "thread_id", None)
+            effective_tid = (ws_tid if isinstance(ws_tid, str) and ws_tid else None) or (self.thread_id if isinstance(self.thread_id, str) and self.thread_id else None)
             if not effective_tid:
                 try:
                     import db
@@ -141,6 +145,8 @@ class MorningBriefing:
             self.thread_id = effective_tid
 
             # Save Phase 2 summary message to DB so it persists in active thread history with tokens
+            msg_id = None
+            timestamp = None
             try:
                 import db
                 import time
@@ -154,7 +160,9 @@ class MorningBriefing:
 
             # Send Phase 2
             await self.ws.send_message("briefing_phase2", {
+                "id": msg_id,
                 "text": summary_text,
+                "timestamp": timestamp,
                 "content_panel_data": content_data,
                 "thread_id": effective_tid,
             })
@@ -203,7 +211,7 @@ class MorningBriefing:
 
         except Exception as e:
             logger.error("Briefing Phase 2 failed", error=str(e))
-            effective_tid = self.thread_id or getattr(self.ws, "thread_id", None)
+            effective_tid = getattr(self.ws, "thread_id", None) or self.thread_id
             await self.ws.send_message("briefing_phase2", {
                 "text": "I had trouble gathering your full briefing, but I'm here to help!",
                 "thread_id": effective_tid,

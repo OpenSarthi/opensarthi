@@ -71,7 +71,9 @@ class TestLLMFactory(unittest.TestCase):
             mock_groq.assert_called_once()
 
         # custom_openai
-        with patch("pydantic_ai.models.openai.OpenAIModel") as mock_openai, \
+        import pydantic_ai.models.openai as _p_openai
+        _openai_cls = "OpenAIChatModel" if hasattr(_p_openai, "OpenAIChatModel") else "OpenAIModel"
+        with patch(f"pydantic_ai.models.openai.{_openai_cls}") as mock_openai, \
              patch("pydantic_ai.providers.openai.OpenAIProvider") as mock_provider:
             build_model("custom_openai", "my-custom-model", api_key="sk-custom-key")
             mock_openai.assert_called_once()
@@ -152,5 +154,52 @@ class TestBriefing(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_custom_openai_provider_name_config(self):
+        from config import Settings
+        s = Settings(custom_openai_provider_name="OmniRoute")
+        self.assertEqual(s.custom_openai_provider_name, "OmniRoute")
+
+    def test_maybe_trigger_briefing(self):
+        async def run_test():
+            from api.websocket import Session
+            from unittest.mock import MagicMock, AsyncMock, patch
+
+            mock_ws = MagicMock()
+            mock_ws.send_text = AsyncMock()
+            session = Session(mock_ws)
+
+            # 1. Not onboarded: should not trigger
+            with patch("briefing.get_briefing") as mock_get_briefing:
+                await session.maybe_trigger_briefing("test-thread", onboarding_complete=False)
+                self.assertFalse(session._briefing_sent)
+                mock_get_briefing.assert_not_called()
+
+            # 2. Onboarded, but active provider is google with no key
+            with patch("config.settings.ai_provider", "google"), \
+                 patch("config.get_active_api_key", return_value=None), \
+                 patch("briefing.get_briefing") as mock_get_briefing:
+                await session.maybe_trigger_briefing("test-thread", onboarding_complete=True)
+                self.assertFalse(session._briefing_sent)
+                mock_get_briefing.assert_not_called()
+
+            # 3. Setting updated to custom_openai: should trigger briefing!
+            with patch("config.settings.ai_provider", "custom_openai"), \
+                 patch("briefing.get_briefing") as mock_get_briefing:
+                mock_briefing_inst = MagicMock()
+                mock_briefing_inst.start_briefing = AsyncMock()
+                mock_get_briefing.return_value = mock_briefing_inst
+
+                await session.maybe_trigger_briefing("test-thread", onboarding_complete=True)
+                self.assertTrue(session._briefing_sent)
+                mock_get_briefing.assert_called_once()
+
+            # 4. Calling again when _briefing_sent is True: must not trigger again
+            with patch("briefing.get_briefing") as mock_get_briefing:
+                await session.maybe_trigger_briefing("test-thread")
+                mock_get_briefing.assert_not_called()
+
+        asyncio.run(run_test())
+
 if __name__ == "__main__":
     unittest.main()
+

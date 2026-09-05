@@ -64,6 +64,37 @@ class Session:
         self._session_active = False  # True after onboarding complete + API key confirmed
         self._permanent_grants: set[str] = set()
         self._briefing_sent = False
+        self._onboarding_complete = False
+
+    async def maybe_trigger_briefing(self, thread_id: str | None = None, onboarding_complete: bool | None = None):
+        """Trigger startup morning briefing if not yet sent and onboarding is complete with a valid API key or local provider."""
+        if onboarding_complete is not None:
+            self._onboarding_complete = onboarding_complete
+        if self._briefing_sent:
+            return
+        if not self._onboarding_complete:
+            return
+
+        from config import settings, get_active_api_key
+        active_key = get_active_api_key()
+        is_local = settings.ai_provider.lower() in ("ollama", "custom_openai")
+        has_key = bool(active_key) or is_local
+        if has_key:
+            self._briefing_sent = True
+            from briefing import get_briefing
+            memory_manager = None
+            effective_tid = thread_id or self.thread_id
+            try:
+                from memory import MemoryManager
+                memory_manager = MemoryManager(effective_tid)
+            except Exception:
+                pass
+            briefing_instance = get_briefing(self, settings, memory_manager, effective_tid)
+            asyncio.create_task(briefing_instance.start_briefing())
+            logger.info("Triggered morning briefing", provider=settings.ai_provider, thread_id=effective_tid)
+        else:
+            logger.info("Skipping briefing: no API key configured for active provider", provider=settings.ai_provider)
+
 
     async def sync_voice_pipeline(self):
         from config import settings
@@ -744,13 +775,19 @@ class Session:
 
         if msg_type == "client_state":
             page = payload.get("page")
-            logger.info("Received client page state update", page=page)
+            thread_id = payload.get("thread_id")
+            if thread_id:
+                self.thread_id = thread_id
+            logger.info("Received client page state update", page=page, thread_id=self.thread_id)
             if page == "onboarding":
                 self._session_active = False
+                self._onboarding_complete = False
                 asyncio.create_task(self.sync_voice_pipeline())
             elif page == "assistant":
                 self._session_active = True
+                self._onboarding_complete = True
                 asyncio.create_task(self.sync_voice_pipeline())
+                await self.maybe_trigger_briefing(self.thread_id, True)
         elif msg_type == "run_json_plan":
             steps = payload.get("steps", [])
             goal = payload.get("goal", "Custom JSON Task")
@@ -1015,7 +1052,15 @@ class Session:
         elif msg_type == "load_thread":
             import db
             thread_id = payload.get("thread_id")
+            if not thread_id:
+                return
             self.thread_id = thread_id
+            try:
+                import briefing
+                if briefing._briefing_instance:
+                    briefing._briefing_instance.thread_id = thread_id
+            except Exception:
+                pass
             messages = db.get_history(thread_id)
             tokens = db.get_thread_tokens(thread_id)
             await self.send_message("thread_loaded", {
@@ -1028,26 +1073,8 @@ class Session:
             asyncio.create_task(self.sync_voice_pipeline())
 
             # If briefing hasn't been sent in this connection session, trigger it now
-            # Guard: only fire if onboarding is complete and a valid API key is present
-            onboarding_complete = payload.get("onboarding_complete", True)  # Default True for backwards compat
-            if not self._briefing_sent and onboarding_complete:
-                from config import settings, get_active_api_key
-                active_key = get_active_api_key()
-                is_local = settings.ai_provider.lower() in ("ollama", "custom_openai")
-                has_key = bool(active_key) or is_local
-                if has_key:
-                    self._briefing_sent = True
-                    from briefing import get_briefing
-                    memory_manager = None
-                    try:
-                        from memory import MemoryManager
-                        memory_manager = MemoryManager(thread_id)
-                    except Exception:
-                        pass
-                    briefing_instance = get_briefing(self, settings, memory_manager, thread_id)
-                    asyncio.create_task(briefing_instance.start_briefing())
-                else:
-                    logger.info("Skipping briefing: no API key configured for active provider", provider=settings.ai_provider)
+            onboarding_complete = payload.get("onboarding_complete", True)
+            await self.maybe_trigger_briefing(thread_id, onboarding_complete)
         elif msg_type == "vision_analysis_request":
             # Instant Vision Acknowledgment: capture & acknowledge immediately
             prompt = payload.get("prompt", "What's on my screen?")
@@ -1080,6 +1107,11 @@ class Session:
             new_base_url = payload.get("custom_openai_base_url")
             if new_base_url and new_base_url.strip():
                 settings.custom_openai_base_url = new_base_url.strip()
+
+            # Custom OpenAI provider display name
+            new_prov_name = payload.get("custom_openai_provider_name")
+            if new_prov_name is not None:
+                settings.custom_openai_provider_name = new_prov_name.strip() or None
 
             settings.voice_accent = payload.get("voice_accent", settings.voice_accent)
             settings.voice_speed = float(payload.get("voice_speed", settings.voice_speed))
@@ -1167,6 +1199,7 @@ class Session:
                 settings.use_native_voice,
                 custom_openai_base_url=settings.custom_openai_base_url,
                 custom_openai_api_key=settings.custom_openai_api_key,
+                custom_openai_provider_name=settings.custom_openai_provider_name,
             )
 
 
@@ -1201,6 +1234,7 @@ class Session:
                 "openrouter_api_key": settings.openrouter_api_key or "",
                 "custom_openai_base_url": settings.custom_openai_base_url or "",
                 "custom_openai_api_key": settings.custom_openai_api_key or "",
+                "custom_openai_provider_name": settings.custom_openai_provider_name or "",
                 "voice_accent": settings.voice_accent,
                 "voice_speed": settings.voice_speed,
                 "continuous_listening": settings.continuous_listening,
@@ -1219,6 +1253,7 @@ class Session:
 
 
             asyncio.create_task(self.sync_voice_pipeline())
+            await self.maybe_trigger_briefing(self.thread_id, True)
 
     def start_listen_loop(self):
         if getattr(self, "_listen_task", None) is None or self._listen_task.done():
@@ -1322,6 +1357,7 @@ class ConnectionManager:
             "openrouter_api_key": settings.openrouter_api_key or "",
             "custom_openai_base_url": getattr(settings, "custom_openai_base_url", None) or "",
             "custom_openai_api_key": getattr(settings, "custom_openai_api_key", None) or "",
+            "custom_openai_provider_name": getattr(settings, "custom_openai_provider_name", None) or "",
             "voice_accent": settings.voice_accent,
             "voice_speed": settings.voice_speed,
             "continuous_listening": settings.continuous_listening,
