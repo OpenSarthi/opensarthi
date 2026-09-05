@@ -1,37 +1,52 @@
 """
 Browser Automation Tools — Mark-L Parity Feature (15+ actions)
 
-Uses Playwright for headless/headed browser automation.
+Uses Playwright for headless browser automation (headless Chromium).
+NOTE: browser_* tools drive an in-process headless Chromium — they do NOT
+control the user's visible desktop browser.  For visible-browser tasks use
+open_url + wait_for_window + observe_desktop instead.
 Runs in sandboxed browser context; no access to user profiles by default.
 """
 import asyncio
+import os
 import structlog
 from typing import Dict, Any, Optional, List
 from pathlib import Path
+from urllib.parse import urlparse
 
 from tools.base import BaseTool, RiskLevel, ToolResult, ToolDomain
 
 logger = structlog.get_logger()
+
+# Schemes allowed for browser_go_to (http/https only — file: is a privilege
+# escalation at SAFE risk, and javascript:/data: can execute content).
+_BROWSER_ALLOWED_SCHEMES = {"http", "https"}
 
 # Global browser state
 _browser = None
 _browser_context = None
 _browser_page = None
 _browser_initialized = False
+_playwright = None  # playwright driver — stored so BrowserCloseTool can stop() it
 
 
 async def _ensure_browser():
     """Initialize Playwright browser if not already done."""
-    global _browser, _browser_context, _browser_page, _browser_initialized
+    global _browser, _browser_context, _browser_page, _browser_initialized, _playwright
     if _browser_initialized:
         return
 
     try:
         from playwright.async_api import async_playwright
         _playwright = await async_playwright().start()
+        # --no-sandbox is only needed when running as root (containers/CI).
+        # On a normal desktop user Chromium's OS sandbox provides defence-in-depth.
+        launch_args = ["--disable-dev-shm-usage"]
+        if os.geteuid() == 0:
+            launch_args.append("--no-sandbox")
         _browser = await _playwright.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
+            args=launch_args,
         )
         _browser_context = await _browser.new_context()
         _browser_page = await _browser_context.new_page()
@@ -68,8 +83,23 @@ class BrowserGoToTool(BaseTool):
     domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
+        url = args.get("url", "").strip()
+        if not url:
+            return ToolResult(success=False, result=None, error="No URL provided")
+
+        # Scheme safety gate — same policy as open_url (no file:, javascript:, data:)
+        parsed = urlparse(url)
+        if parsed.scheme:
+            scheme = parsed.scheme.lower()
+            if scheme not in _BROWSER_ALLOWED_SCHEMES:
+                return ToolResult(
+                    success=False, result=None,
+                    error=f"URL scheme '{scheme}' is not allowed (must be http or https)",
+                )
+        else:
+            url = "https://" + url
+
         page = await _ensure_page()
-        url = args["url"]
         wait_until = args.get("wait_until", "load")
         try:
             await page.goto(url, wait_until=wait_until, timeout=30000)
@@ -346,10 +376,86 @@ class BrowserGetTextTool(BaseTool):
                 elements = await page.query_selector_all(selector)
                 text = "\n".join([await e.inner_text() for e in elements])
             else:
-                text = await page.inner_text()
+                # Page.inner_text(selector) requires a selector in Playwright Python;
+                # use locator("body") for the full-page text.
+                text = await page.locator("body").inner_text()
             return ToolResult(success=True, result={"text": text[:5000]})
         except Exception as e:
             return ToolResult(success=False, result=None, error=str(e))
+
+
+class BrowserSnapshotTool(BaseTool):
+    """Get an accessibility/DOM snapshot of the current page."""
+
+    name = "browser_snapshot"
+    description = (
+        "Get a compact accessibility/DOM snapshot of the current page — roles, names and "
+        "states of interactive elements. Use this BEFORE deciding what to click/type: it is "
+        "far more reliable than guessing CSS selectors, and the 'aria' output gives the same "
+        "tree the accessibility tools expose for the desktop browser."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "format": {
+                "type": "string",
+                "enum": ["aria", "text"],
+                "default": "aria",
+                "description": "'aria' = accessibility tree with roles/names (default); 'text' = plain visible text",
+            },
+            "max_len": {"type": "integer", "default": 6000, "description": "Max characters to return"},
+        },
+        "required": [],
+    }
+    risk_level = RiskLevel.SAFE
+    domain = ToolDomain.BROWSER
+
+    async def execute(self, args: Dict[str, Any]) -> ToolResult:
+        page = await _ensure_page()
+        fmt = args.get("format", "aria")
+        max_len = int(args.get("max_len", 6000))
+        try:
+            if fmt == "aria":
+                snapshot = await self._aria_snapshot(page)
+            else:
+                # Page.inner_text(selector) requires a selector in Playwright Python.
+                snapshot = await page.locator("body").inner_text()
+            snapshot = (snapshot or "")[:max_len]
+            return ToolResult(success=True, result={"snapshot": snapshot, "length": len(snapshot)})
+        except Exception as e:
+            return ToolResult(success=False, result=None, error=str(e))
+
+    async def _aria_snapshot(self, page) -> str:
+        """Best-effort ARIA snapshot; falls back to a structured element list."""
+        try:
+            body = page.locator("body")
+            return await body.aria_snapshot()
+        except AttributeError:
+            pass  # Playwright build predates aria_snapshot()
+        except Exception:
+            pass
+        # Fallback: compact list of interactive + labelled elements.
+        elements = await page.evaluate_all(
+            """
+            els => els.slice(0, 250).map(el => {
+                const role = el.getAttribute('role') || el.tagName.toLowerCase();
+                const label = (el.getAttribute('aria-label')
+                    || el.getAttribute('placeholder')
+                    || el.innerText
+                    || el.value
+                    || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 80);
+                const href = el.getAttribute('href') || '';
+                let line = '[' + role + ']';
+                if (label) line += ' "' + label + '"';
+                if (href) line += ' → ' + href.slice(0, 60);
+                return line.slice(0, 200);
+            })
+            """,
+            page.locator("button, a, input, textarea, select, [role], [aria-label], [onclick]"),
+        )
+        if elements:
+            return "Interactive elements:\n" + "\n".join(elements)
+        return await page.locator("body").inner_text()
 
 
 class BrowserScreenshotTool(BaseTool):
@@ -400,11 +506,12 @@ class BrowserNewTabTool(BaseTool):
     domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
-        global _browser_context
+        global _browser_context, _browser_page
         await _ensure_browser()
         url = args.get("url")
         try:
             page = await _browser_context.new_page()
+            _browser_page = page  # make the new tab the active target
             if url:
                 await page.goto(url)
             return ToolResult(success=True, result="New tab opened")
@@ -422,11 +529,15 @@ class BrowserCloseTabTool(BaseTool):
     domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
-        global _browser_page
+        global _browser_page, _browser_context
         try:
             if _browser_page:
                 await _browser_page.close()
                 _browser_page = None
+            # Point the active page at a remaining tab (if any) so follow-up
+            # commands keep working instead of hitting a closed page.
+            if _browser_context and _browser_context.pages:
+                _browser_page = _browser_context.pages[-1]
             return ToolResult(success=True, result="Tab closed")
         except Exception as e:
             return ToolResult(success=False, result=None, error=str(e))
@@ -493,7 +604,7 @@ class BrowserCloseTool(BaseTool):
     domain = ToolDomain.BROWSER
 
     async def execute(self, args: Dict[str, Any]) -> ToolResult:
-        global _browser, _browser_context, _browser_page, _browser_initialized
+        global _playwright, _browser, _browser_context, _browser_page, _browser_initialized
         try:
             if _browser_page:
                 await _browser_page.close()
@@ -501,6 +612,9 @@ class BrowserCloseTool(BaseTool):
                 await _browser_context.close()
             if _browser:
                 await _browser.close()
+            if _playwright:
+                await _playwright.stop()
+            _playwright = None
             _browser = None
             _browser_context = None
             _browser_page = None
@@ -525,6 +639,10 @@ class BrowserCloseAllTool(BaseTool):
             if _browser_context:
                 for page in _browser_context.pages:
                     await page.close()
+            # After closing every page, the module-level page pointer is stale —
+            # clear it so a later browser_* call re-uses the (now empty) context
+            # rather than a closed page.
+            _browser_page = None
             return ToolResult(success=True, result="All tabs closed")
         except Exception as e:
             return ToolResult(success=False, result=None, error=str(e))
@@ -543,6 +661,7 @@ browser_scroll = BrowserScrollTool()
 browser_fill_form = BrowserFillFormTool()
 browser_smart_click = BrowserSmartClickTool()
 browser_get_text = BrowserGetTextTool()
+browser_snapshot = BrowserSnapshotTool()
 browser_screenshot = BrowserScreenshotTool()
 browser_new_tab = BrowserNewTabTool()
 browser_close_tab = BrowserCloseTabTool()
