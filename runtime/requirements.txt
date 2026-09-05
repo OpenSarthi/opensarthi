@@ -29,3 +29,5 @@ sentence-transformers>=3.0
 qrcode>=8.2
 cryptography>=50.0
 pillow>=12.3
+# Browser automation (browser_* tools) — async Playwright + Chromium download
+playwright>=1.40

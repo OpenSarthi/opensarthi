@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     cloud_model: str = "gemini-3.6-flash"
     
     # AI provider selection
-    ai_provider: str = "google"  # local_llm, ollama, google, openai, anthropic, groq, openrouter
+    ai_provider: str = "google"  # local_llm, ollama, google, openai, anthropic, groq, openrouter, custom_openai
     
     # API keys (generic per-provider storage)
     gemini_api_key: str | None = None
@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     groq_api_key: str | None = None
     openrouter_api_key: str | None = None
+    
+    # Custom OpenAI-compatible endpoint
+    custom_openai_base_url: str | None = None
+    custom_openai_api_key: str | None = None
     
     voice_accent: str = "ie"
     voice_speed: float = 1.35
@@ -50,6 +54,12 @@ class Settings(BaseSettings):
     use_langgraph: bool = True
     use_supervisor: bool = True
     use_native_voice: bool = False
+
+    # Multimodal screen context: send the desktop screenshot to the planner LLM.
+    # Currently gated to vision-capable cloud providers (Google/Anthropic/OpenAI/OpenRouter/Groq).
+    # Local Ollama text models stay text-only (an unsupported-image provider error
+    # triggers the text-only fallback regardless).
+    send_screenshots_to_llm: bool = True
 
     # Native Audio Pipeline (Mark-L speed feature)
     native_audio_pipeline: str = "auto"  # "auto" | "gemini-live" | "openai-realtime" | "offline"
@@ -126,6 +136,8 @@ def save_settings_to_env(
     use_langgraph: bool = True,
     use_supervisor: bool = False,
     use_native_voice: bool = False,
+    custom_openai_base_url: str | None = None,
+    custom_openai_api_key: str | None = None,
 ):
     import json
     # Always write to the writable user's home configuration directory (safe for read-only AppImage filesystems!)
@@ -173,6 +185,10 @@ def save_settings_to_env(
         f.write(f"USE_LANGGRAPH={'True' if use_langgraph else 'False'}\n")
         f.write(f"USE_SUPERVISOR={'True' if use_supervisor else 'False'}\n")
         f.write(f"USE_NATIVE_VOICE={'True' if use_native_voice else 'False'}\n")
+        if custom_openai_base_url:
+            f.write(f"CUSTOM_OPENAI_BASE_URL={custom_openai_base_url}\n")
+        if custom_openai_api_key:
+            f.write(f"CUSTOM_OPENAI_API_KEY={custom_openai_api_key}\n")
         if user_name:
             f.write(f"USER_NAME={user_name}\n")
         if user_skills:
@@ -193,4 +209,6 @@ def get_active_api_key() -> str | None:
         return settings.groq_api_key
     elif provider == "openrouter":
         return settings.openrouter_api_key
+    elif provider == "custom_openai":
+        return settings.custom_openai_api_key
     return None
