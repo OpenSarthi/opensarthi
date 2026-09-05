@@ -108,7 +108,12 @@ Shown full-screen on first launch (`onboardingCompleted` = false in localStorage
 
 - **Step 1 — Skills:** 12 skill category toggles + "Select All" shortcut
 - **Step 2 — Persona:** Name input + custom instructions (500 char limit)
-- **Step 3 — Agent Settings:** Provider, model, API key configuration
+- **Step 3 — Agent Core Settings:**
+  - 7 AI Providers: Google Gemini, OpenAI GPT, Anthropic Claude, Groq Cloud, OpenRouter, Custom OpenAI / OmniRoute, Ollama (Local)
+  - Endpoint & Credentials: Base URL configuration for Custom OpenAI and Ollama, API Key input
+  - Provider Display Name: Optional custom name for OpenAI-compatible endpoints (e.g. "OmniRoute", "vLLM", "LM Studio") displayed in the AGENT STATUS & SYSTEMS HUD monitor and Context Modal
+  - Real-time Credential Validation: "TEST KEY" / "TEST CONNECTION" button with instant feedback (checking spinner, valid badge, error diagnostics)
+  - Live Model Fetching: "FETCH LIVE" button to dynamically discover supported models directly from endpoint/proxy with automatic dropdown population, curated fallbacks, and manual custom model input
 - **Skip button:** Applies all defaults (all skills, no name, Google Gemini)
 - On complete → calls `setPersonalization()` + sends `update_settings` to backend
 

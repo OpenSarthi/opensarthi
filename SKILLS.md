@@ -547,8 +547,9 @@ Frontend settings modal
 | Anthropic | `anthropic` | `cloud_model` | PydanticAI default |
 | Groq | `groq` | `cloud_model` | `https://api.groq.com/openai/v1` |
 | OpenRouter | `openrouter` | `cloud_model` | `https://openrouter.ai/api/v1` |
+| Custom OpenAI | `custom_openai` | `local_model` | User-defined (e.g. `http://localhost:1234/v1`, vLLM, OmniRoute) |
 
-**Invariant:** Groq, OpenAI, and OpenRouter all use `OpenAIModel` with `OpenAIProvider` and different `base_url`s. Anthropic and Google use their native PydanticAI models.
+**Invariant:** Groq, OpenAI, OpenRouter, and Custom OpenAI all use `OpenAIModel` with `OpenAIProvider` and different `base_url`s. Custom OpenAI supports an optional user-defined provider display name (`custom_openai_provider_name`) rendered in the HUD and system monitors. Anthropic and Google use their native PydanticAI models.
 
 ---
 

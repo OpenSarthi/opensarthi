@@ -269,6 +269,7 @@ graph TD
 | **Groq** | Llama 3.3 70B, Llama 3.1 8B, Qwen3 32B, Llama 4 Scout | Ultra-high inference velocity |
 | **OpenRouter** | DeepSeek Chat, Mistral Large, etc. | Aggregated multi-endpoint routing |
 | **Ollama** | qwen2.5-coder, llama3.2, mistral | 100% offline local processing (0 token fees) |
+| **Custom OpenAI-Compatible** | Any OpenAI-compatible endpoint (LM Studio, vLLM, OmniRoute, LocalAI) | Configurable base URL, API key, and custom provider display name |
 
 <br/>
 

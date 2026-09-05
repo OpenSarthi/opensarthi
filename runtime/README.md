@@ -491,6 +491,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str | None = None
     custom_openai_base_url: str | None = None
     custom_openai_api_key: str | None = None
+    custom_openai_provider_name: str | None = None
     voice_accent: str = "ie"
     voice_speed: float = 1.35
     continuous_listening: bool = False

@@ -113,6 +113,7 @@ Update one or more settings. Empty string values for API keys are ignored (no ac
     "openrouter_api_key": "",
     "custom_openai_base_url": "http://127.0.0.1:8000/v1",
     "custom_openai_api_key": "",
+    "custom_openai_provider_name": "OmniRoute",
     "voice_accent": "af_heart",
     "voice_speed": 1.35,
     "continuous_listening": false,
@@ -441,6 +442,7 @@ Full settings state pushed to frontend on connect or after any update.
     "has_openrouter_key": false,
     "custom_openai_base_url": "",
     "custom_openai_api_key": "",
+    "custom_openai_provider_name": "",
     "voice_accent": "af_heart",
     "voice_speed": 1.35,
     "continuous_listening": false,
@@ -736,7 +738,9 @@ Phase 1 of two-phase morning briefing — instant greeting (no tools).
 {
   "type": "briefing_phase1",
   "payload": {
+    "id": "c7a8b9e0-...",
     "text": "Good morning! I'm compiling your briefing...",
+    "timestamp": 1788594200000,
     "thread_id": "8558d1f1-..."
   }
 }
@@ -750,7 +754,9 @@ Phase 2 of two-phase morning briefing — full content ready.
 {
   "type": "briefing_phase2",
   "payload": {
+    "id": "d9e8f7a6-...",
     "text": "Here's your full briefing...",
+    "timestamp": 1788594205000,
     "thread_id": "8558d1f1-...",
     "content_panel_data": {...}
   }
