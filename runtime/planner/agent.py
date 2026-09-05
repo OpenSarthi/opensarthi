@@ -212,6 +212,8 @@ STRICT RULES:
 
 TOOL ROUTING (Use EXACT registered tool names):
 • Open an app → open_app(app: str)
+• Open a URL straight in the browser → open_url(url: str) — FASTEST, preferred for "open X page" / "go to this URL". Then wait_for_window to pin the browser, observe_desktop to confirm.
+• Inspect the current browser page's DOM → browser_snapshot(format: 'aria') — shows roles/names of interactive elements; use before clicking/typing when browsing headlessly.
 • Search the web / current events / facts → web_search(query: str)
 • Weather / temperature / forecast → weather(location?: str, days?: number)
 • Set a countdown timer → set_timer(minutes?: number, seconds?: number, label?: str)
@@ -280,8 +282,12 @@ TASK COMPLETION:
         )
     if has_web:
         skill_sections.append(
-            "WEB CONTEXT: For browser automation — open_app → wait_for_window → type URL → press Return. "
-            "Use observe_desktop to confirm the page loaded before further actions."
+            "WEB CONTEXT: Prefer open_url(url) to launch the browser straight at the page — terminal-fast, "
+            "no GUI clicking through the homepage. Then wait_for_window to pin the browser window, "
+            "observe_desktop to confirm the page loaded, and interact with click_element / type_text / press_key. "
+            "For headless browser work, use browser_go_to + browser_snapshot(format='aria') to decide the next click. "
+            "Only fall back to open_app → wait_for_window → type URL → press Return when the page must be reached "
+            "by navigating from the browser's start page."
         )
     if has_privacy:
         skill_sections.append(
@@ -311,6 +317,31 @@ agent = Agent(
 #         user_name=ctx.deps.user_name or "",
 #         custom_prompt=ctx.deps.custom_prompt or ""
 #     )
+
+
+def build_agent_user_content(
+    context: str,
+    snapshot=None,
+    screenshot_enabled: bool = False,
+) -> "object":
+    """
+    Return the user content passed to the planner agent.
+
+    If `screenshot_enabled` and the snapshot carries a base64 PNG, append it as
+    an inline image part so vision-capable models see the actual screen while
+    planning. Non-vision models fall back to text-only content (and callers
+    additionally retry text-only if the provider rejects the image).
+    """
+    if not screenshot_enabled:
+        return context
+    b64 = getattr(snapshot, "screenshot_base64", None) if snapshot is not None else None
+    if not b64:
+        return context
+    try:
+        from pydantic_ai.messages import ImageUrl
+        return [context, ImageUrl(url=f"data:image/png;base64,{b64}")]
+    except Exception:
+        return context
 
 
 # _args_hint is removed — schemas are now authoritative (see BaseTool.args_schema_summary())
@@ -353,10 +384,17 @@ def build_structured_context(
             f"  Focused Element: [{snapshot.focused_element_role}] '{snapshot.focused_element_text or ''}'"
         )
     if snapshot.accessibility_tree and snapshot.accessibility_tree.get("summary"):
-        summary = snapshot.accessibility_tree["summary"][:1000]
-        desktop_state_lines.append(f"  UI Elements:\n    {summary.replace(chr(10), chr(10)+'    ')}")
+        # Larger element budget so the planner sees the interactive structure of
+        # the active window (DOM-like), not a 30-element skim.
+        summary = snapshot.accessibility_tree["summary"][:6000]
+        desktop_state_lines.append(f"  UI Elements (accessibility tree):\n    {summary.replace(chr(10), chr(10)+'    ')}")
+        # Tell the model explicitly when the tree was truncated so it knows to
+        # call observe_desktop for more detail.
+        total = snapshot.accessibility_tree.get("total") or 0
+        if total and len(snapshot.accessibility_tree.get("summary") or "") > 6000:
+            desktop_state_lines.append(f"  (accessibility tree has {total} elements — shown truncated: call observe_desktop to refresh with more detail)")
     if snapshot.screen_text_summary:
-        desktop_state_lines.append(f"  Screen Text (OCR):\n    {snapshot.screen_text_summary[:2000].replace(chr(10), chr(10)+'    ')}")
+        desktop_state_lines.append(f"  Screen Text (OCR):\n    {snapshot.screen_text_summary[:4000].replace(chr(10), chr(10)+'    ')}")
 
     # Pinned window session state
     try:

@@ -395,8 +395,37 @@ class AgentRuntime:
                 if getattr(self, "logger", None):
                     self.logger.log_planning_context(replanning_attempts, context)
 
+                # ── Multimodal planning (legacy engine) ──────────────────────
                 try:
-                    result = await self._agent_run(context, deps=self.deps, model=model, message_history=message_history)
+                    from llm import screenshots_for_model
+                    from planner.agent import build_agent_user_content as _legacy_content
+                    use_screenshot = screenshots_for_model(model)
+                    # Safety net for environments where the snapshot was captured
+                    # before screenshots were attached.
+                    if use_screenshot and snapshot is not None and not getattr(snapshot, "screenshot_base64", None):
+                        try:
+                            _fresh = await self.observer.snapshot()
+                            snapshot.screenshot_base64 = _fresh.screenshot_base64
+                            snapshot.screenshot_path = _fresh.screenshot_path
+                        except Exception as _e:
+                            import structlog as _sl
+                            _sl.get_logger().warning("agent_runtime: fresh screenshot capture failed", error=str(_e))
+                    planning_content = _legacy_content(context, snapshot, use_screenshot)
+                except Exception:
+                    planning_content = context
+
+                try:
+                    try:
+                        result = await self._agent_run(planning_content, deps=self.deps, model=model, message_history=message_history)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as img_err:
+                        if planning_content is not context:
+                            import structlog as _sl2
+                            _sl2.get_logger().warning("Legacy planner call with screenshot failed — retrying text-only", error=str(img_err))
+                            result = await self._agent_run(context, deps=self.deps, model=model, message_history=message_history)
+                        else:
+                            raise
                     if getattr(self, "logger", None):
                         self.logger.log_llm_response(replanning_attempts, result.output)
                     if result and getattr(result, "usage", None):

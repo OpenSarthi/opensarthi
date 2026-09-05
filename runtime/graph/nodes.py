@@ -304,8 +304,38 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     if logger_instance:
         logger_instance.log_planning_context(state.retry_count, context)
 
+    # ── Multimodal planning ────────────────────────────────────────────────
+    # Send the desktop screenshot to vision-capable models so the planner can
+    # SEE the actual screen (not just text summaries). Non-vision models keep
+    # text-only; if a provider rejects the image we fall back and retry.
+    from llm import screenshots_for_model
+    from planner.agent import build_agent_user_content
+
+    use_screenshot = screenshots_for_model(model)
+    if use_screenshot and snapshot is not None and not getattr(snapshot, "screenshot_base64", None):
+        # Safety net for checkpoints that predate screenshot capture.
+        try:
+            from observation import DesktopObserver
+            fresh = await DesktopObserver().snapshot()
+            snapshot.screenshot_base64 = fresh.screenshot_base64
+            snapshot.screenshot_path = fresh.screenshot_path
+        except Exception as fresh_err:
+            logger.warning("plan_node: fresh screenshot capture failed", error=str(fresh_err))
+
+    user_content = build_agent_user_content(context, snapshot, use_screenshot)
+
     try:
-        result = await agent.run(context, deps=deps, model=model, message_history=state.messages)
+        try:
+            result = await agent.run(user_content, deps=deps, model=model, message_history=state.messages)
+        except asyncio.CancelledError:
+            raise
+        except Exception as img_err:
+            if user_content is not context:
+                # Provider/model doesn't accept image parts — retry text-only.
+                logger.warning("Planner call with screenshot failed — retrying text-only", error=str(img_err))
+                result = await agent.run(context, deps=deps, model=model, message_history=state.messages)
+            else:
+                raise
         if logger_instance:
             logger_instance.log_llm_response(state.retry_count, result.output)
 
