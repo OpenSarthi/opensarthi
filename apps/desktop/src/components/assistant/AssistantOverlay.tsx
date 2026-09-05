@@ -153,7 +153,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
   const {
     voiceState, isConnected, currentTranscript,
-    messages, currentPlan, activeLocalModel, activeCloudModel, activeProvider,
+    messages, currentPlan, activeLocalModel, activeCloudModel, activeProvider, customOpenaiProviderName,
     tokenUsage, globalSessionTokens, taskPaused, isOverlayMode, setOverlayMode, snapAlign,
     continuousListening,
     setVoiceState, addMessage, setTranscript,
@@ -1777,7 +1777,9 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>PROVIDER:</span>
-                      <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>{activeProvider}</span>
+                      <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>
+                        {(activeProvider === "custom_openai" && customOpenaiProviderName?.trim()) ? customOpenaiProviderName.trim() : activeProvider}
+                      </span>
                     </div>
 
                     <div style={{ display: "flex", justifyContent: "space-between" }}>

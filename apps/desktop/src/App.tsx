@@ -43,6 +43,7 @@ export default function App() {
     openrouterApiKey,
     customOpenaiBaseUrl,
     customOpenaiApiKey,
+    customOpenaiProviderName,
     voiceAccent,
     voiceSpeed,
     continuousListening,
@@ -63,6 +64,7 @@ export default function App() {
     setActiveModels,
     setActiveProvider,
     setAllApiKeys,
+    setCustomOpenaiProviderName,
     setLongTermMemoryEnabled,
     resetSessionTokens,
     onboardingCompleted,
@@ -198,6 +200,7 @@ export default function App() {
     openrouterKey: string;
     customOpenaiBaseUrl: string;
     customOpenaiApiKey: string;
+    customOpenaiProviderName: string;
     voiceAccent: string;
     voiceSpeed: number;
     continuousListening: boolean;
@@ -220,7 +223,11 @@ export default function App() {
       anthropic: settings.anthropicKey,
       groq: settings.groqKey,
       openrouter: settings.openrouterKey,
+      customOpenaiBaseUrl: settings.customOpenaiBaseUrl,
+      customOpenaiApiKey: settings.customOpenaiApiKey,
+      customOpenaiProviderName: settings.customOpenaiProviderName,
     });
+    setCustomOpenaiProviderName(settings.customOpenaiProviderName);
     setVoiceSettings(settings.voiceAccent, settings.voiceSpeed, settings.continuousListening);
     setWakeWordSettings(settings.wakeWordEnabled, settings.wakeWordThreshold, settings.wakeWords);
     setActiveTheme(settings.theme);
@@ -241,6 +248,7 @@ export default function App() {
       openrouter_api_key: settings.openrouterKey,
       custom_openai_base_url: settings.customOpenaiBaseUrl || "",
       custom_openai_api_key: settings.customOpenaiApiKey || "",
+      custom_openai_provider_name: settings.customOpenaiProviderName || "",
       voice_accent: settings.voiceAccent,
       voice_speed: settings.voiceSpeed,
       continuous_listening: settings.continuousListening,
@@ -263,6 +271,10 @@ export default function App() {
     cloudModel?: string;
     localModel?: string;
     apiKey?: string;
+    customOpenaiBaseUrl?: string;
+    customOpenaiApiKey?: string;
+    customOpenaiProviderName?: string;
+    allApiKeys?: Record<string, string>;
   }) => {
     // Cache pending onboarding details locally so they are not wiped by initial connection sync
     setPendingOnboarding(data);
@@ -274,20 +286,40 @@ export default function App() {
       if (data.localModel || data.cloudModel) {
         setActiveModels(data.localModel || activeLocalModel, data.cloudModel || activeCloudModel);
       }
-      if (data.apiKey) {
-        setAllApiKeys({
-          gemini: data.provider === "google" ? data.apiKey : geminiApiKey,
-          openai: data.provider === "openai" ? data.apiKey : openaiApiKey,
-          anthropic: data.provider === "anthropic" ? data.apiKey : anthropicApiKey,
-          groq: data.provider === "groq" ? data.apiKey : groqApiKey,
-          openrouter: data.provider === "openrouter" ? data.apiKey : openrouterApiKey,
-        });
-      }
+      const gKey = data.allApiKeys?.google || (data.provider === "google" ? (data.apiKey || geminiApiKey) : geminiApiKey);
+      const oKey = data.allApiKeys?.openai || (data.provider === "openai" ? (data.apiKey || openaiApiKey) : openaiApiKey);
+      const aKey = data.allApiKeys?.anthropic || (data.provider === "anthropic" ? (data.apiKey || anthropicApiKey) : anthropicApiKey);
+      const grKey = data.allApiKeys?.groq || (data.provider === "groq" ? (data.apiKey || groqApiKey) : groqApiKey);
+      const orKey = data.allApiKeys?.openrouter || (data.provider === "openrouter" ? (data.apiKey || openrouterApiKey) : openrouterApiKey);
+      const coBase = data.customOpenaiBaseUrl || customOpenaiBaseUrl;
+      const coKey = data.allApiKeys?.custom_openai || data.customOpenaiApiKey || (data.provider === "custom_openai" ? (data.apiKey || customOpenaiApiKey) : customOpenaiApiKey);
+      const coName = data.customOpenaiProviderName || customOpenaiProviderName;
+
+      setAllApiKeys({
+        gemini: gKey,
+        openai: oKey,
+        anthropic: aKey,
+        groq: grKey,
+        openrouter: orKey,
+        customOpenaiBaseUrl: coBase,
+        customOpenaiApiKey: coKey,
+        customOpenaiProviderName: coName,
+      });
+      if (coName) setCustomOpenaiProviderName(coName);
     }
 
     setOnboardingCompleted(true);
     // Send to backend when WS is ready (may not be connected yet — send via wsClient when available)
     const sendPersonalization = () => {
+      const gKey = data.allApiKeys?.google || (data.provider === "google" ? (data.apiKey || geminiApiKey) : geminiApiKey);
+      const oKey = data.allApiKeys?.openai || (data.provider === "openai" ? (data.apiKey || openaiApiKey) : openaiApiKey);
+      const aKey = data.allApiKeys?.anthropic || (data.provider === "anthropic" ? (data.apiKey || anthropicApiKey) : anthropicApiKey);
+      const grKey = data.allApiKeys?.groq || (data.provider === "groq" ? (data.apiKey || groqApiKey) : groqApiKey);
+      const orKey = data.allApiKeys?.openrouter || (data.provider === "openrouter" ? (data.apiKey || openrouterApiKey) : openrouterApiKey);
+      const coBase = data.customOpenaiBaseUrl || customOpenaiBaseUrl;
+      const coKey = data.allApiKeys?.custom_openai || data.customOpenaiApiKey || (data.provider === "custom_openai" ? (data.apiKey || customOpenaiApiKey) : customOpenaiApiKey);
+      const coName = data.customOpenaiProviderName || customOpenaiProviderName;
+
       wsClient.send("update_settings", {
         user_name: data.userName,
         user_skills: data.skills,
@@ -296,11 +328,14 @@ export default function App() {
           ai_provider: data.provider,
           local_model: data.localModel || activeLocalModel,
           cloud_model: data.cloudModel || activeCloudModel,
-          gemini_api_key: data.provider === "google" ? (data.apiKey || geminiApiKey) : geminiApiKey,
-          openai_api_key: data.provider === "openai" ? (data.apiKey || openaiApiKey) : openaiApiKey,
-          anthropic_api_key: data.provider === "anthropic" ? (data.apiKey || anthropicApiKey) : anthropicApiKey,
-          groq_api_key: data.provider === "groq" ? (data.apiKey || groqApiKey) : groqApiKey,
-          openrouter_api_key: data.provider === "openrouter" ? (data.apiKey || openrouterApiKey) : openrouterApiKey,
+          gemini_api_key: gKey,
+          openai_api_key: oKey,
+          anthropic_api_key: aKey,
+          groq_api_key: grKey,
+          openrouter_api_key: orKey,
+          custom_openai_base_url: coBase,
+          custom_openai_api_key: coKey,
+          custom_openai_provider_name: coName,
         } : {})
       });
       const activeId = useAssistantStore.getState().activeThreadId;
@@ -329,7 +364,7 @@ export default function App() {
     <>
       <AnimatePresence>
         {!onboardingCompleted && (
-          <OnboardingView onComplete={handleOnboardingComplete} />
+          <OnboardingView onComplete={handleOnboardingComplete} runtimePort={runtimePort} />
         )}
         {showCustomizer && (
           <OnboardingView
@@ -339,6 +374,7 @@ export default function App() {
               handleOnboardingComplete(data);
               setShowCustomizer(false);
             }}
+            runtimePort={runtimePort}
           />
         )}
       </AnimatePresence>
@@ -385,6 +421,7 @@ export default function App() {
             currentOpenrouterKey={openrouterApiKey}
             currentCustomOpenaiBaseUrl={customOpenaiBaseUrl}
             currentCustomOpenaiApiKey={customOpenaiApiKey}
+            currentCustomOpenaiProviderName={customOpenaiProviderName}
             currentVoiceAccent={voiceAccent}
             currentVoiceSpeed={voiceSpeed}
             currentContinuousListening={continuousListening}

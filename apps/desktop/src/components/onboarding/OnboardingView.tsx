@@ -1,11 +1,26 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, ChevronRight, Sparkles, User, MessageSquare, X, Wrench } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Sparkles,
+  User,
+  MessageSquare,
+  X,
+  Wrench,
+  RefreshCw,
+  CheckCircle2,
+  Globe,
+  Tag,
+} from "lucide-react";
 import { useAssistantStore } from "../../stores/assistantStore";
 import {
   PROVIDER_MODELS,
+  PROVIDER_LABELS,
   OLLAMA_ALL_SUGGESTIONS,
   formatModelLabel,
+  validateClientDirect,
+  FetchedModel,
 } from "../../lib/models";
 
 const SKILLS = [
@@ -54,6 +69,30 @@ const selectStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "12px 16px",
+  background: "rgba(255, 255, 255, 0.05)",
+  border: "1px solid rgba(255, 255, 255, 0.12)",
+  borderRadius: 10,
+  color: "white",
+  fontSize: 13,
+  outline: "none",
+  boxSizing: "border-box",
+  fontFamily: "inherit",
+  transition: "border-color 0.2s",
+};
+
+const PROVIDER_OPTIONS = [
+  { id: "google", name: "Google Gemini", icon: "✨", desc: "Best Vision & Speed" },
+  { id: "openai", name: "OpenAI GPT", icon: "🤖", desc: "Industry Standard" },
+  { id: "anthropic", name: "Claude AI", icon: "🧠", desc: "Intelligent Agent" },
+  { id: "groq", name: "Groq Cloud", icon: "⚡", desc: "Ultra-Fast Inference" },
+  { id: "openrouter", name: "OpenRouter", icon: "🔀", desc: "Multi-Model Router" },
+  { id: "custom_openai", name: "Custom / OmniRoute", icon: "🔧", desc: "Local Proxy / vLLM" },
+  { id: "ollama", name: "Ollama (Local)", icon: "🏠", desc: "100% Private & Offline" },
+];
+
 interface OnboardingViewProps {
   onComplete: (data: {
     skills: string[];
@@ -63,15 +102,31 @@ interface OnboardingViewProps {
     cloudModel?: string;
     localModel?: string;
     apiKey?: string;
+    customOpenaiBaseUrl?: string;
+    customOpenaiApiKey?: string;
+    customOpenaiProviderName?: string;
+    allApiKeys?: Record<string, string>;
   }) => void;
   isEdit?: boolean;
   onClose?: () => void;
+  runtimePort?: number | null;
 }
 
-export function OnboardingView({ onComplete, isEdit = false, onClose }: OnboardingViewProps) {
+export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePort }: OnboardingViewProps) {
   const storeUserName = useAssistantStore(s => s.userName);
   const storeUserSkills = useAssistantStore(s => s.userSkills);
   const storeCustomPrompt = useAssistantStore(s => s.customPrompt);
+  const storeGeminiApiKey = useAssistantStore(s => s.geminiApiKey);
+  const storeOpenaiApiKey = useAssistantStore(s => s.openaiApiKey);
+  const storeAnthropicApiKey = useAssistantStore(s => s.anthropicApiKey);
+  const storeGroqApiKey = useAssistantStore(s => s.groqApiKey);
+  const storeOpenrouterApiKey = useAssistantStore(s => s.openrouterApiKey);
+  const storeCustomOpenaiApiKey = useAssistantStore(s => s.customOpenaiApiKey);
+  const storeCustomOpenaiBaseUrl = useAssistantStore(s => s.customOpenaiBaseUrl);
+  const storeCustomOpenaiProviderName = useAssistantStore(s => s.customOpenaiProviderName);
+  const storeActiveProvider = useAssistantStore(s => s.activeProvider);
+  const storeActiveCloudModel = useAssistantStore(s => s.activeCloudModel);
+  const storeActiveLocalModel = useAssistantStore(s => s.activeLocalModel);
 
   const [step, setStep] = useState<"skills" | "persona" | "agent">("skills");
   const [selected, setSelected] = useState<Set<string>>(() => {
@@ -85,10 +140,230 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
   const [nameError, setNameError] = useState("");
 
   // Agent Settings local states
-  const [provider, setProvider] = useState("google");
-  const [cloudModel, setCloudModel] = useState("gemini-3.6-flash");
-  const [localModel, setLocalModel] = useState(OLLAMA_ALL_SUGGESTIONS[0]?.value || "llama3.1:8b");
-  const [apiKey, setApiKey] = useState("");
+  const [provider, setProvider] = useState(() => storeActiveProvider || "google");
+  const [cloudModel, setCloudModel] = useState(() => storeActiveCloudModel || "gemini-3.6-flash");
+  const [localModel, setLocalModel] = useState(() => storeActiveLocalModel || OLLAMA_ALL_SUGGESTIONS[0]?.value || "llama3.1:8b");
+  const [customOpenaiBaseUrl, setCustomOpenaiBaseUrl] = useState(() => storeCustomOpenaiBaseUrl || "http://localhost:20128/v1");
+  const [customOpenaiProviderName, setCustomOpenaiProviderName] = useState(() => storeCustomOpenaiProviderName || "");
+  const [ollamaBaseUrl, setOllamaBaseUrl] = useState("http://127.0.0.1:11434");
+
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>(() => ({
+    google: storeGeminiApiKey || "",
+    openai: storeOpenaiApiKey || "",
+    anthropic: storeAnthropicApiKey || "",
+    groq: storeGroqApiKey || "",
+    openrouter: storeOpenrouterApiKey || "",
+    custom_openai: storeCustomOpenaiApiKey || "",
+  }));
+
+  const [testKeyState, setTestKeyState] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
+  const [testKeyMessage, setTestKeyMessage] = useState("");
+  const [dynamicModels, setDynamicModels] = useState<FetchedModel[]>([]);
+  const [modelFetchState, setModelFetchState] = useState<"idle" | "loading" | "live" | "offline" | "error">("idle");
+
+  const isLocal = provider === "ollama";
+  const isCustomOpenai = provider === "custom_openai";
+  const providerInfo = PROVIDER_LABELS[provider] || {
+    label: provider,
+    icon: "✨",
+    apiKeyLabel: "API KEY",
+    apiKeyPlaceholder: "Paste your API key...",
+    docsUrl: "",
+    supportsModelFetch: false,
+  };
+
+  const handleProviderSelect = (pId: string) => {
+    setProvider(pId);
+    setTestKeyState("idle");
+    setTestKeyMessage("");
+    setDynamicModels([]);
+    setModelFetchState("idle");
+
+    const models = PROVIDER_MODELS[pId] || [];
+    if (pId === "ollama") {
+      setLocalModel(OLLAMA_ALL_SUGGESTIONS[0]?.value || "llama3.1:8b");
+    } else if (pId === "custom_openai") {
+      setCloudModel("auto/fast");
+      setLocalModel("auto/fast");
+    } else if (models.length > 0) {
+      setCloudModel(models[0].value);
+    }
+  };
+
+  // Fetch dynamic models (Backend proxy + Direct client fallback)
+  const fetchDynamicModels = useCallback(async () => {
+    if (!PROVIDER_LABELS[provider]?.supportsModelFetch) return;
+    const effectiveKey = (apiKeys[provider] || "").trim();
+    const effectiveBaseUrl = (isCustomOpenai ? customOpenaiBaseUrl : ollamaBaseUrl).trim() ||
+      (isCustomOpenai ? "http://localhost:20128/v1" : "http://127.0.0.1:11434");
+
+    setModelFetchState("loading");
+
+    // For custom_openai, try direct fetch first since local server responds immediately
+    if (isCustomOpenai) {
+      try {
+        const directResult = await validateClientDirect("custom_openai", effectiveKey, effectiveBaseUrl);
+        if (directResult.valid && directResult.models.length > 0) {
+          setDynamicModels(directResult.models);
+          setModelFetchState("live");
+          const currentSelected = cloudModel || localModel;
+          const modelExists = directResult.models.some((m) => m.value === currentSelected);
+          if (!modelExists) {
+            setCloudModel(directResult.models[0].value);
+            setLocalModel(directResult.models[0].value);
+          }
+          return;
+        }
+      } catch {
+        // Fall back to backend proxy below
+      }
+    }
+
+    // Try backend proxy if runtimePort is available
+    if (runtimePort) {
+      try {
+        const params = new URLSearchParams({ provider });
+        if (effectiveKey) params.set("api_key", effectiveKey);
+        if (isCustomOpenai || provider === "ollama") {
+          params.set("base_url", effectiveBaseUrl);
+        }
+        const res = await fetch(`http://127.0.0.1:${runtimePort}/models?${params}`);
+        if (res.ok) {
+          const data: { models: FetchedModel[]; source: string } = await res.json();
+          if (data.models && data.models.length > 0) {
+            setDynamicModels(data.models);
+            setModelFetchState(data.source === "offline" ? "offline" : "live");
+            const currentSelected = isLocal ? localModel : cloudModel;
+            const modelExists = data.models.some((m) => m.value === currentSelected);
+            if (!modelExists) {
+              if (isLocal) {
+                setLocalModel(data.models[0].value);
+              } else if (isCustomOpenai) {
+                setCloudModel(data.models[0].value);
+                setLocalModel(data.models[0].value);
+              } else {
+                setCloudModel(data.models[0].value);
+              }
+            }
+            return;
+          }
+        }
+      } catch {
+        // Fall back to direct client fetch
+      }
+    }
+
+    // Fallback: Direct client fetch
+    try {
+      const direct = await validateClientDirect(provider, effectiveKey, effectiveBaseUrl);
+      if (direct.valid && direct.models.length > 0) {
+        setDynamicModels(direct.models);
+        setModelFetchState("live");
+        const currentSelected = isLocal ? localModel : cloudModel;
+        const modelExists = direct.models.some((m) => m.value === currentSelected);
+        if (!modelExists) {
+          if (isLocal) {
+            setLocalModel(direct.models[0].value);
+          } else {
+            setCloudModel(direct.models[0].value);
+            if (isCustomOpenai) setLocalModel(direct.models[0].value);
+          }
+        }
+        return;
+      }
+    } catch {
+      // Ignore
+    }
+
+    setModelFetchState("error");
+  }, [provider, runtimePort, apiKeys, isCustomOpenai, customOpenaiBaseUrl, ollamaBaseUrl, isLocal, cloudModel, localModel]);
+
+  // Test API key / Test Connection handler
+  const handleTestKey = useCallback(async () => {
+    const effectiveKey = (apiKeys[provider] || "").trim();
+    const effectiveBaseUrl = (isCustomOpenai ? customOpenaiBaseUrl : ollamaBaseUrl).trim() ||
+      (isCustomOpenai ? "http://localhost:20128/v1" : "http://127.0.0.1:11434");
+
+    setTestKeyState("checking");
+    setTestKeyMessage("Testing...");
+
+    const applySuccess = (models: FetchedModel[], message: string) => {
+      setTestKeyState("valid");
+      setTestKeyMessage(message);
+      if (models.length > 0) {
+        setDynamicModels(models);
+        setModelFetchState("live");
+        const currentSelected = isLocal ? localModel : cloudModel;
+        const modelExists = models.some((m) => m.value === currentSelected);
+        if (!modelExists) {
+          if (isLocal) {
+            setLocalModel(models[0].value);
+          } else {
+            setCloudModel(models[0].value);
+            if (isCustomOpenai) setLocalModel(models[0].value);
+          }
+        }
+      }
+    };
+
+    // For custom_openai, try direct browser fetch first since local server responds immediately
+    if (isCustomOpenai) {
+      try {
+        const direct = await validateClientDirect("custom_openai", effectiveKey, effectiveBaseUrl);
+        if (direct.valid) {
+          applySuccess(direct.models, `✓ Connected! Found ${direct.models.length} models`);
+          return;
+        }
+      } catch {
+        // Fall through to backend proxy
+      }
+    }
+
+    // Try backend proxy if runtimePort is available
+    if (runtimePort) {
+      try {
+        const params = new URLSearchParams({ provider });
+        if (effectiveKey) params.set("api_key", effectiveKey);
+        if (isCustomOpenai || provider === "ollama") {
+          params.set("base_url", effectiveBaseUrl);
+        }
+        const res = await fetch(`http://127.0.0.1:${runtimePort}/validate_key?${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.valid) {
+            applySuccess(data.models || [], `✓ ${data.message || "Valid API key"}`);
+            return;
+          } else {
+            // If backend proxy failed or returned invalid, try direct client validation as fallback
+            const direct = await validateClientDirect(provider, effectiveKey, effectiveBaseUrl);
+            if (direct.valid) {
+              applySuccess(direct.models, `✓ ${direct.message}`);
+              return;
+            }
+            setTestKeyState("invalid");
+            setTestKeyMessage(`✕ ${data.message || "Invalid credentials"}`);
+            return;
+          }
+        }
+      } catch {
+        // Fall through to direct client validation
+      }
+    }
+
+    // Fallback: Direct client validation
+    try {
+      const direct = await validateClientDirect(provider, effectiveKey, effectiveBaseUrl);
+      if (direct.valid) {
+        applySuccess(direct.models, `✓ ${direct.message}`);
+      } else {
+        setTestKeyState("invalid");
+        setTestKeyMessage(`✕ ${direct.message}`);
+      }
+    } catch (err: any) {
+      setTestKeyState("invalid");
+      setTestKeyMessage(`✕ Error: ${err?.message || "Could not validate"}`);
+    }
+  }, [provider, apiKeys, isCustomOpenai, customOpenaiBaseUrl, ollamaBaseUrl, runtimePort, isLocal, localModel, cloudModel]);
 
   const toggle = useCallback((id: string) => {
     setSelected(prev => {
@@ -118,14 +393,23 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
   const handleFinish = () => {
     const skills = selected.size > 0 ? Array.from(selected) : ALL_SKILL_IDS;
     const finalLocalModel = localModel.trim() || "llama3.1:8b";
+    const finalApiKey = (apiKeys[provider] || "").trim();
     onComplete({
       skills,
       userName: userName.trim(),
       customPrompt: customPrompt.trim(),
       provider,
-      cloudModel,
-      localModel: finalLocalModel,
-      apiKey: apiKey.trim()
+      cloudModel: isCustomOpenai ? cloudModel.trim() : cloudModel,
+      localModel: isCustomOpenai ? cloudModel.trim() : finalLocalModel,
+      apiKey: finalApiKey,
+      customOpenaiBaseUrl: isCustomOpenai
+        ? customOpenaiBaseUrl.trim()
+        : isLocal && ollamaBaseUrl.trim() !== "http://127.0.0.1:11434"
+        ? ollamaBaseUrl.trim()
+        : undefined,
+      customOpenaiApiKey: isCustomOpenai ? (apiKeys.custom_openai || "").trim() : undefined,
+      customOpenaiProviderName: isCustomOpenai ? customOpenaiProviderName.trim() : undefined,
+      allApiKeys: apiKeys,
     });
   };
 
@@ -566,43 +850,37 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
               </div>
             </motion.div>
           ) : (
-            <motion.div key="agent-step" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 520, margin: "0 auto" }}>
+            <motion.div
+              key="agent-step"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 580, margin: "0 auto" }}>
                 
-                {/* Provider Grid */}
+                {/* 1. Provider Grid */}
                 <div>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: "0.06em", marginBottom: 10 }}>
                     1. AI ENGINE PROVIDER
                   </label>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-                    {[
-                      { id: "google", name: "Google Gemini", desc: "Best Vision" },
-                      { id: "openai", name: "OpenAI GPT", desc: "Industry Standard" },
-                      { id: "anthropic", name: "Claude AI", desc: "Intelligent Agent" },
-                      { id: "groq", name: "Groq Cloud", desc: "Ultra Fast" },
-                      { id: "openrouter", name: "OpenRouter", desc: "Flexible Core" },
-                      { id: "ollama", name: "Ollama (Local)", desc: "100% Private" }
-                    ].map((p) => {
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+                    {PROVIDER_OPTIONS.map((p) => {
                       const isSelected = provider === p.id;
                       return (
                         <motion.button
                           key={p.id}
+                          type="button"
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
-                          onClick={() => {
-                            setProvider(p.id);
-                            // Auto select first model from shared registry
-                            const models = PROVIDER_MODELS[p.id] || [];
-                            if (p.id === "ollama") setLocalModel(OLLAMA_ALL_SUGGESTIONS[0]?.value || "llama3.1:8b");
-                            else if (models.length > 0) setCloudModel(models[0].value);
-                          }}
+                          onClick={() => handleProviderSelect(p.id)}
                           style={{
                             display: "flex",
                             flexDirection: "column",
                             alignItems: "center",
                             justifyContent: "center",
                             gap: "4px",
-                            padding: "14px 10px",
+                            padding: "12px 8px",
                             borderRadius: "10px",
                             cursor: "pointer",
                             background: isSelected
@@ -610,10 +888,12 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                               : "rgba(255,255,255,0.03)",
                             border: `1px solid ${isSelected ? "#00FF66" : "rgba(255,255,255,0.08)"}`,
                             boxShadow: isSelected ? "0 4px 16px rgba(0, 255, 102, 0.15)" : "none",
-                            transition: "all 0.2s"
+                            transition: "all 0.2s",
+                            textAlign: "center",
                           }}
                         >
-                          <span style={{ fontSize: "12px", fontWeight: "bold", color: isSelected ? "#fff" : "rgba(255,255,255,0.7)" }}>
+                          <span style={{ fontSize: "16px" }}>{p.icon}</span>
+                          <span style={{ fontSize: "11px", fontWeight: "bold", color: isSelected ? "#fff" : "rgba(255,255,255,0.8)" }}>
                             {p.name}
                           </span>
                           <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.4)" }}>
@@ -625,83 +905,316 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                   </div>
                 </div>
 
-                {/* Model dropdown */}
-                <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: "0.06em", marginBottom: 8 }}>
-                    2. ACTIVE MODEL SELECT
+                {/* 2. API Endpoint & Credentials (Above Model Select) */}
+                <motion.div
+                  key={`${provider}-credentials`}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.15 }}
+                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                >
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: "0.06em" }}>
+                    2. {isLocal ? "LOCAL SERVER ENDPOINT" : isCustomOpenai ? "API ENDPOINT & CREDENTIALS" : "API CREDENTIALS"}
                   </label>
-                  {provider === "ollama" ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                      <select
-                        value={OLLAMA_ALL_SUGGESTIONS.some(m => m.value === localModel) ? localModel : "__custom__"}
-                        onChange={(e) => { if (e.target.value !== "__custom__") setLocalModel(e.target.value); }}
-                        style={selectStyle}
+
+                  {/* Custom OpenAI Base URL */}
+                  {isCustomOpenai && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <label style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: 6 }}>
+                        <Globe size={12} style={{ color: "#00D9FF" }} />
+                        API ENDPOINT / BASE URL (required)
+                      </label>
+                      <input
+                        type="text"
+                        value={customOpenaiBaseUrl}
+                        onChange={(e) => {
+                          setCustomOpenaiBaseUrl(e.target.value);
+                          setTestKeyState("idle");
+                          setTestKeyMessage("");
+                        }}
+                        placeholder="e.g. http://localhost:20128/v1 or http://127.0.0.1:8000/v1"
+                        style={inputStyle}
+                        onFocus={e => (e.target.style.borderColor = "#00D9FF")}
+                        onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
+                      />
+                    </div>
+                  )}
+
+                  {/* Custom OpenAI Provider Display Name */}
+                  {isCustomOpenai && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <label style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: 6 }}>
+                        <Tag size={12} style={{ color: "#00D9FF" }} />
+                        PROVIDER DISPLAY NAME (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={customOpenaiProviderName}
+                        onChange={(e) => setCustomOpenaiProviderName(e.target.value)}
+                        placeholder="e.g. OmniRoute, vLLM, LM Studio, LocalAI"
+                        style={inputStyle}
+                        onFocus={e => (e.target.style.borderColor = "#00D9FF")}
+                        onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
+                      />
+                    </div>
+                  )}
+
+                  {/* Ollama Server URL */}
+                  {isLocal && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <label style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: 6 }}>
+                        <Globe size={12} style={{ color: "#00D9FF" }} />
+                        OLLAMA SERVER URL
+                      </label>
+                      <input
+                        type="text"
+                        value={ollamaBaseUrl}
+                        onChange={(e) => {
+                          setOllamaBaseUrl(e.target.value);
+                          setTestKeyState("idle");
+                          setTestKeyMessage("");
+                        }}
+                        placeholder="http://127.0.0.1:11434"
+                        style={inputStyle}
+                        onFocus={e => (e.target.style.borderColor = "#00D9FF")}
+                        onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
+                      />
+                    </div>
+                  )}
+
+                  {/* API Key for Cloud or Custom OpenAI */}
+                  {!isLocal && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <label style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>{isCustomOpenai ? "API KEY (optional / required by server)" : (providerInfo.apiKeyLabel || "API KEY")}</span>
+                        {apiKeys[provider] && (
+                          <span style={{ color: "#00FF66", fontSize: 10, display: "flex", alignItems: "center", gap: 4 }}>
+                            <CheckCircle2 size={11} /> READY
+                          </span>
+                        )}
+                      </label>
+                      <input
+                        type="password"
+                        value={apiKeys[provider] || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setApiKeys(prev => ({ ...prev, [provider]: val }));
+                          setTestKeyState("idle");
+                          setTestKeyMessage("");
+                        }}
+                        placeholder={isCustomOpenai ? "sk-... (leave blank if not required)" : (providerInfo.apiKeyPlaceholder || "Paste your secret API key...")}
+                        style={inputStyle}
+                        onFocus={e => (e.target.style.borderColor = "#00FF66")}
+                        onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
+                      />
+                    </div>
+                  )}
+
+                  {/* Test Key / Test Connection Row */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 2 }}>
+                    <button
+                      type="button"
+                      id={`test-key-btn-${provider}`}
+                      onClick={handleTestKey}
+                      disabled={testKeyState === "checking" || (!apiKeys[provider] && !isCustomOpenai && !isLocal)}
+                      style={{
+                        padding: "7px 14px",
+                        background: testKeyState === "valid" ? "rgba(0, 255, 102, 0.15)" : testKeyState === "invalid" ? "rgba(255, 50, 50, 0.15)" : "rgba(255, 255, 255, 0.08)",
+                        border: `1px solid ${testKeyState === "valid" ? "#00FF66" : testKeyState === "invalid" ? "#ff4d4d" : "rgba(255, 255, 255, 0.15)"}`,
+                        color: testKeyState === "valid" ? "#00FF66" : testKeyState === "invalid" ? "#ff4d4d" : "rgba(255, 255, 255, 0.8)",
+                        borderRadius: "8px",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        letterSpacing: "0.04em",
+                        cursor: testKeyState === "checking" ? "wait" : "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        transition: "all 0.2s",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {testKeyState === "checking" ? (
+                        <><RefreshCw size={11} style={{ animation: "spin 1s linear infinite" }} /> TESTING...</>
+                      ) : testKeyState === "valid" ? (
+                        <><CheckCircle2 size={11} /> VALID</>
+                      ) : testKeyState === "invalid" ? (
+                        <><X size={11} /> FAILED</>
+                      ) : (
+                        <>{isLocal || isCustomOpenai ? "TEST CONNECTION" : "TEST KEY"}</>
+                      )}
+                    </button>
+
+                    {testKeyMessage && (
+                      <span style={{
+                        fontSize: "11px",
+                        color: testKeyState === "valid" ? "#00FF66" : testKeyState === "invalid" ? "#ff4d4d" : "rgba(255,255,255,0.7)",
+                        opacity: 0.9,
+                      }}>
+                        {testKeyMessage}
+                      </span>
+                    )}
+                  </div>
+
+                  {providerInfo.docsUrl && (
+                    <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.4)", marginTop: 2 }}>
+                      Get your API key at: <span style={{ color: "#00D9FF", fontFamily: "var(--font-mono, monospace)" }}>{providerInfo.docsUrl}</span>
+                    </span>
+                  )}
+                  <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)" }}>
+                    * Your credentials are encrypted and stored solely in your local desktop configuration.
+                  </span>
+                </motion.div>
+
+                {/* 3. Active Model Select (Below Credentials) */}
+                <motion.div
+                  key={`${provider}-model`}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.15 }}
+                  style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: "0.06em" }}>
+                      3. ACTIVE MODEL SELECT
+                    </label>
+                    {PROVIDER_LABELS[provider]?.supportsModelFetch && (
+                      <button
+                        type="button"
+                        onClick={fetchDynamicModels}
+                        disabled={modelFetchState === "loading"}
+                        title="Fetch live models from provider"
+                        style={{
+                          background: "rgba(255, 255, 255, 0.05)",
+                          border: "1px solid rgba(255, 255, 255, 0.1)",
+                          borderRadius: 6,
+                          padding: "4px 10px",
+                          cursor: "pointer",
+                          color: modelFetchState === "live" ? "#00FF66" : "rgba(255, 255, 255, 0.7)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
+                          fontSize: 10,
+                          fontWeight: 600,
+                          letterSpacing: "0.04em",
+                          transition: "all 0.2s",
+                        }}
                       >
-                        {OLLAMA_ALL_SUGGESTIONS.map((m) => (
-                          <option key={m.value} value={m.value} style={{ background: "#0a0a12", color: "#fff" }}>
-                            {formatModelLabel(m)}
-                          </option>
-                        ))}
-                        <option value="__custom__" style={{ background: "#0a0a12", color: "rgba(255,255,255,0.5)" }}>── Custom (type below) ──</option>
-                      </select>
+                        <RefreshCw size={10} style={{ animation: modelFetchState === "loading" ? "spin 1s linear infinite" : "none" }} />
+                        {modelFetchState === "live"
+                          ? `LIVE (${dynamicModels.length})`
+                          : modelFetchState === "loading"
+                          ? "FETCHING…"
+                          : "FETCH LIVE"}
+                      </button>
+                    )}
+                  </div>
+
+                  {isLocal ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {dynamicModels.length > 0 ? (
+                        <select
+                          value={localModel}
+                          onChange={(e) => setLocalModel(e.target.value)}
+                          style={selectStyle}
+                        >
+                          {dynamicModels.map((m) => (
+                            <option key={m.value} value={m.value} style={{ background: "#0a0a12", color: "#fff" }}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <select
+                          value={OLLAMA_ALL_SUGGESTIONS.some(m => m.value === localModel) ? localModel : "__custom__"}
+                          onChange={(e) => { if (e.target.value !== "__custom__") setLocalModel(e.target.value); }}
+                          style={selectStyle}
+                        >
+                          {OLLAMA_ALL_SUGGESTIONS.map((m) => (
+                            <option key={m.value} value={m.value} style={{ background: "#0a0a12", color: "#fff" }}>
+                              {formatModelLabel(m)}
+                            </option>
+                          ))}
+                          <option value="__custom__" style={{ background: "#0a0a12", color: "rgba(255,255,255,0.5)" }}>── Custom (type below) ──</option>
+                        </select>
+                      )}
                       <input
                         placeholder="CUSTOM MODEL (e.g. llama3.1:8b, qwen2.5-coder:7b)"
                         value={localModel}
                         onChange={(e) => setLocalModel(e.target.value)}
-                        style={{
-                          width: "100%", padding: "12px 16px",
-                          background: "rgba(255,255,255,0.05)",
-                          border: "1px solid rgba(255,255,255,0.12)",
-                          borderRadius: 10, color: "white", fontSize: 13,
-                          outline: "none", boxSizing: "border-box",
-                          fontFamily: "inherit",
-                        }}
+                        style={inputStyle}
+                        onFocus={e => (e.target.style.borderColor = "#00FF66")}
+                        onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                       />
+                      {dynamicModels.length > 0 && (
+                        <span style={{ fontSize: 10, color: "#00FF66", opacity: 0.8 }}>
+                          ✓ Live models loaded from local Ollama ({dynamicModels.length} models)
+                        </span>
+                      )}
+                    </div>
+                  ) : isCustomOpenai ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {dynamicModels.length > 0 && (
+                        <select
+                          value={cloudModel}
+                          onChange={(e) => {
+                            setCloudModel(e.target.value);
+                            setLocalModel(e.target.value);
+                          }}
+                          style={selectStyle}
+                        >
+                          {dynamicModels.map((m) => (
+                            <option key={m.value} value={m.value} style={{ background: "#0a0a12", color: "#fff" }}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <input
+                        value={cloudModel}
+                        onChange={(e) => {
+                          setCloudModel(e.target.value);
+                          setLocalModel(e.target.value);
+                        }}
+                        placeholder="Model ID: e.g. auto/fast, cw/claude-sonnet-4-6, gpt-4o"
+                        style={inputStyle}
+                        onFocus={e => (e.target.style.borderColor = "#00D9FF")}
+                        onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
+                      />
+                      {dynamicModels.length > 0 ? (
+                        <span style={{ fontSize: 10, color: "#00D9FF", opacity: 0.8 }}>
+                          ✓ Live model catalog from endpoint ({dynamicModels.length} models)
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+                          Click &apos;Test Connection&apos; or &apos;Fetch Live&apos; to auto-discover models, or type model ID manually.
+                        </span>
+                      )}
                     </div>
                   ) : (
-                    <select
-                      value={cloudModel}
-                      onChange={(e) => setCloudModel(e.target.value)}
-                      style={selectStyle}
-                    >
-                      {(PROVIDER_MODELS[provider] || []).map((m) => (
-                        <option key={m.value} value={m.value} style={{ background: "#0a0a12", color: "#fff" }}>
-                          {formatModelLabel(m)}
-                        </option>
-                      ))}
-                    </select>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <select
+                        value={cloudModel}
+                        onChange={(e) => setCloudModel(e.target.value)}
+                        style={selectStyle}
+                      >
+                        {(dynamicModels.length > 0
+                          ? dynamicModels
+                          : (PROVIDER_MODELS[provider] || []).map(m => ({ value: m.value, label: formatModelLabel(m) }))
+                        ).map((m) => (
+                          <option key={m.value} value={m.value} style={{ background: "#0a0a12", color: "#fff" }}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                      {dynamicModels.length > 0 && (
+                        <span style={{ fontSize: 10, color: "#00FF66", opacity: 0.8 }}>
+                          ✓ Live model list from {PROVIDER_LABELS[provider]?.label || provider} ({dynamicModels.length} models)
+                        </span>
+                      )}
+                    </div>
                   )}
-                </div>
-
-                {/* API Key input */}
-                {provider !== "ollama" && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: "0.06em", marginBottom: 8 }}>
-                      3. API AUTHORIZATION KEY
-                    </label>
-                    <input
-                      type="password"
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder={`Paste your secret API key for ${provider.toUpperCase()}`}
-                      style={{
-                        width: "100%", padding: "12px 16px",
-                        background: "rgba(255,255,255,0.05)",
-                        border: "1px solid rgba(255,255,255,0.12)",
-                        borderRadius: 10, color: "white", fontSize: 13,
-                        outline: "none", boxSizing: "border-box",
-                        fontFamily: "inherit",
-                      }}
-                    />
-                    <span style={{ display: "block", fontSize: "10px", color: "rgba(255,255,255,0.3)", marginTop: "6px", textTransform: "none" }}>
-                      * Your key is securely stored in your local computer settings and never sent anywhere except directly to the AI service endpoints.
-                    </span>
-                  </motion.div>
-                )}
+                </motion.div>
               </div>
             </motion.div>
           )}

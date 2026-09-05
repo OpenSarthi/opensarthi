@@ -157,6 +157,7 @@ export function ContextModal({ isOpen, onClose }: ContextModalProps) {
     activeThreadId,
     tabs,
     activeProvider,
+    customOpenaiProviderName,
     activeCloudModel,
     activeLocalModel,
     tokenUsage,
@@ -221,7 +222,7 @@ For chat: plain markdown prose.
 ${skillsList || "(none)"}
 
 [RUNTIME CONTEXT]
-Provider: ${activeProvider?.toUpperCase() ?? "GROQ"}
+Provider: ${(activeProvider === "custom_openai" && customOpenaiProviderName?.trim()) ? customOpenaiProviderName.trim().toUpperCase() : (activeProvider?.toUpperCase() ?? "GROQ")}
 Model: ${(activeProvider === "local" || activeProvider === "ollama" || activeProvider === "custom_openai") ? activeLocalModel : activeCloudModel}
 Thread: ${activeThreadId?.slice(0, 8)}...`;
   })();
@@ -615,7 +616,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                   <Section title="RUNTIME INFO" icon={<Activity size={12} />}>
                     <div>
                       <KVRow label="ACTIVE THREAD ID" value={activeThreadId} />
-                      <KVRow label="PROVIDER" value={activeProvider?.toUpperCase()} accent />
+                      <KVRow label="PROVIDER" value={(activeProvider === "custom_openai" && customOpenaiProviderName?.trim()) ? customOpenaiProviderName.trim().toUpperCase() : activeProvider?.toUpperCase()} accent />
                       <KVRow label="MODEL" value={(activeProvider === "local" || activeProvider === "ollama" || activeProvider === "custom_openai") ? activeLocalModel : activeCloudModel} />
                       <KVRow label="LAST INTENT" value={lastClassification ?? "IDLE"} />
                       <KVRow label="EXECUTING STEP" value={executingStepIndex != null ? `${executingStepIndex}` : "none"} />

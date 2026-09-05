@@ -277,3 +277,236 @@ export function formatModelLabel(entry: ModelEntry): string {
   if (!entry.tags || entry.tags.length === 0) return entry.label;
   return `${entry.label}  ${entry.tags.join("")}`;
 }
+
+/**
+ * Client-side direct validator & model discovery (inspired by MultiLLMService in ai-social-agent).
+ * Used for local custom_openai endpoints and as resilient fallback when Python runtime is offline or restarting.
+ */
+export async function validateClientDirect(
+  provider: string,
+  apiKey?: string,
+  baseUrl?: string
+): Promise<{ valid: boolean; message: string; models: FetchedModel[] }> {
+  try {
+    if (provider === "custom_openai") {
+      const targetUrl = (baseUrl || "http://localhost:20128/v1").trim().replace(/\/+$/, "");
+      if (!targetUrl) {
+        return { valid: false, message: "❌ Base URL is required", models: [] };
+      }
+      const modelsUrl = `${targetUrl}/models`;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (apiKey) {
+        headers["Authorization"] = `Bearer ${apiKey}`;
+      }
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch(modelsUrl, { method: "GET", headers, signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (res.status === 401 || res.status === 403) {
+        return { valid: false, message: "❌ Unauthorized (401/403): Check your API key", models: [] };
+      }
+      if (!res.ok) {
+        return { valid: false, message: `❌ Server returned HTTP ${res.status}`, models: [] };
+      }
+      const data = await res.json();
+      let rawList: any[] = [];
+      if (Array.isArray(data)) {
+        rawList = data;
+      } else if (Array.isArray(data?.data)) {
+        rawList = data.data;
+      } else if (Array.isArray(data?.models)) {
+        rawList = data.models;
+      }
+      const models: FetchedModel[] = rawList
+        .filter((m) => m && (m.id || m.name || typeof m === "string"))
+        .map((m) => {
+          const val = typeof m === "string" ? m : m.id || m.name;
+          const lbl = typeof m === "string" ? m : m.name || m.id;
+          return { value: String(val), label: String(lbl) };
+        });
+      return {
+        valid: true,
+        message: `✅ Connected! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    if (provider === "ollama") {
+      const targetUrl = (baseUrl || "http://127.0.0.1:11434").trim().replace(/\/+$/, "");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      let res: Response;
+      try {
+        res = await fetch(`${targetUrl}/api/tags`, { method: "GET", signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (!res.ok) {
+        return { valid: false, message: `❌ Ollama HTTP ${res.status}`, models: [] };
+      }
+      const data = await res.json();
+      const models: FetchedModel[] = (data.models || []).map((m: any) => ({
+        value: String(m.name),
+        label: String(m.name),
+      }));
+      return {
+        valid: true,
+        message: `✅ Ollama running with ${models.length} models.`,
+        models,
+      };
+    }
+
+    if (provider === "groq") {
+      if (!apiKey) return { valid: false, message: "API key is required", models: [] };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch("https://api.groq.com/openai/v1/models", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (res.status === 401) return { valid: false, message: "❌ Invalid API key", models: [] };
+      if (!res.ok) return { valid: false, message: `❌ Groq HTTP ${res.status}`, models: [] };
+      const data = await res.json();
+      const models: FetchedModel[] = (data.data || [])
+        .filter((m: any) => m.id && !m.id.startsWith("whisper") && !m.id.startsWith("distil"))
+        .map((m: any) => ({ value: String(m.id), label: String(m.id) }))
+        .sort((a: any, b: any) => a.value.localeCompare(b.value));
+      return {
+        valid: true,
+        message: `✅ Groq API key valid! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    if (provider === "openai") {
+      if (!apiKey) return { valid: false, message: "API key is required", models: [] };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch("https://api.openai.com/v1/models", {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (res.status === 401) return { valid: false, message: "❌ Invalid API key", models: [] };
+      if (!res.ok) return { valid: false, message: `❌ OpenAI HTTP ${res.status}`, models: [] };
+      const data = await res.json();
+      const models: FetchedModel[] = (data.data || [])
+        .filter((m: any) => m.id && (m.id.startsWith("gpt-") || m.id.startsWith("o1") || m.id.startsWith("o3") || m.id.startsWith("chatgpt-")))
+        .map((m: any) => ({ value: String(m.id), label: String(m.id) }))
+        .sort((a: any, b: any) => a.value.localeCompare(b.value));
+      return {
+        valid: true,
+        message: `✅ OpenAI API key valid! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    if (provider === "openrouter") {
+      if (!apiKey) return { valid: false, message: "API key is required", models: [] };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch("https://openrouter.ai/api/v1/models", {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "HTTP-Referer": "https://opensarthi.app",
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (res.status === 401) return { valid: false, message: "❌ Invalid API key", models: [] };
+      if (!res.ok) return { valid: false, message: `❌ OpenRouter HTTP ${res.status}`, models: [] };
+      const data = await res.json();
+      const models: FetchedModel[] = (data.data || [])
+        .filter((m: any) => m.id)
+        .map((m: any) => ({ value: String(m.id), label: String(m.name || m.id) }))
+        .sort((a: any, b: any) => a.value.localeCompare(b.value));
+      return {
+        valid: true,
+        message: `✅ OpenRouter API key valid! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    if (provider === "google") {
+      if (!apiKey) return { valid: false, message: "API key is required", models: [] };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (!res.ok) return { valid: false, message: `❌ Google HTTP ${res.status}`, models: [] };
+      const data = await res.json();
+      const models: FetchedModel[] = (data.models || [])
+        .filter((m: any) => (m.supportedGenerationMethods || []).includes("generateContent"))
+        .map((m: any) => ({
+          value: String(m.name.replace("models/", "")),
+          label: String(m.displayName || m.name.replace("models/", "")),
+        }))
+        .sort((a: any, b: any) => a.value.localeCompare(b.value));
+      return {
+        valid: true,
+        message: `✅ Google API key valid! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    if (provider === "anthropic") {
+      if (!apiKey) return { valid: false, message: "API key is required", models: [] };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch("https://api.anthropic.com/v1/models", {
+          headers: {
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (res.status === 401) return { valid: false, message: "❌ Invalid API key", models: [] };
+      if (!res.ok) return { valid: false, message: `❌ Anthropic HTTP ${res.status}`, models: [] };
+      const data = await res.json();
+      const models: FetchedModel[] = (data.data || []).map((m: any) => ({
+        value: String(m.id),
+        label: String(m.display_name || m.id),
+      }));
+      return {
+        valid: true,
+        message: `✅ Anthropic API key valid! ${models.length} models available.`,
+        models,
+      };
+    }
+
+    return { valid: false, message: `Unsupported provider: ${provider}`, models: [] };
+  } catch (err: any) {
+    return { valid: false, message: `Connection failed: ${err.message || String(err)}`, models: [] };
+  }
+}
