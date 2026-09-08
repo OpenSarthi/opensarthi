@@ -2,13 +2,22 @@ package dev.opensarthi.android
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class SarthiAccessibilityService : AccessibilityService() {
     companion object {
@@ -116,6 +125,61 @@ class SarthiAccessibilityService : AccessibilityService() {
                 if (clickSearchOrGoButton(child)) return true
             }
             return false
+        }
+
+        /**
+         * Capture the current screen as PNG bytes via AccessibilityService.takeScreenshot()
+         * (requires API 30+ and android:canTakeScreenshot="true").
+         *
+         * Returns null if the service is not running, the platform is below API 30,
+         * the call fails, or times out. The Python runtime falls back to `screencap`.
+         */
+        @JvmStatic
+        fun takeScreenshot(): ByteArray? {
+            val service = instance ?: return null
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+                return null
+            }
+            val latch = CountDownLatch(1)
+            val result = AtomicReference<ByteArray?>(null)
+            val mainExecutor = Executor { r -> Handler(Looper.getMainLooper()).post(r) }
+
+            service.takeScreenshot(
+                Display.DEFAULT_DISPLAY,
+                mainExecutor,
+                object : AccessibilityService.TakeScreenshotCallback {
+                    override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
+                        try {
+                            val buffer = screenshot.hardwareBuffer
+                            val colorSpace = screenshot.colorSpace
+                            // Convert the hardware buffer to a Bitmap
+                            val bmp = Bitmap.wrapHardwareBuffer(buffer, colorSpace)
+                            buffer.close()
+                            if (bmp != null) {
+                                val stream = ByteArrayOutputStream()
+                                bmp.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                                result.set(stream.toByteArray())
+                                bmp.recycle()
+                            }
+                        } catch (e: Exception) {
+                            result.set(null)
+                        }
+                        latch.countDown()
+                    }
+
+                    override fun onFailure(errorCode: Int) {
+                        result.set(null)
+                        latch.countDown()
+                    }
+                }
+            )
+
+            try {
+                latch.await(3, TimeUnit.SECONDS)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            return result.get()
         }
 
         @JvmStatic

@@ -33,6 +33,8 @@ class MainActivity : BridgeActivity() {
             provider.remove()
         }
         super.onCreate(savedInstanceState)
+        // Register native plugins so JS can call Capacitor.Plugins.RuntimeService
+        registerPlugin(RuntimeServicePlugin::class.java)
         AndroidVoiceBridge.init(this)
         
         // Request necessary permissions at startup

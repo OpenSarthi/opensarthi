@@ -35,6 +35,10 @@ android {
                 install "groq==1.4.0"
                 install "httpx==0.28.1"
                 install "pydantic-settings==2.7.1"
+                // Used for screenshot downscaling (smaller base64 → LLM vision payloads).
+                install "Pillow==11.0.0"
+                // dashboard.server (imported lazily on send_message) requires qrcode.
+                install "qrcode==8.0"
             }
         }
         ndk {
@@ -49,6 +53,13 @@ android {
     }
     buildFeatures {
         viewBinding true
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
     }
     sourceSets {
         main {
