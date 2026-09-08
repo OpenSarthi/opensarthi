@@ -11,7 +11,10 @@ System Monitoring & Control Tools — Mark-L Parity Feature
 import asyncio
 import structlog
 import platform
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
 from typing import Dict, Any, Optional, List
 
 from tools.base import BaseTool, RiskLevel, ToolResult, ToolDomain

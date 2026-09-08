@@ -1,6 +1,6 @@
 from typing import Optional, List
 from tools.base import BaseTool, ToolDomain
-from tools.desktop import ClickTool, TypeTextTool, PressKeyTool, OpenAppTool, ClickElementTool, FocusWindowTool, ObserveDesktopTool
+from tools.desktop import ClickTool, TypeTextTool, PressKeyTool, OpenAppTool, ClickElementTool, FocusWindowTool, ObserveDesktopTool, ScrollTool
 from tools.system import ShellTool
 from tools.wait_tools import WaitForWindowTool, WaitForTextTool
 from tools.media import MediaControlTool
@@ -89,6 +89,7 @@ _register(
     FocusWindowTool(),
     ClickElementTool(),
     ObserveDesktopTool(),
+    ScrollTool(),
     # System
     ShellTool(),
     # Wait utilities

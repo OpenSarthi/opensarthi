@@ -1584,3 +1584,84 @@ class ObserveDesktopTool(BaseTool):
             observation="\n".join(lines),
             confidence=ToolResultConfidence.HIGH
         )
+
+
+class ScrollTool(BaseTool):
+    """Scroll the active window / screen content."""
+    name = "scroll"
+    description = (
+        "Scroll the active window's content. Pass a direction ('up'/'down'/'left'/'right') "
+        "and an optional amount (in pixels for swipe gestures, or scroll ticks for wheel). "
+        "On desktop, 'amount' is interpreted as wheel notch counts; on Android it is pixels."
+    )
+    risk_level = RiskLevel.MODERATE
+    domain = ToolDomain.DESKTOP_UI
+    schema = {
+        "type": "object",
+        "properties": {
+            "direction": {
+                "type": "string",
+                "enum": ["up", "down", "left", "right"],
+                "description": "Scroll direction",
+            },
+            "amount": {
+                "type": "number",
+                "description": "Amount to scroll (desktop: wheel notches; Android: pixels). Default: 3 (desktop) / 800 (Android).",
+            },
+        },
+        "required": ["direction"],
+    }
+
+    async def execute(self, args: dict, permission_manager=None) -> ToolResult:
+        direction = args.get("direction", "").lower()
+        if direction not in ("up", "down", "left", "right"):
+            return ToolResult.fail("direction must be one of up/down/left/right", retryable=False)
+
+        amount = args.get("amount")
+        try:
+            window_id = _get_pinned_window_id()
+            if window_id:
+                await _ensure_window_focus(window_id)
+
+            if permission_manager:
+                try:
+                    await permission_manager.send_message("scroll_event", {"direction": direction, "amount": amount})
+                except Exception:
+                    pass
+
+            # Vertical: use the wheel. Horizontal: X11 buttons 6/7 via xdotool.
+            if direction in ("up", "down"):
+                # Prefer xdotool so it works headless-ish and in the pinned window.
+                if shutil.which("xdotool"):
+                    # Wheel up = button 4, wheel down = button 5.
+                    btn = "4" if direction == "up" else "5"
+                    ticks = int(amount) if amount else 3
+                    for _ in range(min(ticks, 20)):
+                        await asyncio.create_subprocess_exec(
+                            "xdotool", "click", btn,
+                            stdout=asyncio.subprocess.DEVNULL,
+                            stderr=asyncio.subprocess.DEVNULL,
+                        )
+                    return ToolResult.ok(
+                        observation=f"Scrolled {direction} by {ticks} wheel notches" + (f" in window {window_id}" if window_id else ""),
+                        confidence=ToolResultConfidence.MEDIUM,
+                    )
+                import pyautogui
+                clicks = int(amount) if amount else 3
+                pyautogui.scroll(clicks if direction == "up" else -clicks)
+                return ToolResult.ok(f"Scrolled {direction} by {clicks} wheel notches", confidence=ToolResultConfidence.MEDIUM)
+            else:
+                # Horizontal: X11 buttons 6 (left) / 7 (right).
+                if shutil.which("xdotool"):
+                    btn = "6" if direction == "left" else "7"
+                    ticks = int(amount) if amount else 3
+                    for _ in range(min(ticks, 20)):
+                        await asyncio.create_subprocess_exec(
+                            "xdotool", "click", btn,
+                            stdout=asyncio.subprocess.DEVNULL,
+                            stderr=asyncio.subprocess.DEVNULL,
+                        )
+                    return ToolResult.ok(f"Scrolled {direction} by {ticks} ticks", confidence=ToolResultConfidence.MEDIUM)
+                return ToolResult.fail("Horizontal scroll requires xdotool", retryable=True)
+        except Exception as e:
+            return ToolResult.fail(str(e), retryable=True)
