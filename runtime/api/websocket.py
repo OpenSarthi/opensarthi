@@ -1387,27 +1387,12 @@ class ConnectionManager:
             self.sync_notification_state()
 
     def sync_notification_state(self):
+        # Notification task-state is synced from the React side via the
+        # RuntimeService Capacitor plugin (native.ts -> updateNotificationTaskState).
+        # No Python-side bridge module exists, so this is intentionally a no-op.
         import os
         if os.environ.get("OPENSARTHI_PLATFORM") != "android":
             return
-        try:
-            is_task_active = False
-            is_paused = False
-            for session in list(self.sessions.values()):
-                if session._active_runtimes:
-                    is_task_active = True
-                    if any(getattr(r, "_paused", False) for r in session._active_runtimes.values()):
-                        is_paused = True
-                    break
-
-            try:
-                import opensarthi_android_callbacks as _cb
-                if hasattr(_cb, 'update_task_state'):
-                    _cb.update_task_state(is_task_active, is_paused)
-            except ImportError:
-                pass  # Running outside Chaquopy (dev mode) — no-op
-        except Exception as e:
-            logger.warning("Failed to sync notification state to Android", error=str(e))
 
     def pause_all_tasks(self):
         loop = asyncio.get_event_loop()

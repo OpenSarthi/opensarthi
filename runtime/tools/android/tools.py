@@ -378,6 +378,118 @@ async def android_click_element(args: dict, **_) -> ToolResult:
         return ToolResult(success=False, error=f"Failed to click element via Accessibility: {e}", retryable=True)
 
 
+async def android_scroll(args: dict, **_) -> ToolResult:
+    """
+    Scroll the Android screen. Prefers the AccessibilityService gesture
+    (works without root). Falls back to `input swipe` shell commands.
+    """
+    direction = args.get("direction", "").lower()
+    if direction not in ("up", "down", "left", "right"):
+        return ToolResult(success=False, error="direction must be one of up/down/left/right", retryable=False)
+
+    # Resolve to a start→end swipe. Default amount: ~half the screen along the axis.
+    amount = int(args.get("amount") or 0)
+    try:
+        # Query display size (dp-units differ from px; screencap/dumpsys give px).
+        width, height = _display_size()
+        if not width or not height:
+            width, height = 1080, 2400  # sane fallback
+    except Exception:
+        width, height = 1080, 2400
+
+    cx, cy = width // 2, height // 2
+    if direction == "up":
+        delta = amount or (height // 2)
+        sx, sy, ex, ey = cx, cy + delta // 2, cx, cy - delta // 2
+    elif direction == "down":
+        delta = amount or (height // 2)
+        sx, sy, ex, ey = cx, cy - delta // 2, cx, cy + delta // 2
+    elif direction == "left":
+        delta = amount or (width // 2)
+        sx, sy, ex, ey = cx + delta // 2, cy, cx - delta // 2, cy
+    else:  # right
+        delta = amount or (width // 2)
+        sx, sy, ex, ey = cx - delta // 2, cy, cx + delta // 2, cy
+
+    # 1. AccessibilityService gesture (no root required).
+    try:
+        from dev.opensarthi.android import SarthiAccessibilityService
+        if SarthiAccessibilityService.isServiceRunning():
+            success = SarthiAccessibilityService.scroll(sx, sy, ex, ey)
+            if success:
+                logger.info("Scrolled via accessibility service", direction=direction, sx=sx, sy=sy, ex=ex, ey=ey)
+                return ToolResult(success=True, observation=f"Scrolled {direction} via Accessibility Service (swipe ({sx},{sy})→({ex},{ey}))")
+            logger.warning("Accessibility scroll returned false, falling back to shell")
+    except Exception as e:
+        logger.warning("Accessibility service scroll failed", error=str(e))
+
+    # 2. Shell fallback: `input swipe`.
+    success = _run_input_command(f"input swipe {sx} {sy} {ex} {ey} 400")
+    if success:
+        return ToolResult(success=True, observation=f"Scrolled {direction} via shell swipe")
+    return ToolResult(
+        success=False,
+        error="Failed to scroll. Please enable OpenSarthi Accessibility Service in settings.",
+        retryable=True,
+    )
+
+
+async def android_drag(args: dict, **_) -> ToolResult:
+    """
+    Drag/swipe from one coordinate to another on the Android screen.
+    Uses the AccessibilityService gesture (no root) with a shell fallback.
+    """
+    sx, sy = args.get("start_x"), args.get("start_y")
+    ex, ey = args.get("end_x"), args.get("end_y")
+    if None in (sx, sy, ex, ey):
+        return ToolResult(success=False, error="start_x, start_y, end_x, end_y are all required", retryable=False)
+
+    try:
+        from dev.opensarthi.android import SarthiAccessibilityService
+        if SarthiAccessibilityService.isServiceRunning():
+            success = SarthiAccessibilityService.scroll(int(sx), int(sy), int(ex), int(ey))
+            if success:
+                logger.info("Dragged via accessibility service", sx=sx, sy=sy, ex=ex, ey=ey)
+                return ToolResult(success=True, observation=f"Dragged ({sx},{sy}) → ({ex},{ey}) via Accessibility Service")
+            logger.warning("Accessibility drag returned false, falling back to shell")
+    except Exception as e:
+        logger.warning("Accessibility service drag failed", error=str(e))
+
+    success = _run_input_command(f"input swipe {sx} {sy} {ex} {ey} 400")
+    if success:
+        return ToolResult(success=True, observation=f"Dragged ({sx},{sy}) → ({ex},{ey}) via shell swipe")
+    return ToolResult(success=False, error="Failed to drag. Please enable OpenSarthi Accessibility Service.", retryable=True)
+
+
+def _display_size():
+    """Return (width, height) in physical pixels via Chaquopy, else (None, None).
+
+    Falls back to a dumpsys window parse. Most reliable is DisplayMetrics from the
+    app context — no shell/root permission needed and gives true physical pixels.
+    """
+    try:
+        from com.chaquo.python import Python  # type: ignore
+        context = Python.getPlatform().getApplication()
+        dm = context.getResources().getDisplayMetrics()
+        return int(dm.widthPixels), int(dm.heightPixels)
+    except Exception:
+        pass
+    try:
+        res = subprocess.run(
+            "dumpsys window | grep -E 'mUnrestrictedScreen|mCurrentApp|mDisplaySize|mSystemDisplaySize' | head -1",
+            shell=True, capture_output=True, text=True, timeout=5,
+        )
+        line = res.stdout.strip()
+        # e.g. "... mUnrestrictedScreen=1080x2400 ..." or "...mCurrentApp=1080x2400"
+        import re
+        m = re.search(r"(\d{3,5})x(\d{3,5})", line)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    except Exception:
+        pass
+    return None, None
+
+
 # ── Registry patcher ───────────────────────────────────────────────────────────
 
 def register_android_tools(registry_module) -> None:
@@ -396,6 +508,7 @@ def register_android_tools(registry_module) -> None:
         "wait_for_window":  android_wait_for_window,
         "wait_for_text":    android_wait_for_text,
         "click_element":    android_click_element,
+        "scroll":           android_scroll,
     }
 
     patched = 0

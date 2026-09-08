@@ -21,6 +21,14 @@ to the Kotlin accessibility bridge.
 import os
 os.environ["OPENSARTHI_PLATFORM"] = "android"
 
+# Force the legacy AgentRuntime engine on Android. The LangGraph engine pulls in
+# langgraph + langchain-core, which are NOT bundled in the Android APK's pip
+# block (heavy native deps). The legacy path is fully self-contained and shares
+# the same tool registry, observer, and planner. These env vars are read by
+# pydantic-settings in config.py before the engine is selected.
+os.environ["USE_LANGGRAPH"] = "False"
+os.environ["USE_SUPERVISOR"] = "False"
+
 import asyncio
 import threading
 import sys

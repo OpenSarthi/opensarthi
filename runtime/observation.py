@@ -3,14 +3,18 @@ import time
 import subprocess
 import shutil
 import platform
+import os
+import tempfile
 from dataclasses import dataclass, field
 from typing import Optional
 
 # Platform-conditional accessibility provider
-if platform.system() == "Linux":
+# NOTE: Android reports itself as "Linux" to Python's platform.system(),
+# so we must also gate on OPENSARTHI_PLATFORM.
+if platform.system() == "Linux" and os.environ.get("OPENSARTHI_PLATFORM") != "android":
     from providers.linux.accessibility import AccessibilityProvider
 else:
-    # Stub for non-Linux platforms
+    # Stub for non-Linux platforms (and Android)
     class AccessibilityProvider:
         available = False
         def get_focused_element(self): return None
@@ -91,8 +95,6 @@ class DesktopObserver:
             snap.screenshot_size = size
 
             # Save to temporary path
-            import tempfile
-            import os
             try:
                 temp_dir = tempfile.gettempdir()
                 screenshot_file = os.path.join(temp_dir, f"opensarthi_snap_{int(time.time())}.png")
@@ -124,6 +126,38 @@ class DesktopObserver:
                     "total": total,
                     "truncated": truncated,
                 }
+            except Exception:
+                pass
+
+        # 2b. Android: build the UI structure tree from the AccessibilityService.
+        #     This is the on-screen "page state" the planner uses instead of
+        #     AT-SPI/OCR (which don't exist on Android).
+        if os.environ.get("OPENSARTHI_PLATFORM") == "android":
+            try:
+                from dev.opensarthi.android import SarthiAccessibilityService
+                if SarthiAccessibilityService.isServiceRunning():
+                    structure_json = SarthiAccessibilityService.getScreenStructure()
+                    import json
+                    data = json.loads(structure_json)
+                    nodes = []
+
+                    def _walk(node):
+                        text = (node.get("text") or "").strip()
+                        desc = (node.get("desc") or "").strip()
+                        bounds = node.get("bounds", "")
+                        clickable = node.get("clickable", False)
+                        if text or desc:
+                            click_ind = " [Clickable]" if clickable else ""
+                            nodes.append(f"- {text or desc} at {bounds}{click_ind}")
+                        for child in node.get("children", []):
+                            _walk(child)
+
+                    _walk(data)
+                    snap.accessibility_tree = {
+                        "summary": "\n".join(nodes) if nodes else "(no labeled UI elements)",
+                        "total": len(nodes),
+                        "truncated": False,
+                    }
             except Exception:
                 pass
 

@@ -12,6 +12,11 @@ def _detect_display() -> str:
 
 async def capture_screenshot() -> Optional[bytes]:
     """Capture screen and return PNG bytes."""
+    # Android: mss/pyautogui/PIL are unavailable. Use the accessibility-service
+    # takeScreenshot (API 30+) when possible, else fall back to the screencap
+    # shell utility.
+    if os.environ.get("OPENSARTHI_PLATFORM") == "android":
+        return await _android_screenshot()
     try:
         import mss
         import mss.tools
@@ -69,8 +74,44 @@ async def capture_screenshot() -> Optional[bytes]:
     except Exception:
         return None
 
+async def _android_screenshot() -> Optional[bytes]:
+    """Capture the Android screen to PNG bytes.
+
+    Order of preference:
+      1. AccessibilityService.takeScreenshot() (API 30+, no shell/root needed).
+      2. `screencap -p` shell utility (needs shell/root on most devices).
+    """
+    # 1. Accessibility-service screenshot — works in the app's own process.
+    try:
+        from dev.opensarthi.android import SarthiAccessibilityService
+        if SarthiAccessibilityService.isServiceRunning():
+            data = SarthiAccessibilityService.takeScreenshot()
+            if data is not None:
+                return bytes(data)
+    except Exception:
+        pass
+
+    # 2. Fallback: screencap to a temp file.
+    try:
+        import tempfile
+        path = os.path.join(tempfile.gettempdir(), "opensarthi_screencap.png")
+        proc = await asyncio.create_subprocess_exec(
+            "sh", "-c", f"screencap -p {path}",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=10)
+        with open(path, "rb") as f:
+            return f.read()
+    except Exception:
+        return None
+
+
 async def get_active_window() -> Optional[str]:
     """Retrieve active window title based on OS and display server."""
+    # Android has no X11/Wayland window manager.
+    if os.environ.get("OPENSARTHI_PLATFORM") == "android":
+        return None
     system = platform.system()
     if system == "Windows":
         return await _windows_active_window()
