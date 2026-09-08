@@ -4,7 +4,10 @@ import {
   Send, Mic, MicOff, Settings, ChevronUp, ChevronDown,
   X, CheckCircle, AlertCircle, Clock, RefreshCw,
   Menu, User, Copy, Volume2, Zap,
+  Terminal, Brain, Cpu, Gauge, Activity, Eye, Trash2,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { SplashScreen } from "./SplashScreen";
 import { ParticleBackground } from "./ParticleBackground";
@@ -96,6 +99,269 @@ function StepBadge({ status }: { status: string }) {
   const cfg = map[status] || map.pending;
   const Icon = cfg.icon;
   return <Icon size={14} color={cfg.color} className={status === "running" ? "animate-spin" : undefined} style={{ flexShrink: 0 }} />;
+}
+
+// ─── AI Plan Reasoning (collapsible) ─────────────────────────────────────────
+function ReasoningBlock({ text, attempt }: { text: string; attempt?: number }) {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <div style={{
+      border: "1px solid rgba(0, 230, 180, 0.2)",
+      background: "rgba(0, 230, 180, 0.02)",
+      borderRadius: 8,
+      marginBottom: 8,
+      overflow: "hidden",
+      backdropFilter: "blur(6px)",
+      WebkitBackdropFilter: "blur(6px)",
+    }}>
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          padding: "7px 12px",
+          background: "rgba(0, 0, 0, 0.2)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          cursor: "pointer",
+          fontSize: 11,
+          color: "var(--accent)",
+          fontWeight: 600,
+          letterSpacing: "0.05em",
+          userSelect: "none",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <Brain size={12} color="var(--accent)" />
+          <span style={{ display: "flex", alignItems: "center", gap: 4, opacity: 0.9 }}>
+            AI PLAN REASONING{attempt !== undefined && attempt > 0 ? ` (ATTEMPT ${attempt + 1})` : ""}
+          </span>
+        </div>
+        <span style={{ fontSize: 9, color: "var(--text-secondary)", opacity: 0.7 }}>
+          {isOpen ? "COLLAPSE ▲" : "EXPAND ▼"}
+        </span>
+      </div>
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 0.9 }}
+            exit={{ height: 0, opacity: 0 }}
+            style={{
+              padding: "10px 12px",
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "var(--text-secondary)",
+              borderTop: "1px solid rgba(0, 230, 180, 0.15)",
+              background: "rgba(0, 0, 0, 0.15)",
+              maxHeight: 180,
+              overflowY: "auto",
+            }}
+          >
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text.trim()}</ReactMarkdown>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── System Metrics HUD ──────────────────────────────────────────────────────
+function metricColor(pct: number): string {
+  if (pct < 40) return "#38bdf8";
+  if (pct < 60) return "#22c55e";
+  if (pct < 75) return "#facc15";
+  if (pct < 87) return "#f97316";
+  return "#ef4444";
+}
+
+function SystemMetricsHud({ metrics, onClose }: {
+  metrics: { cpu: number; mem: number; net_kbps: number; gpu: number | string; temp: number | string };
+  onClose: () => void;
+}) {
+  const bar = (pct: number) => (
+    <div style={{ height: 4, background: "rgba(255,255,255,0.05)", borderRadius: 2, overflow: "hidden" }}>
+      <div style={{ width: `${Math.min(100, Math.max(0, pct))}%`, height: "100%", background: metricColor(pct), transition: "width 1s ease-out, background 1s ease-out" }} />
+    </div>
+  );
+  const row = (label: string, value: React.ReactNode, pct: number | null) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+        <span>{label}</span>
+        <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>{value}</span>
+      </div>
+      {pct !== null && bar(pct)}
+    </div>
+  );
+  return (
+    <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 10, color: "var(--accent)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", fontWeight: "bold", display: "flex", alignItems: "center", gap: 6 }}>
+          <Cpu size={12} /> SYSTEM METRICS
+        </span>
+        <button onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--text-secondary)", display: "flex", padding: 2 }}>
+          <X size={14} />
+        </button>
+      </div>
+      {row("CPU", `${metrics.cpu}%`, metrics.cpu)}
+      {row("RAM", `${metrics.mem}%`, metrics.mem)}
+      {typeof metrics.gpu === "number"
+        ? row("GPU", `${metrics.gpu}%`, metrics.gpu)
+        : row("GPU", String(metrics.gpu), null)}
+      {typeof metrics.temp === "number"
+        ? row("CORE TEMP", `${metrics.temp}°C`, (metrics.temp / 95) * 100)
+        : row("CORE TEMP", String(metrics.temp), null)}
+      {row("NET SPEED", metrics.net_kbps >= 1024 ? `${(metrics.net_kbps / 1024).toFixed(1)} MB/s` : `${metrics.net_kbps.toFixed(0)} KB/s`, null)}
+    </div>
+  );
+}
+
+// ─── Content Panel (briefing / screen analysis / etc.) ───────────────────────
+function ContentPanelView({ contentType, data, onClose }: {
+  contentType: string | null;
+  data: any | null;
+  onClose: () => void;
+}) {
+  if (!contentType || !data) {
+    return (
+      <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.5 }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: 11, letterSpacing: "0.05em" }}>
+          // NO ACTIVE CONTENT PANEL
+        </p>
+      </div>
+    );
+  }
+
+  const header = (title: string, icon: string) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 16px" }}>
+      <span style={{ fontSize: 11, color: "var(--accent)", fontFamily: "var(--font-mono)", letterSpacing: "0.06em", fontWeight: "bold" }}>
+        {icon} {title}
+      </span>
+      <button onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--text-secondary)", display: "flex", padding: 2 }}>
+        <X size={16} />
+      </button>
+    </div>
+  );
+
+  const card = (title: string, children: React.ReactNode) => (
+    <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 6 }}>
+      <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: "6px", fontSize: 11 }}>{title}</div>
+      {children}
+    </div>
+  );
+
+  const md = (s: string) => (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+      p: ({ children }: any) => <span style={{ display: "inline" }}>{children}</span>,
+      ul: ({ children }: any) => <ul style={{ margin: 0, paddingLeft: "16px", color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: "3px" }}>{children}</ul>,
+      li: ({ children }: any) => <li style={{ marginBottom: "2px" }}>{children}</li>,
+    }}>{s}</ReactMarkdown>
+  );
+
+  let body: React.ReactNode = null;
+
+  if (contentType === "briefing") {
+    const { weather, news_headlines, calendar_events, memories } = data;
+    const sections: React.ReactNode[] = [];
+    if (weather && Object.keys(weather).length > 0) {
+      sections.push(card("☀️ WEATHER REPORT", (
+        <div style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap", fontSize: 11 }}>
+          {weather.description ? md(weather.description) : (
+            <span>
+              {weather.temp ? `${weather.temp}°C` : ""}
+              {weather.humidity ? ` | Humidity: ${weather.humidity}%` : ""}
+              {weather.wind_speed ? ` | Wind: ${weather.wind_speed} wind` : ""}
+            </span>
+          )}
+        </div>
+      )));
+    }
+    if (calendar_events && calendar_events.length > 0) {
+      sections.push(card("📅 UPCOMING SCHEDULE", (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11 }}>
+          {calendar_events.map((evt: any, i: number) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, borderBottom: "1px dashed rgba(255,255,255,0.03)", paddingBottom: 3 }}>
+              <span style={{ color: "var(--text-primary)" }}>{md(evt.summary || evt.title || "")}</span>
+              <span style={{ color: "var(--text-muted)", fontSize: 10, flexShrink: 0, marginTop: 1 }}>
+                {evt.start ? new Date(evt.start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )));
+    }
+    if (news_headlines && news_headlines.length > 0) {
+      sections.push(card("📰 TOP NEWS HEADLINES", (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11 }}>
+          {news_headlines.map((item: any, i: number) => (
+            <div key={i} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{i + 1}. {md(item.title || item.summary || "")}</span>
+              {item.snippet && (
+                <span style={{ color: "var(--text-muted)", fontSize: 10, lineHeight: 1.3, paddingLeft: 12 }}>{md(item.snippet)}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )));
+    }
+    if (memories && memories.length > 0) {
+      sections.push(card("🧠 RECALLED MEMORIES", (
+        <ul style={{ margin: 0, paddingLeft: "16px", color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: 3, fontSize: 11 }}>
+          {memories.map((m: any, i: number) => <li key={i}>{md(m.content)}</li>)}
+        </ul>
+      )));
+    }
+    body = <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "4px 16px 16px", overflowY: "auto", fontFamily: "var(--font-mono)" }}>{sections}</div>;
+  } else if (contentType === "screen_analysis") {
+    body = (
+      <div style={{ padding: "0 16px 16px", overflowY: "auto", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+        <div style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+          {md(typeof data === "string" ? data : JSON.stringify(data, null, 2))}
+        </div>
+      </div>
+    );
+  } else {
+    body = (
+      <div style={{ padding: "0 16px 16px", overflowY: "auto", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+        <div style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>
+          {md(typeof data === "string" ? data : JSON.stringify(data, null, 2))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", maxHeight: "45vh", width: "100%" }}>
+      {header(contentType === "briefing" ? "MORNING BRIEFING" : contentType === "screen_analysis" ? "SCREEN ANALYSIS" : contentType.toUpperCase().replace(/_/g, " "), contentType === "briefing" ? "🌅" : contentType === "screen_analysis" ? "🖥️" : "📋")}
+      {body}
+    </div>
+  );
+}
+
+// ─── Shell Output Panel ──────────────────────────────────────────────────────
+function ShellOutputPanel({ lines, onClear }: { lines: string[]; onClose?: () => void; onClear?: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [lines.length]);
+  return (
+    <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 16px" }}>
+        <span style={{ fontSize: 10, color: "var(--accent)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", fontWeight: "bold", display: "flex", alignItems: "center", gap: 6 }}>
+          <Terminal size={12} /> LIVE TERMINAL OUTPUT ({lines.length})
+        </span>
+        {onClear && (
+          <button onClick={onClear} style={{ background: "transparent", border: "none", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 4, fontSize: 10, fontFamily: "var(--font-mono)", cursor: "pointer" }}>
+            <Trash2 size={12} /> CLEAR
+          </button>
+        )}
+      </div>
+      <div ref={ref} style={{ maxHeight: 160, overflowY: "auto", padding: "0 16px 12px", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+        <span style={{ color: "rgba(130,255,130,0.85)", whiteSpace: "pre-wrap" }}>
+          {lines.slice(-40).join("\n")}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 // ─── Background Glow Animation (Google Assistant style) ──────────────────────
@@ -354,10 +620,11 @@ function getPlanFromMessage(msg: any, messages: any[]): import("../../lib/schema
 }
 
 // ─── Message Bubble ───────────────────────────────────────────────────────────
-function MobileBubble({ msg, onTapForPlan, hasPlan }: {
+function MobileBubble({ msg, onTapForPlan, hasPlan, reasonings }: {
   msg: import("../../lib/schemas").Message;
   onTapForPlan?: () => void;
   hasPlan?: boolean;
+  reasonings?: import("../../lib/schemas").PlanReasoning[];
 }) {
   const isUser = msg.role === "user";
   const [copied, setCopied] = useState(false);
@@ -428,6 +695,9 @@ function MobileBubble({ msg, onTapForPlan, hasPlan }: {
               <span style={{ fontSize: 9, color: "var(--accent)", fontFamily: "var(--font-mono)", letterSpacing: "0.08em", opacity: 0.7 }}>AGENT TASK</span>
             </div>
           )}
+          {!isUser && reasonings && reasonings.length > 0 && reasonings.map((r, rIdx) => (
+            <ReasoningBlock key={rIdx} text={r.text} attempt={r.attempt} />
+          ))}
           <MarkdownRenderer content={displayContent} isUser={isUser} />
 
           <div style={{
@@ -447,6 +717,19 @@ function MobileBubble({ msg, onTapForPlan, hasPlan }: {
             }}>
               [ {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })} ]
             </span>
+
+            {!isUser && msg.token_total ? (
+              <span title={`Total Tokens: ${msg.token_total.toLocaleString()}\nInput Tokens: ${msg.token_request?.toLocaleString()}\nOutput Tokens: ${msg.token_response?.toLocaleString()}`} style={{
+                fontSize: 9,
+                color: "var(--accent)",
+                fontFamily: "var(--font-mono)",
+                borderLeft: "1px solid rgba(255,255,255,0.15)",
+                paddingLeft: 8,
+                fontWeight: 600,
+              }}>
+                {msg.token_total.toLocaleString()} TOKENS
+              </span>
+            ) : null}
 
             {!isUser && (
               <div style={{ display: "flex", gap: 6 }}>
@@ -544,7 +827,7 @@ function useWakeWord(transcript: string | null, wakeWords: string[], wakeWordEna
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 interface MobileAssistantProps {
-  onOpenSettings: () => void;
+  onOpenSettings: (mode?: "agent" | "interaction" | "system" | "all") => void;
   onOpenHistory: () => void;
   onOpenCustomizer: () => void;
 }
@@ -554,11 +837,15 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
     messages, voiceState, isConnected, currentTranscript,
     currentPlan, taskPaused, activeThreadId, tabs,
     wakeWords, wakeWordEnabled, setVoiceState, addMessage, setTranscript,
+    planReasonings, tokenUsage, systemMetrics, shellOutputLines,
+    contentPanel, setContentPanel, clearShellOutput,
   } = useAssistantStore();
 
   const [textInput, setTextInput] = useState("");
   const [selectedPlan, setSelectedPlan] = useState<import("../../lib/schemas").Plan | null>(null);
   const [showSplash, setShowSplash] = useState(true);
+  const [showSysHud, setShowSysHud] = useState(false);
+  const currentReasonings = planReasonings[activeThreadId] ?? [];
   // Streaming / typing animation state
   const [streamingText, setStreamingText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -714,12 +1001,35 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
               <span style={{ fontSize: 14, fontWeight: 800, color: "var(--accent)", letterSpacing: "0.08em", fontFamily: "var(--font-mono)" }}>OPENSARTHI</span>
             </div>
             {isTaskRunning && <span className="os-badge-pulse" style={{ fontSize: 9, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>● TASK</span>}
+            {tokenUsage.sessionTotalTokens > 0 && (
+              <span title={`Session tokens: ${tokenUsage.sessionTotalTokens.toLocaleString()}`} style={{
+                fontSize: 9, color: "var(--text-secondary)", fontFamily: "var(--font-mono)",
+                border: "1px solid var(--border)", borderRadius: 10, padding: "2px 6px",
+                letterSpacing: "0.05em",
+              }}>
+                Ξ {tokenUsage.sessionTotalTokens.toLocaleString()}
+              </span>
+            )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {contentPanel.contentType && (
+              <button
+                onClick={() => setContentPanel(null, null)}
+                style={{ background: "transparent", border: "none", color: "var(--accent)", padding: 6, display: "flex", position: "relative" }}>
+                <Eye size={18} />
+                <span className="os-badge-pulse" style={{ position: "absolute", top: 3, right: 3, width: 7, height: 7, borderRadius: "50%", background: "var(--accent)" }} />
+              </button>
+            )}
+            <button
+              onClick={() => setShowSysHud(s => !s)}
+              style={{ background: "transparent", border: "none", color: showSysHud ? "var(--accent)" : "var(--text-secondary)", padding: 6, display: "flex" }}
+              title="System metrics">
+              <Gauge size={18} />
+            </button>
             <button onClick={onOpenCustomizer} style={{ background: "transparent", border: "none", color: "var(--text-secondary)", padding: 6, display: "flex" }}>
               <User size={18} />
             </button>
-            <button onClick={onOpenSettings} style={{ background: "transparent", border: "none", color: "var(--text-secondary)", padding: 6, display: "flex" }}>
+            <button onClick={() => onOpenSettings()} style={{ background: "transparent", border: "none", color: "var(--text-secondary)", padding: 6, display: "flex" }}>
               <Settings size={18} />
             </button>
           </div>
@@ -745,6 +1055,7 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
                 key={msg.id}
                 msg={msg}
                 hasPlan={hasPlan}
+                reasonings={currentReasonings}
                 onTapForPlan={() => {
                   if (plan) setSelectedPlan(plan);
                 }}
@@ -765,6 +1076,40 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
 
           <div ref={chatEndRef} />
         </div>
+
+        {/* Content Panel Drawer (briefing / screen analysis) */}
+        <AnimatePresence>
+          {contentPanel.contentType && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              style={{
+                position: "relative", zIndex: 18, width: "100%", flexShrink: 0,
+                background: "rgba(8,12,10,0.97)", borderBottom: "1px solid var(--border)",
+                overflow: "hidden", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+              }}
+            >
+              <ContentPanelView contentType={contentPanel.contentType} data={contentPanel.contentData} onClose={() => setContentPanel(null, null)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* System Metrics HUD */}
+        <AnimatePresence>
+          {showSysHud && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              style={{ position: "relative", zIndex: 18, width: "100%", flexShrink: 0, background: "rgba(8,12,10,0.97)", borderBottom: "1px solid var(--border)", overflow: "hidden" }}
+            >
+              <SystemMetricsHud metrics={systemMetrics} onClose={() => setShowSysHud(false)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Pinned Bottom Bar Container */}
         <div style={{
@@ -793,6 +1138,21 @@ export function MobileAssistant({ onOpenSettings, onOpenHistory, onOpenCustomize
                 isLive={isTaskRunning}
                 onClose={() => setSelectedPlan(null)}
               />
+            )}
+          </AnimatePresence>
+
+          {/* Live Shell Output Streaming */}
+          <AnimatePresence>
+            {shellOutputLines.length > 0 && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                style={{ overflow: "hidden", position: "relative", zIndex: 2 }}
+              >
+                <ShellOutputPanel lines={shellOutputLines} onClear={clearShellOutput} />
+              </motion.div>
             )}
           </AnimatePresence>
 

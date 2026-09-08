@@ -1,7 +1,15 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, ChevronRight, Sparkles, User, MessageSquare, X, Wrench } from "lucide-react";
+import { Check, ChevronRight, Sparkles, User, MessageSquare, X, Wrench, Globe, Tag, RefreshCw, CheckCircle2 } from "lucide-react";
 import { useAssistantStore } from "../../stores/assistantStore";
+import {
+  PROVIDER_MODELS,
+  PROVIDER_LABELS,
+  OLLAMA_ALL_SUGGESTIONS,
+  formatModelLabel,
+  validateClientDirect,
+  type FetchedModel,
+} from "../../lib/models";
 
 const SKILLS = [
   { id: "general",           icon: "🤖", label: "General",              desc: "Balanced chat & everyday help" },
@@ -19,36 +27,6 @@ const SKILLS = [
 ];
 
 const ALL_SKILL_IDS = SKILLS.map(s => s.id);
-
-const PROVIDER_MODELS: Record<string, { value: string; label: string }[]> = {
-  google: [
-    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-    { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
-  ],
-  openai: [
-    { value: "gpt-4o", label: "GPT-4o" },
-    { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-    { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
-    { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
-  ],
-  anthropic: [
-    { value: "claude-opus-4-5", label: "Claude Opus 4.5" },
-    { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
-    { value: "claude-haiku-3-5", label: "Claude Haiku 3.5" },
-    { value: "claude-3-opus-20240229", label: "Claude 3 Opus" },
-  ],
-  groq: [
-    { value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B" },
-    { value: "llama-3.1-8b-instant", label: "Llama 3.1 8B" },
-  ],
-  openrouter: [
-    { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-    { value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-    { value: "deepseek/deepseek-chat", label: "DeepSeek Chat" },
-  ],
-};
 
 const selectStyle: React.CSSProperties = {
   width: "100%",
@@ -73,6 +51,10 @@ interface OnboardingViewProps {
     cloudModel?: string;
     localModel?: string;
     apiKey?: string;
+    customOpenaiBaseUrl?: string;
+    customOpenaiApiKey?: string;
+    customOpenaiProviderName?: string;
+    allApiKeys?: Record<string, string>;
   }) => void;
   isEdit?: boolean;
   onClose?: () => void;
@@ -97,6 +79,12 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
   const [provider, setProvider] = useState("google");
   const [cloudModel, setCloudModel] = useState("gemini-2.5-flash");
   const [apiKey, setApiKey] = useState("");
+  const [customOpenaiBaseUrl, setCustomOpenaiBaseUrl] = useState("");
+  const [customOpenaiApiKey, setCustomOpenaiApiKey] = useState("");
+  const [customOpenaiProviderName, setCustomOpenaiProviderName] = useState("");
+
+  const isLocal = provider === "ollama";
+  const isCustomOpenai = provider === "custom_openai";
 
   const toggle = useCallback((id: string) => {
     setSelected(prev => {
@@ -124,13 +112,25 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
 
   const handleFinish = () => {
     const skills = selected.size > 0 ? Array.from(selected) : ALL_SKILL_IDS;
+    const allApiKeys: Record<string, string> = {};
+    if (apiKey.trim()) {
+      allApiKeys[provider] = apiKey.trim();
+    }
+    if (customOpenaiApiKey.trim()) {
+      allApiKeys.custom_openai = customOpenaiApiKey.trim();
+    }
     onComplete({
       skills,
       userName: userName.trim(),
       customPrompt: customPrompt.trim(),
       provider,
       cloudModel,
-      apiKey: apiKey.trim()
+      localModel: isLocal ? cloudModel : undefined,
+      apiKey: apiKey.trim(),
+      customOpenaiBaseUrl: isCustomOpenai ? customOpenaiBaseUrl.trim() : undefined,
+      customOpenaiApiKey: isCustomOpenai ? customOpenaiApiKey.trim() : undefined,
+      customOpenaiProviderName: isCustomOpenai ? customOpenaiProviderName.trim() : undefined,
+      allApiKeys: Object.keys(allApiKeys).length > 0 ? allApiKeys : undefined,
     });
   };
 
@@ -404,6 +404,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
           ) : (
             <motion.div key="agent" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                {/* Provider selector */}
                 <div>
                   <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", letterSpacing: "0.06em", marginBottom: 6 }}>
                     1. ACTIVE ENGINE
@@ -418,48 +419,144 @@ export function OnboardingView({ onComplete, isEdit = false, onClose }: Onboardi
                     }}
                     style={selectStyle}
                   >
-                    <option value="google">Google Gemini</option>
-                    <option value="openai">OpenAI GPT</option>
-                    <option value="anthropic">Claude AI</option>
-                    <option value="groq">Groq Cloud</option>
-                    <option value="openrouter">OpenRouter</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", letterSpacing: "0.06em", marginBottom: 6 }}>
-                    2. ACTIVE MODEL
-                  </label>
-                  <select
-                    value={cloudModel}
-                    onChange={(e) => setCloudModel(e.target.value)}
-                    style={selectStyle}
-                  >
-                    {(PROVIDER_MODELS[provider] || []).map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                      </option>
+                    {Object.entries(PROVIDER_LABELS).map(([key, info]) => (
+                      <option key={key} value={key}>{info.icon} {info.label}</option>
                     ))}
                   </select>
                 </div>
 
+                {/* Base URL for custom_openai */}
+                {isCustomOpenai && (
+                  <div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "11px", color: "var(--text-secondary)", letterSpacing: "0.06em", marginBottom: 6 }}>
+                      <Globe size={12} style={{ opacity: 0.7 }} />
+                      API ENDPOINT / BASE URL
+                    </label>
+                    <input
+                      type="text" inputMode="url"
+                      value={customOpenaiBaseUrl}
+                      onChange={(e) => setCustomOpenaiBaseUrl(e.target.value)}
+                      placeholder="e.g. http://localhost:20128/v1 or http://127.0.0.1:8000/v1"
+                      style={{
+                        width: "100%", padding: "12px", background: "rgba(0,0,0,0.6)",
+                        border: "1px solid var(--border)", borderRadius: 8,
+                        color: "white", fontSize: "13px", outline: "none", boxSizing: "border-box",
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Provider display name for custom_openai */}
+                {isCustomOpenai && (
+                  <div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "11px", color: "var(--text-secondary)", letterSpacing: "0.06em", marginBottom: 6 }}>
+                      <Tag size={12} style={{ opacity: 0.7 }} />
+                      PROVIDER DISPLAY NAME (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={customOpenaiProviderName}
+                      onChange={(e) => setCustomOpenaiProviderName(e.target.value)}
+                      placeholder="e.g. OmniRoute, vLLM, LM Studio"
+                      style={{
+                        width: "100%", padding: "12px", background: "rgba(0,0,0,0.6)",
+                        border: "1px solid var(--border)", borderRadius: 8,
+                        color: "white", fontSize: "13px", outline: "none", boxSizing: "border-box",
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Model selector */}
                 <div>
                   <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", letterSpacing: "0.06em", marginBottom: 6 }}>
-                    3. API SECRET KEY
+                    {isLocal ? "2. LOCAL MODEL (Ollama)" : isCustomOpenai ? "2. SELECT MODEL" : "2. ACTIVE MODEL"}
                   </label>
-                  <input
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="Paste your API key here..."
-                    style={{
-                      width: "100%", padding: "12px", background: "rgba(0,0,0,0.6)",
-                      border: "1px solid var(--border)", borderRadius: 8,
-                      color: "white", fontSize: "13px", outline: "none", boxSizing: "border-box",
-                      fontFamily: "var(--font-mono)",
-                    }}
-                  />
+                  {isLocal ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <select
+                        value={cloudModel}
+                        onChange={(e) => setCloudModel(e.target.value)}
+                        style={selectStyle}
+                      >
+                        <option value="qwen2.5:3b">Qwen 2.5 3B (suggest)</option>
+                        {OLLAMA_ALL_SUGGESTIONS.map((m) => (
+                          <option key={m.value} value={m.value}>{m.label}</option>
+                        ))}
+                      </select>
+                      <input
+                        value={cloudModel}
+                        onChange={(e) => setCloudModel(e.target.value)}
+                        placeholder="Custom: e.g. llama3.2:3b, qwen2.5:7b"
+                        style={{
+                          width: "100%", padding: "12px", background: "rgba(0,0,0,0.6)",
+                          border: "1px solid var(--border)", borderRadius: 8,
+                          color: "white", fontSize: "13px", outline: "none", boxSizing: "border-box",
+                          fontFamily: "var(--font-mono)",
+                        }}
+                      />
+                    </div>
+                  ) : isCustomOpenai ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {(PROVIDER_MODELS[provider] || []).length > 0 ? (
+                        <select
+                          value={cloudModel}
+                          onChange={(e) => setCloudModel(e.target.value)}
+                          style={selectStyle}
+                        >
+                          {(PROVIDER_MODELS[provider] || []).map((m) => (
+                            <option key={m.value} value={m.value}>{m.label}</option>
+                          ))}
+                        </select>
+                      ) : null}
+                      <input
+                        type="text"
+                        value={cloudModel}
+                        onChange={(e) => setCloudModel(e.target.value)}
+                        placeholder="Model ID: e.g. gpt-4o, claude-4-sonnet, auto/fast"
+                        style={{
+                          width: "100%", padding: "12px", background: "rgba(0,0,0,0.6)",
+                          border: "1px solid var(--border)", borderRadius: 8,
+                          color: "white", fontSize: "13px", outline: "none", boxSizing: "border-box",
+                          fontFamily: "var(--font-mono)",
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <select
+                      value={cloudModel}
+                      onChange={(e) => setCloudModel(e.target.value)}
+                      style={selectStyle}
+                    >
+                      {(PROVIDER_MODELS[provider] || []).map((m) => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
+
+                {/* API Key */}
+                {!isLocal && (
+                  <div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "11px", color: "var(--text-secondary)", letterSpacing: "0.06em", marginBottom: 6 }}>
+                      {isCustomOpenai ? "3. API KEY (optional)" : "3. API SECRET KEY"}
+                    </label>
+                    <input
+                      type="password"
+                      value={isCustomOpenai ? customOpenaiApiKey : apiKey}
+                      onChange={(e) => isCustomOpenai ? setCustomOpenaiApiKey(e.target.value) : setApiKey(e.target.value)}
+                      placeholder={isCustomOpenai ? "sk-... (leave blank if not required)" : "Paste your API key here..."}
+                      style={{
+                        width: "100%", padding: "12px", background: "rgba(0,0,0,0.6)",
+                        border: "1px solid var(--border)", borderRadius: 8,
+                        color: "white", fontSize: "13px", outline: "none", boxSizing: "border-box",
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
