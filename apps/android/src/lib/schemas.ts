@@ -8,6 +8,7 @@ export const WSMessageTypeSchema = z.enum([
   "user_message",
   "transcript_update",
   "plan_created",
+  "plan_reasoning",
   "tool_started",
   "tool_completed",
   "tool_error",
@@ -45,12 +46,31 @@ export const WSMessageTypeSchema = z.enum([
   "intent_classified",
   "client_state",
   "token_update",
-  "agent_state",
-  "manual_voice_trigger",
   "stream_chunk",
   "stream_end",
+  "agent_state",
+  "get_memories",
+  "memories_response",
+  "graph_node_status",
+  "system_metrics",
+  "briefing_phase1",
+  "briefing_phase2",
+  "screen_analysis",
+  "content_update",
+  "activity_log",
 ]);
 export type WSMessageType = z.infer<typeof WSMessageTypeSchema>;
+
+// ─── Plan Reasoning ──────────────────────────────────────────────────────────
+
+export const PlanReasoningSchema = z.object({
+  text: z.string(),
+  attempt: z.number().default(0),
+  thread_id: z.string().nullable().optional(),
+});
+export type PlanReasoning = z.infer<typeof PlanReasoningSchema>;
+
+// ─── WebSocket Message ───────────────────────────────────────────────────────
 
 export const WSMessageSchema = z.object({
   id: z.string().uuid(),
@@ -65,9 +85,9 @@ export type WSMessage = z.infer<typeof WSMessageSchema>;
 export const PlanStepSchema = z.object({
   index: z.number(),
   tool: z.string(),
-  args: z.record(z.unknown()),
-  description: z.string(),
-  status: z.enum(["pending", "running", "success", "error", "skipped", "terminated"]),
+  args: z.record(z.unknown()).optional().default({}),
+  description: z.string().optional().default(""),
+  status: z.enum(["pending", "running", "success", "error", "skipped", "terminated", "divider"]),
   error: z.string().optional(),
   result: z.unknown().optional(),
   timestamp: z.number().optional(),
@@ -79,6 +99,7 @@ export const PlanSchema = z.object({
   goal: z.string(),
   steps: z.array(PlanStepSchema),
   recovery_hint: z.string().nullable(),
+  reasoning: z.string().optional().nullable(),
 });
 export type Plan = z.infer<typeof PlanSchema>;
 
@@ -92,7 +113,7 @@ export const MessageSchema = z.object({
   role: MessageRoleSchema,
   content: z.string(),
   timestamp: z.number(),
-  plan: PlanSchema.optional(),
+  plan: PlanSchema.nullable().optional(),
   token_request: z.number().optional(),
   token_response: z.number().optional(),
   token_total: z.number().optional(),

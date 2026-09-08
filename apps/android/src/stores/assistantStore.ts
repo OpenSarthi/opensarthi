@@ -1,7 +1,7 @@
 // Standalone copy of assistantStore — no Tauri imports, no cross-package paths.
 // Keep in sync with apps/desktop/src/stores/assistantStore.ts
 import { create } from "zustand";
-import type { Message, Plan, PlanStep, VoiceState } from "../lib/schemas";
+import type { Message, Plan, PlanStep, PlanReasoning, VoiceState } from "../lib/schemas";
 
 export interface Thread {
   id: string;
@@ -69,16 +69,25 @@ const initialTab: ThreadTab = {
 };
 
 interface AssistantState {
+  // Session
   voiceState: VoiceState;
   isConnected: boolean;
   currentTranscript: string | null;
+
+  // Tabs & Threads
   activeThreadId: string;
   tabs: ThreadTab[];
+
+  // Conversation (Legacy mapping to active tab)
   messages: Message[];
   threads: Thread[];
+
+  // Execution (Legacy mapping to active tab)
   currentPlan: Plan | null;
   executingStepIndex: number | null;
   taskPaused: boolean;
+
+  // Model settings
   activeLocalModel: string;
   activeCloudModel: string;
   activeProvider: string;
@@ -88,31 +97,94 @@ interface AssistantState {
   anthropicApiKey: string;
   groqApiKey: string;
   openrouterApiKey: string;
+  customOpenaiBaseUrl: string;
+  customOpenaiApiKey: string;
+  customOpenaiProviderName: string;
   activeTheme: string;
+
+  // Voice settings
   voiceAccent: string;
   voiceSpeed: number;
   continuousListening: boolean;
   wakeWords: string[];
   wakeWordEnabled: boolean;
   wakeWordThreshold: number;
+
+  // Feature flags
+  longTermMemoryEnabled: boolean;
+  longTermMemories: any[];
+  useLanggraph: boolean;
+  useSupervisor: boolean;
+  useNativeVoice: boolean;
+  nodeStatuses: Record<string, "idle" | "running" | "done">;
+
+  // Token tracking
   tokenUsage: TokenUsage;
   globalSessionTokens: Record<string, number>;
+
+  // Personalization
   userName: string;
   userSkills: string[];
   customPrompt: string;
   onboardingCompleted: boolean;
+
+  // Shell output
   shellOutputLines: string[];
   lastClassification: string | null;
+
+  // Streaming response (chat typing animation)
+  streamingResponse: string | null;
+  lastStreamedMessageId: string | null;
+
+  // Sound cues
+  soundEnabled: boolean;
+  soundVolume: number;
+
+  // Plan reasoning
+  planReasonings: Record<string, PlanReasoning[]>;
+
+  // Sidecar runtime logs
+  sidecarLogs: string[];
+
+  // Activity Logs
+  activityLogs: { id: string; text: string; timestamp: number }[];
+
+  // Content Panel (morning briefing, screen analysis, etc.)
+  contentPanel: { contentType: string | null; contentData: any | null };
+
+  // Custom accent color
+  customAccent: string | null;
+
+  // Real-time system metrics
+  systemMetrics: {
+    cpu: number;
+    mem: number;
+    net_kbps: number;
+    gpu: number | string;
+    temp: number | string;
+  };
+
+  // Pending onboarding settings
+  pendingOnboarding: any | null;
 
   // Actions
   setVoiceState: (state: VoiceState) => void;
   setConnected: (connected: boolean) => void;
+  setLongTermMemoryEnabled: (enabled: boolean) => void;
+  setLongTermMemories: (memories: any[]) => void;
+  setUseLanggraph: (enabled: boolean) => void;
+  setUseSupervisor: (enabled: boolean) => void;
+  setUseNativeVoice: (enabled: boolean) => void;
+  setNodeStatus: (node: string, status: "idle" | "running" | "done") => void;
   setTranscript: (text: string | null) => void;
+
+  // Tab control actions
   setActiveThreadId: (id: string) => void;
   addTab: (id?: string) => void;
   removeTab: (id: string) => void;
   loadThreadToTab: (id: string, messages: Message[], tokenTotals: any) => void;
   updateTokenUsageFromWS: (thread_id: string, usage: any) => void;
+
   addMessage: (msg: Message, thread_id?: string) => void;
   setMessages: (msgs: Message[]) => void;
   setThreads: (threads: Thread[]) => void;
@@ -124,7 +196,8 @@ interface AssistantState {
   setActiveModels: (local: string, cloud: string) => void;
   setActiveProvider: (provider: string) => void;
   setCloudApiKey: (key: string) => void;
-  setAllApiKeys: (keys: { gemini: string; openai: string; anthropic: string; groq: string; openrouter: string }) => void;
+  setCustomOpenaiProviderName: (name: string) => void;
+  setAllApiKeys: (keys: { gemini: string; openai: string; anthropic: string; groq: string; openrouter: string; customOpenaiBaseUrl?: string; customOpenaiKey?: string; customOpenaiApiKey?: string; customOpenaiProviderName?: string }) => void;
   setActiveTheme: (theme: string) => void;
   setVoiceSettings: (accent: string, speed: number, continuous: boolean) => void;
   setWakeWordSettings: (enabled: boolean, threshold: number, phrases: string[]) => void;
@@ -137,6 +210,45 @@ interface AssistantState {
   appendShellOutputLine: (line: string) => void;
   clearShellOutput: () => void;
   setLastClassification: (c: string) => void;
+
+  // Streaming response actions
+  appendStreamChunk: (chunk: string) => void;
+  clearStreamingResponse: () => void;
+  markStreamedMessage: (id: string) => void;
+  clearStreamedMessage: () => void;
+
+  // Sound settings
+  setSoundSettings: (enabled: boolean, volume: number) => void;
+
+  // Plan reasoning
+  addPlanReasoning: (reasoning: PlanReasoning) => void;
+  clearPlanReasonings: (thread_id: string) => void;
+
+  // Sidecar logs
+  addSidecarLogs: (lines: string[]) => void;
+  clearSidecarLogs: () => void;
+
+  // Activity logs
+  addActivityLog: (text: string) => void;
+  clearActivityLogs: () => void;
+
+  // Content panel
+  setContentPanel: (contentType: string | null, contentData: any | null) => void;
+
+  // Custom accent
+  setCustomAccent: (color: string | null) => void;
+
+  // System metrics
+  setSystemMetrics: (metrics: {
+    cpu: number;
+    mem: number;
+    net_kbps: number;
+    gpu: number | string;
+    temp: number | string;
+  }) => void;
+
+  // Pending onboarding
+  setPendingOnboarding: (data: any | null) => void;
 }
 
 export const useAssistantStore = create<AssistantState>((set) => ({
@@ -159,6 +271,9 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   anthropicApiKey: "",
   groqApiKey: "",
   openrouterApiKey: "",
+  customOpenaiBaseUrl: "",
+  customOpenaiApiKey: "",
+  customOpenaiProviderName: "",
   activeTheme: "theme-red-black",
   voiceAccent: "ie",
   voiceSpeed: 1.35,
@@ -174,35 +289,112 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   onboardingCompleted: typeof window !== "undefined" && localStorage.getItem("opensarthi_onboarding_done") === "1",
   shellOutputLines: [],
   lastClassification: null,
+  streamingResponse: null,
+  lastStreamedMessageId: null,
+  soundEnabled: typeof window !== "undefined"
+    ? localStorage.getItem("opensarthi_sound_enabled") !== "false"
+    : true,
+  soundVolume: typeof window !== "undefined"
+    ? parseInt(localStorage.getItem("opensarthi_sound_volume") || "60", 10)
+    : 60,
+  longTermMemoryEnabled: false,
+  longTermMemories: [],
+  useLanggraph: true,
+  useSupervisor: false,
+  useNativeVoice: false,
+  nodeStatuses: {},
+  planReasonings: {},
+  sidecarLogs: [],
+  activityLogs: [{ id: crypto.randomUUID(), text: "SYS: OpenSarthi online.", timestamp: Date.now() }],
+  contentPanel: { contentType: null, contentData: null },
+  customAccent: typeof window !== "undefined" ? localStorage.getItem("opensarthi_custom_accent") : null,
+  systemMetrics: { cpu: 0, mem: 0, net_kbps: 0, gpu: "N/A", temp: "N/A" },
+  pendingOnboarding: null,
 
   setVoiceState: (voiceState) => set({ voiceState }),
   setConnected: (isConnected) => set({ isConnected }),
+  setLongTermMemoryEnabled: (longTermMemoryEnabled) => set({ longTermMemoryEnabled }),
+  setLongTermMemories: (longTermMemories) => set({ longTermMemories }),
+  setUseLanggraph: (useLanggraph) => set({ useLanggraph }),
+  setUseSupervisor: (useSupervisor) => set({ useSupervisor }),
+  setUseNativeVoice: (useNativeVoice) => set({ useNativeVoice }),
+  setNodeStatus: (node, status) => set((s) => ({
+    nodeStatuses: { ...s.nodeStatuses, [node]: status }
+  })),
   setTranscript: (currentTranscript) => set({ currentTranscript }),
 
   setActiveThreadId: (id) => set((s) => {
     const tab = s.tabs.find(t => t.id === id);
     if (!tab) return {};
-    return { activeThreadId: id, messages: tab.messages, currentPlan: tab.currentPlan, executingStepIndex: tab.executingStepIndex, taskPaused: tab.taskPaused, tokenUsage: tab.tokenUsage };
+    return {
+      activeThreadId: id,
+      messages: tab.messages,
+      currentPlan: tab.currentPlan,
+      executingStepIndex: tab.executingStepIndex,
+      taskPaused: tab.taskPaused,
+      tokenUsage: tab.tokenUsage,
+    };
   }),
 
   addTab: (id) => set((s) => {
     const newId = id || crypto.randomUUID();
     const existing = s.tabs.find(t => t.id === newId);
-    if (existing) return { activeThreadId: newId, messages: existing.messages, currentPlan: existing.currentPlan, executingStepIndex: existing.executingStepIndex, taskPaused: existing.taskPaused, tokenUsage: existing.tokenUsage };
-    const newTab: ThreadTab = { id: newId, title: `Thread ${s.tabs.length + 1}`, messages: [], currentPlan: null, executingStepIndex: null, taskPaused: false, tokenUsage: { requestTokens: 0, responseTokens: 0, totalTokens: 0, sessionTotalTokens: 0 } };
-    return { tabs: [...s.tabs, newTab], activeThreadId: newId, messages: [], currentPlan: null, executingStepIndex: null, taskPaused: false, tokenUsage: newTab.tokenUsage };
+    if (existing) {
+      return {
+        activeThreadId: newId,
+        messages: existing.messages,
+        currentPlan: existing.currentPlan,
+        executingStepIndex: existing.executingStepIndex,
+        taskPaused: existing.taskPaused,
+        tokenUsage: existing.tokenUsage,
+      };
+    }
+    const newTab: ThreadTab = {
+      id: newId,
+      title: `Thread ${s.tabs.length + 1}`,
+      messages: [],
+      currentPlan: null,
+      executingStepIndex: null,
+      taskPaused: false,
+      tokenUsage: { requestTokens: 0, responseTokens: 0, totalTokens: 0, sessionTotalTokens: 0 },
+    };
+    return {
+      tabs: [...s.tabs, newTab],
+      activeThreadId: newId,
+      messages: [],
+      currentPlan: null,
+      executingStepIndex: null,
+      taskPaused: false,
+      tokenUsage: newTab.tokenUsage,
+    };
   }),
 
   removeTab: (id) => set((s) => {
     if (s.tabs.length <= 1) {
       const newId = crypto.randomUUID();
-      const newTab: ThreadTab = { id: newId, title: "Thread 1", messages: [], currentPlan: null, executingStepIndex: null, taskPaused: false, tokenUsage: { requestTokens: 0, responseTokens: 0, totalTokens: 0, sessionTotalTokens: 0 } };
-      return { tabs: [newTab], activeThreadId: newId, messages: [], currentPlan: null, executingStepIndex: null, taskPaused: false, tokenUsage: newTab.tokenUsage };
+      const newTab: ThreadTab = {
+        id: newId, title: "Thread 1", messages: [], currentPlan: null,
+        executingStepIndex: null, taskPaused: false,
+        tokenUsage: { requestTokens: 0, responseTokens: 0, totalTokens: 0, sessionTotalTokens: 0 },
+      };
+      return {
+        tabs: [newTab], activeThreadId: newId, messages: [], currentPlan: null,
+        executingStepIndex: null, taskPaused: false, tokenUsage: newTab.tokenUsage,
+      };
     }
     const filtered = s.tabs.filter(t => t.id !== id);
-    const nextId = s.activeThreadId === id ? filtered[Math.max(0, s.tabs.findIndex(t => t.id === id) - 1)].id : s.activeThreadId;
+    let nextId = s.activeThreadId;
+    if (s.activeThreadId === id) {
+      const idx = s.tabs.findIndex(t => t.id === id);
+      nextId = filtered[Math.max(0, idx - 1)].id;
+    }
     const activeTab = filtered.find(t => t.id === nextId)!;
-    return { tabs: filtered, activeThreadId: nextId, messages: activeTab.messages, currentPlan: activeTab.currentPlan, executingStepIndex: activeTab.executingStepIndex, taskPaused: activeTab.taskPaused, tokenUsage: activeTab.tokenUsage };
+    return {
+      tabs: filtered, activeThreadId: nextId,
+      messages: activeTab.messages, currentPlan: activeTab.currentPlan,
+      executingStepIndex: activeTab.executingStepIndex, taskPaused: activeTab.taskPaused,
+      tokenUsage: activeTab.tokenUsage,
+    };
   }),
 
   loadThreadToTab: (id, messages, tokenTotals) => set((s) => {
@@ -219,12 +411,50 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     }
     mergedMessages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
-    const tokenUsage = tokenTotals ? { requestTokens: tokenTotals.token_request || 0, responseTokens: tokenTotals.token_response || 0, totalTokens: tokenTotals.token_total || 0, sessionTotalTokens: tokenTotals.token_total || 0 } : { requestTokens: 0, responseTokens: 0, totalTokens: 0, sessionTotalTokens: 0 };
+    const tokenUsage = tokenTotals ? {
+      requestTokens: tokenTotals.token_request || tokenTotals.request_tokens || 0,
+      responseTokens: tokenTotals.token_response || tokenTotals.response_tokens || 0,
+      totalTokens: tokenTotals.token_total || tokenTotals.total_tokens || 0,
+      sessionTotalTokens: tokenTotals.token_total || tokenTotals.total_tokens || 0,
+    } : { requestTokens: 0, responseTokens: 0, totalTokens: 0, sessionTotalTokens: 0 };
+
     const title = computeTabTitle(mergedMessages, `Thread ${existingIndex >= 0 ? existingIndex + 1 : s.tabs.length + 1}`);
-    const tab: ThreadTab = { id, title, messages: mergedMessages, currentPlan: null, executingStepIndex: null, taskPaused: false, tokenUsage };
-    const newTabs = [...s.tabs];
-    if (existingIndex >= 0) newTabs[existingIndex] = tab; else newTabs.push(tab);
-    return { tabs: newTabs, activeThreadId: id, messages: mergedMessages, currentPlan: null, executingStepIndex: null, taskPaused: false, tokenUsage };
+
+    const restoredReasonings = mergedMessages
+      .filter(m => m.plan?.reasoning)
+      .map(m => ({ text: m.plan!.reasoning!, attempt: 0, thread_id: id }));
+
+    let restoredPlan: Plan | null = null;
+    let restoredExecutingStepIndex: number | null = null;
+    for (let i = mergedMessages.length - 1; i >= 0; i--) {
+      if (mergedMessages[i].plan) {
+        restoredPlan = mergedMessages[i].plan as Plan;
+        const steps = restoredPlan.steps || [];
+        const firstPending = steps.findIndex((step: any) => step.status === "pending" || step.status === "running");
+        restoredExecutingStepIndex = firstPending >= 0 ? firstPending : null;
+        break;
+      }
+    }
+
+    const tab: ThreadTab = {
+      id, title, messages: mergedMessages, currentPlan: restoredPlan,
+      executingStepIndex: restoredExecutingStepIndex, taskPaused: false, tokenUsage,
+    };
+
+    return {
+      activeThreadId: id,
+      tabs: existingIndex >= 0
+        ? s.tabs.map((t, idx) => idx === existingIndex ? tab : t)
+        : [...s.tabs, tab],
+      messages: mergedMessages,
+      currentPlan: restoredPlan,
+      executingStepIndex: restoredExecutingStepIndex,
+      taskPaused: false,
+      tokenUsage,
+      planReasonings: restoredReasonings.length > 0
+        ? { ...s.planReasonings, [id]: restoredReasonings }
+        : s.planReasonings,
+    };
   }),
 
   updateTokenUsageFromWS: (thread_id, usage) => set((s) => {
@@ -245,17 +475,37 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       }
       return t;
     });
-    const finalTabs = found ? updatedTabs : updatedTabs.map(t => t.id === s.activeThreadId ? {
-      ...t,
-      tokenUsage: {
-        requestTokens: usage.request_tokens,
-        responseTokens: usage.response_tokens,
-        totalTokens: usage.total_tokens,
-        sessionTotalTokens: (t.tokenUsage?.sessionTotalTokens || 0) + (usage.delta_total_tokens || 0),
-      },
-    } : t);
+
+    const finalTabs = found ? updatedTabs : updatedTabs.map(t => {
+      if (t.id === s.activeThreadId) {
+        return {
+          ...t,
+          tokenUsage: {
+            requestTokens: usage.request_tokens,
+            responseTokens: usage.response_tokens,
+            totalTokens: usage.total_tokens,
+            sessionTotalTokens: (t.tokenUsage?.sessionTotalTokens || 0) + (usage.delta_total_tokens || 0),
+          },
+        };
+      }
+      return t;
+    });
+
     const activeTab = finalTabs.find(t => t.id === s.activeThreadId) || finalTabs[0];
-    return { tabs: finalTabs, tokenUsage: activeTab ? activeTab.tokenUsage : s.tokenUsage };
+    const isLocal = s.activeProvider === "ollama" || s.activeProvider === "local" || s.activeProvider === "custom_openai";
+    const modelKey = isLocal ? s.activeLocalModel : s.activeCloudModel;
+    const addedTokens = usage.delta_total_tokens || 0;
+    const currentGlobal = s.globalSessionTokens[modelKey] || 0;
+    const updatedGlobal = currentGlobal + addedTokens;
+    const nextGlobalSessionTokens = { ...s.globalSessionTokens, [modelKey]: updatedGlobal };
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`opensarthi_global_tokens_${modelKey}`, updatedGlobal.toString());
+    }
+    return {
+      tabs: finalTabs,
+      tokenUsage: activeTab ? activeTab.tokenUsage : s.tokenUsage,
+      globalSessionTokens: nextGlobalSessionTokens,
+    };
   }),
 
   addMessage: (msg, thread_id) => set((s) => {
@@ -280,8 +530,12 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   setThreads: (threads) => set({ threads }),
 
   clearMessages: () => set((s) => {
-    const updatedTabs = s.tabs.map(t => t.id === s.activeThreadId ? { ...t, messages: [], currentPlan: null, taskPaused: false, tokenUsage: { requestTokens: 0, responseTokens: 0, totalTokens: 0, sessionTotalTokens: 0 } } : t);
-    return { tabs: updatedTabs, messages: [], currentPlan: null, taskPaused: false };
+    const updatedTabs = s.tabs.map(t => t.id === s.activeThreadId ? {
+      ...t, messages: [], currentPlan: null, taskPaused: false,
+      tokenUsage: { requestTokens: 0, responseTokens: 0, totalTokens: 0, sessionTotalTokens: 0 },
+    } : t);
+    const activeTab = updatedTabs.find(t => t.id === s.activeThreadId)!;
+    return { tabs: updatedTabs, messages: activeTab.messages, currentPlan: null, taskPaused: false, tokenUsage: activeTab.tokenUsage };
   }),
 
   setPlan: (currentPlan, thread_id) => set((s) => {
@@ -311,7 +565,10 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     const tid = thread_id || s.activeThreadId;
     const updatedTabs = s.tabs.map(t => {
       if (t.id !== tid) return t;
-      let plan = t.currentPlan || { id: crypto.randomUUID(), goal: "Executing User Command...", steps: [], recovery_hint: null };
+      let plan = t.currentPlan;
+      if (!plan) {
+        plan = { id: crypto.randomUUID(), goal: "Executing User Command...", steps: [], recovery_hint: null };
+      }
       const steps = [...plan.steps];
       const existingIndex = steps.findIndex(st => st.tool === tool && st.description === description && (st.status === "pending" || st.status === "running"));
       if (existingIndex >= 0) steps[existingIndex] = { ...steps[existingIndex], status, result, timestamp: Date.now() };
@@ -324,24 +581,89 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   setActiveModels: (local, cloud) => set({ activeLocalModel: local, activeCloudModel: cloud }),
   setActiveProvider: (activeProvider) => set({ activeProvider }),
   setCloudApiKey: (cloudApiKey) => set({ cloudApiKey }),
-  setAllApiKeys: (keys) => set({ geminiApiKey: keys.gemini, openaiApiKey: keys.openai, anthropicApiKey: keys.anthropic, groqApiKey: keys.groq, openrouterApiKey: keys.openrouter }),
+  setCustomOpenaiProviderName: (customOpenaiProviderName) => set({ customOpenaiProviderName }),
+  setAllApiKeys: (keys) => set({
+    geminiApiKey: keys.gemini,
+    openaiApiKey: keys.openai,
+    anthropicApiKey: keys.anthropic,
+    groqApiKey: keys.groq,
+    openrouterApiKey: keys.openrouter,
+    ...(keys.customOpenaiBaseUrl !== undefined ? { customOpenaiBaseUrl: keys.customOpenaiBaseUrl } : {}),
+    ...((keys.customOpenaiApiKey ?? keys.customOpenaiKey) !== undefined ? { customOpenaiApiKey: (keys.customOpenaiApiKey ?? keys.customOpenaiKey)! } : {}),
+    ...(keys.customOpenaiProviderName !== undefined ? { customOpenaiProviderName: keys.customOpenaiProviderName } : {}),
+  }),
   setActiveTheme: (activeTheme) => set({ activeTheme }),
   setVoiceSettings: (voiceAccent, voiceSpeed, continuousListening) => set({ voiceAccent, voiceSpeed, continuousListening }),
   setWakeWordSettings: (wakeWordEnabled, wakeWordThreshold, wakeWords) => set({ wakeWordEnabled, wakeWordThreshold, wakeWords }),
 
   updateTokenUsage: (usage, thread_id) => set((s) => {
     const tid = thread_id || s.activeThreadId;
-    const updatedTabs = s.tabs.map(t => t.id === tid ? { ...t, tokenUsage: { requestTokens: usage.request_tokens, responseTokens: usage.response_tokens, totalTokens: usage.total_tokens, sessionTotalTokens: t.tokenUsage.sessionTotalTokens + (usage.total_tokens || 0) } } : t);
-    return { tabs: updatedTabs, tokenUsage: updatedTabs.find(t => t.id === s.activeThreadId)!.tokenUsage };
+    let found = false;
+    const updatedTabs = s.tabs.map(t => {
+      if (t.id === tid) {
+        found = true;
+        return {
+          ...t,
+          tokenUsage: {
+            requestTokens: (t.tokenUsage?.requestTokens || 0) + (usage.request_tokens || 0),
+            responseTokens: (t.tokenUsage?.responseTokens || 0) + (usage.response_tokens || 0),
+            totalTokens: (t.tokenUsage?.totalTokens || 0) + (usage.total_tokens || 0),
+            sessionTotalTokens: (t.tokenUsage?.sessionTotalTokens || 0) + (usage.total_tokens || 0),
+          },
+        };
+      }
+      return t;
+    });
+
+    const finalTabs = found ? updatedTabs : updatedTabs.map(t => {
+      if (t.id === s.activeThreadId) {
+        return {
+          ...t,
+          tokenUsage: {
+            requestTokens: (t.tokenUsage?.requestTokens || 0) + (usage.request_tokens || 0),
+            responseTokens: (t.tokenUsage?.responseTokens || 0) + (usage.response_tokens || 0),
+            totalTokens: (t.tokenUsage?.totalTokens || 0) + (usage.total_tokens || 0),
+            sessionTotalTokens: (t.tokenUsage?.sessionTotalTokens || 0) + (usage.total_tokens || 0),
+          },
+        };
+      }
+      return t;
+    });
+
+    const activeTab = finalTabs.find(t => t.id === s.activeThreadId) || finalTabs[0];
+    const isLocal = s.activeProvider === "ollama" || s.activeProvider === "local" || s.activeProvider === "custom_openai";
+    const modelKey = isLocal ? s.activeLocalModel : s.activeCloudModel;
+    const addedTokens = usage.total_tokens || 0;
+    const currentGlobal = s.globalSessionTokens[modelKey] || 0;
+    const updatedGlobal = currentGlobal + addedTokens;
+    const nextGlobalSessionTokens = { ...s.globalSessionTokens, [modelKey]: updatedGlobal };
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`opensarthi_global_tokens_${modelKey}`, updatedGlobal.toString());
+    }
+    return {
+      tabs: finalTabs,
+      tokenUsage: activeTab ? activeTab.tokenUsage : s.tokenUsage,
+      globalSessionTokens: nextGlobalSessionTokens,
+    };
   }),
 
   resetSessionTokens: () => set((s) => {
-    const updatedTabs = s.tabs.map(t => t.id === s.activeThreadId ? { ...t, tokenUsage: { ...t.tokenUsage, sessionTotalTokens: 0 } } : t);
+    const updatedTabs = s.tabs.map(t => t.id === s.activeThreadId ? {
+      ...t, tokenUsage: { ...t.tokenUsage, sessionTotalTokens: 0 },
+    } : t);
     return { tabs: updatedTabs, tokenUsage: updatedTabs.find(t => t.id === s.activeThreadId)!.tokenUsage };
   }),
 
   restoreThreadTokens: (usage) => set((s) => {
-    const updatedTabs = s.tabs.map(t => t.id === s.activeThreadId ? { ...t, tokenUsage: { requestTokens: usage.request_tokens, responseTokens: usage.response_tokens, totalTokens: usage.total_tokens, sessionTotalTokens: usage.total_tokens } } : t);
+    const updatedTabs = s.tabs.map(t => t.id === s.activeThreadId ? {
+      ...t,
+      tokenUsage: {
+        requestTokens: usage.request_tokens,
+        responseTokens: usage.response_tokens,
+        totalTokens: usage.total_tokens,
+        sessionTotalTokens: usage.total_tokens,
+      },
+    } : t);
     return { tabs: updatedTabs, tokenUsage: updatedTabs.find(t => t.id === s.activeThreadId)!.tokenUsage };
   }),
 
@@ -360,7 +682,73 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     return { tabs: updatedTabs, taskPaused: updatedTabs.find(t => t.id === s.activeThreadId)!.taskPaused };
   }),
 
-  appendShellOutputLine: (line) => set((s) => ({ shellOutputLines: [...s.shellOutputLines.slice(-200), line] })),
+  appendShellOutputLine: (line) => set((s) => ({
+    shellOutputLines: [...s.shellOutputLines.slice(-200), line],
+  })),
   clearShellOutput: () => set({ shellOutputLines: [] }),
   setLastClassification: (lastClassification) => set({ lastClassification }),
+
+  // Streaming response actions
+  appendStreamChunk: (chunk) => set((s) => ({
+    streamingResponse: (s.streamingResponse || "") + chunk,
+  })),
+  clearStreamingResponse: () => set({ streamingResponse: null }),
+  markStreamedMessage: (id) => set({ lastStreamedMessageId: id }),
+  clearStreamedMessage: () => set({ lastStreamedMessageId: null }),
+
+  // Sound settings
+  setSoundSettings: (enabled, volume) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("opensarthi_sound_enabled", String(enabled));
+      localStorage.setItem("opensarthi_sound_volume", String(volume));
+    }
+    set({ soundEnabled: enabled, soundVolume: volume });
+  },
+
+  // Plan reasoning
+  addPlanReasoning: (reasoning) => set((state) => {
+    const tid = reasoning.thread_id || "default";
+    const existing = state.planReasonings[tid] || [];
+    return {
+      planReasonings: { ...state.planReasonings, [tid]: [...existing, reasoning] },
+    };
+  }),
+  clearPlanReasonings: (thread_id) => set((state) => {
+    const updated = { ...state.planReasonings };
+    delete updated[thread_id];
+    return { planReasonings: updated };
+  }),
+
+  // Sidecar logs
+  addSidecarLogs: (lines) => set((state) => {
+    const time = new Date().toLocaleTimeString([], { hour12: false });
+    const formattedLines = lines.map(line => `[${time}] ${line}`);
+    return { sidecarLogs: [...state.sidecarLogs, ...formattedLines].slice(-150) };
+  }),
+  clearSidecarLogs: () => set({ sidecarLogs: [] }),
+
+  // Activity logs
+  addActivityLog: (text) => set((state) => {
+    const newLog = { id: crypto.randomUUID(), text, timestamp: Date.now() };
+    return { activityLogs: [...state.activityLogs, newLog].slice(-100) };
+  }),
+  clearActivityLogs: () => set({ activityLogs: [] }),
+
+  // Content panel
+  setContentPanel: (contentType, contentData) => set({ contentPanel: { contentType, contentData } }),
+
+  // Custom accent
+  setCustomAccent: (color) => {
+    if (typeof window !== "undefined") {
+      if (color) localStorage.setItem("opensarthi_custom_accent", color);
+      else localStorage.removeItem("opensarthi_custom_accent");
+    }
+    set({ customAccent: color });
+  },
+
+  // System metrics
+  setSystemMetrics: (systemMetrics) => set({ systemMetrics }),
+
+  // Pending onboarding
+  setPendingOnboarding: (data) => set({ pendingOnboarding: data }),
 }));
