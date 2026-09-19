@@ -354,7 +354,10 @@ class AgentRuntime:
                     return "Execution cancelled by user."
 
                 await self._transition(AgentState.OBSERVING)
-                snapshot = await self.observer.snapshot()
+                # Performance: force-capture a fresh screenshot only on the first run.
+                # Subsequent replan iterations reuse the pipeline's cached snapshot (TTL=2s).
+                # The cache is explicitly invalidated after each tool mutates the screen.
+                snapshot = await self.observer.snapshot(force_fresh=(replanning_attempts == 0))
 
                 await self._transition(AgentState.PLANNING)
 
@@ -564,6 +567,11 @@ class AgentRuntime:
                                 break
 
                             if result.success:
+                                # Invalidate observer cache — tool likely changed screen state
+                                try:
+                                    self.observer.invalidate_cache()
+                                except Exception:
+                                    pass
                                 if step.verify_with:
                                     await self._transition(AgentState.OBSERVING)
                                     verified = await self._verify_postcondition(step.verify_with)

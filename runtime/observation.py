@@ -60,11 +60,15 @@ class DesktopObserver:
         self._a11y = AccessibilityProvider()
         self._pipeline = ObserverPipeline(use_ocr=True, use_vision=False)
 
-    async def snapshot(self) -> DesktopSnapshot:
+    def invalidate_cache(self):
+        """Invalidate the observer cache — call after a tool mutates screen state."""
+        self._pipeline.invalidate_cache()
+
+    async def snapshot(self, force_fresh: bool = False) -> DesktopSnapshot:
         snap = DesktopSnapshot()
 
         # Execute unified observer pipeline
-        obs_res = await self._pipeline.observe()
+        obs_res = await self._pipeline.observe(force_fresh=force_fresh)
         snap.active_window_title = obs_res.active_window
 
         # Encode screenshot to base64 if available.
