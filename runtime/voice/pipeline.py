@@ -9,11 +9,14 @@ import platform
 import tempfile
 import numpy as np
 import speech_recognition as sr
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from voice.stt import FasterWhisperSTT
 
 logger = structlog.get_logger()
+
+# ── Global TTS lock: only one speech at a time (prevents CPU spikes from concurrent threads) ──
+_tts_lock = threading.Lock()
 
 class VoicePipeline:
     def __init__(self):
@@ -332,12 +335,14 @@ class VoicePipeline:
             logger.warning(f"Subprocess run failed: {e}")
             return -1
 
-    async def speak(self, text: str) -> str:
+    async def speak(self, text: str, persona_id: Optional[str] = None) -> str:
         """Synthesize and speak text using the best available voice engine, awaiting completion."""
         import subprocess
         import shutil
         import os
         import threading
+        import re
+        import uuid
 
         self.is_speaking = True
         # Broadcast speech_started to dashboard
@@ -356,35 +361,155 @@ class VoicePipeline:
                     asyncio.create_task(dashboard_server.broadcast("speech_completed", {"was_manual": False}))
                 return "none"
 
+            # Resolve persona for this speech
+            from voice.personas import get_persona
+            from config import settings
+            if not persona_id:
+                persona_id = getattr(settings, "voice_persona", "JARVIS")
+            persona = get_persona(persona_id)
+            speed = getattr(settings, "voice_speed", 1.0)
+            edge_rate = f"+{int((speed - 1.0) * 100)}%" if speed >= 1.0 else f"-{int((1.0 - speed) * 100)}%"
+
+            # ─── Layer 0: Edge-TTS Neural Voices (True Male & Female distinct personas) ────
+            try:
+                import edge_tts
+
+                self.stop_speaking()
+                self.is_speaking = True
+                playback_id = str(uuid.uuid4())
+                self.current_playback_id = playback_id
+
+                sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_text) if s.strip()]
+                sentences = sentences[:10]
+                if not sentences:
+                    return "none"
+
+                _tmpdir = tempfile.gettempdir()
+                mp3_paths = [os.path.join(_tmpdir, f"opensarthi_edge_{i}_{playback_id[:6]}.mp3") for i in range(len(sentences))]
+
+                # Sequential sentence generation & playback
+                for idx, sentence in enumerate(sentences):
+                    if playback_id != self.current_playback_id:
+                        return "interrupted"
+                    communicate = edge_tts.Communicate(sentence, persona.edge_voice, rate=edge_rate)
+                    await communicate.save(mp3_paths[idx])
+
+                    if playback_id != self.current_playback_id:
+                        return "interrupted"
+
+                    # Play mp3
+                    played = False
+                    if shutil.which("mpv"):
+                        self._execute_subprocess(f"mpv {mp3_paths[idx]} >/dev/null 2>&1")
+                        played = True
+                    elif shutil.which("mpg123"):
+                        self._execute_subprocess(f"mpg123 {mp3_paths[idx]} >/dev/null 2>&1")
+                        played = True
+                    elif shutil.which("paplay"):
+                        wav_path = mp3_paths[idx].replace(".mp3", ".wav")
+                        if shutil.which("ffmpeg"):
+                            self._execute_subprocess(f"ffmpeg -y -i {mp3_paths[idx]} {wav_path} >/dev/null 2>&1")
+                            self._execute_subprocess(f"paplay {wav_path} >/dev/null 2>&1")
+                            played = True
+                    if not played:
+                        for player in ["mpg321", "play", "cvlc"]:
+                            if shutil.which(player):
+                                if player == "cvlc":
+                                    self._execute_subprocess(f"cvlc --play-and-exit {mp3_paths[idx]} >/dev/null 2>&1")
+                                elif player == "play":
+                                    self._execute_subprocess(f"play {mp3_paths[idx]} >/dev/null 2>&1")
+                                else:
+                                    self._execute_subprocess(f"{player} {mp3_paths[idx]} >/dev/null 2>&1")
+                                played = True
+                                break
+
+                logger.info("Speech synthesis completed via Edge-TTS", persona=persona.id, voice=persona.edge_voice)
+                return "edge_tts"
+            except Exception as edge_err:
+                logger.warning(f"Edge-TTS synthesis error, falling back to local TTS: {edge_err}")
+
+            # ─── Layer 1: Kokoro-82M offline neural TTS (fallback) ────
+            kokoro_available = False
+            try:
+                from kokoro import KPipeline
+                kokoro_available = True
+            except ImportError:
+                pass
+
+            if kokoro_available:
+                try:
+                    from kokoro import KPipeline
+
+                    self.stop_speaking()
+                    self.is_speaking = True
+                    playback_id = str(uuid.uuid4())
+                    self.current_playback_id = playback_id
+
+                    with _tts_lock:
+                        kokoro_lang = "h" if persona.language == "hi" else "a"
+                        pipe = KPipeline(lang_code=kokoro_lang)
+
+                        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_text) if s.strip()]
+                        sentences = sentences[:10]
+                        if not sentences:
+                            return "none"
+
+                        _tmpdir = tempfile.gettempdir()
+
+                        def _play_kokoro(p_id):
+                            try:
+                                import soundfile as sf
+                                for idx, sentence in enumerate(sentences):
+                                    if p_id != self.current_playback_id:
+                                        return
+                                    try:
+                                        samples_out = []
+                                        sample_rate = 24000
+                                        for _, _, audio_arr in pipe(sentence, voice=persona.kokoro_voice, speed=speed):
+                                            samples_out.append(audio_arr)
+                                        if not samples_out:
+                                            continue
+                                        audio_data = np.concatenate(samples_out)
+                                        wav_path = os.path.join(_tmpdir, f"opensarthi_kokoro_{idx}.wav")
+                                        sf.write(wav_path, audio_data, sample_rate)
+                                        if p_id != self.current_playback_id:
+                                            return
+                                        played = False
+                                        if shutil.which("paplay"):
+                                            self._execute_subprocess(f"paplay {wav_path} >/dev/null 2>&1")
+                                            played = True
+                                        elif shutil.which("aplay"):
+                                            self._execute_subprocess(f"aplay {wav_path} >/dev/null 2>&1")
+                                            played = True
+                                        elif shutil.which("mpv"):
+                                            self._execute_subprocess(f"mpv {wav_path} >/dev/null 2>&1")
+                                            played = True
+                                    except Exception as ke:
+                                        logger.warning(f"Kokoro sentence {idx} failed: {ke}")
+                            except Exception as ex:
+                                logger.error(f"Kokoro playback failure: {ex}")
+
+                        await asyncio.to_thread(_play_kokoro, playback_id)
+                        logger.info("Speech synthesis completed via Kokoro offline TTS", persona=persona_id)
+                        return "kokoro"
+                except Exception as e:
+                    logger.warning(f"Kokoro TTS failed, falling back to gTTS: {e}")
+
             # Check and self-install gtts if missing
             gtts_available = False
             try:
                 import gtts
                 gtts_available = True
             except ImportError:
-                import sys
-                logger.info("gtts is missing. Dynamically self-installing gtts...")
-                try:
-                    subprocess.check_call(
-                        [sys.executable, "-m", "pip", "install", "gtts"],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                    import gtts
-                    gtts_available = True
-                    logger.info("gtts successfully self-installed!")
-                except Exception as e:
-                    logger.warning(f"Could not dynamically self-install gtts: {e}")
+                pass
 
-            # Layer 1: Premium Google Assistant Voice (gTTS)
+            # Layer 1: gTTS cloud TTS (English + Hindi only)
             if gtts_available:
                 try:
                     from gtts import gTTS
                     import uuid
-                    import time
                     import re
                     
-                    # Instantly terminate any active audio players to interrupt speech immediately
                     self.stop_speaking()
                     self.is_speaking = True  # Restore speaking state for the new stream
 
@@ -392,27 +517,14 @@ class VoicePipeline:
                     playback_id = str(uuid.uuid4())
                     self.current_playback_id = playback_id
                     
-                    from config import settings
-                    voice_config = getattr(settings, "voice_accent", "ie")
+                    # Use persona for gTTS lang/tld (English + Hindi only)
+                    lang = persona.gtts_lang
+                    tld = persona.gtts_tld
                     speed = getattr(settings, "voice_speed", 1.35)
                     
-                    # Resolve language and TLD dynamically based on settings
-                    if voice_config in ['fr', 'es', 'de', 'hi', 'ja', 'it', 'pt']:
-                        lang = voice_config
-                        if voice_config == 'hi':
-                            tld = 'co.in'
-                        elif voice_config == 'ja':
-                            tld = 'co.jp'
-                        elif voice_config == 'pt':
-                            tld = 'com.br'
-                        else:
-                            tld = voice_config
-                    else:
-                        lang = 'en'
-                        tld = voice_config
-                    
-                    # Split text into sentences for sub-second start latency
+                    # Cap at 10 sentences
                     sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_text) if s.strip()]
+                    sentences = sentences[:10]
                     if not sentences:
                         return "none"
                         
