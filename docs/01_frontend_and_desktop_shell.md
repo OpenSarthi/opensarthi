@@ -76,7 +76,8 @@ App.tsx  (Root: modal state, tab management, onboarding gate)
 │
 ├── PermissionDialog         (tool approval popup with permanent grant option)
 ├── InputDialog              (agent user-input request popup)
-├── SettingsView             (5-tab settings: AI · Voice · UI · Memory · Content)
+├── SettingsView             (tabbed settings: AI · Voice & Personas · Integrations Hub · Personalization · Memory)
+│   └── IntegrationsPanel    (Google Workspace OAuth + Twitter, Telegram, Discord, SMTP, LinkedIn credentials)
 └── HistoryView              (past threads + token restore)
 ```
 

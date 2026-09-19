@@ -53,6 +53,11 @@ AgentRuntime              LangGraph Graph
 | `/port` | GET | Returns `{port: <n>}` |
 | `/models` | GET | Proxies model discovery for Google, OpenAI, Anthropic, Groq, OpenRouter, Ollama, and Custom OpenAI |
 | `/validate_key` | GET | Validates provider credentials and discovers available models (`{valid: bool, message: str, models: [...]}`) |
+| `/oauth/google/start` | GET | Initiates Google OAuth 2.0 flow for Calendar + Gmail read-only scopes |
+| `/oauth/google/callback` | GET | Handles OAuth redirect callback and stores user refresh token |
+| `/integrations/status` | GET | Returns connection status for Google, Twitter, Telegram, Discord, SMTP, and LinkedIn |
+| `/integrations/revoke` | POST | Revokes stored tokens for an integration |
+| `/integrations/social` | POST | Saves social & messaging credentials to config |
 
 ### CORS Policy
 
@@ -491,6 +496,13 @@ Audio playback → resume STT + 300ms
 - Configurable phrases and detection threshold via settings
 - Phrases hot-updated when settings change (no restart needed)
 
+### Kokoro-82M Offline TTS & Voice Personas
+
+- **6 Named Personas**: `JARVIS` (am_adam), `NOVA` (am_echo), `ATLAS` (am_eric), `ARIA` (af_heart), `LUNA` (af_jessica), `SARTHI` (hf_alpha).
+- **Layer 0 (Kokoro Offline)**: Fast, natural offline ONNX synthesis without cloud API latency or fees.
+- **Layer 1 (gTTS Fallback)**: Resilient fallback using Google TTS localized accents.
+- **Layer 2 (edge-tts Fallback)**: Fallback voice streaming.
+
 ### Anti-Echo Protection
 
 STT audio capture is suspended during TTS playback:
@@ -525,9 +537,11 @@ class DesktopSnapshot:
 | Linux Wayland | AT-SPI via `observer/screen.py` | `ydotool` |
 | Windows | `win32gui.GetForegroundWindow` | `pyautogui` |
 
-### Screenshot
+### Screenshot & Snapshot Caching
 
 Uses `mss` to capture the entire virtual desktop space (union of all displays via monitor 0) to support multi-monitor setups, ensuring complete screenshot context for OCR and vision models. To assist the AI's visual understanding, Sarthi programmatically draws a red target indicator showing the current/last mouse pointer coordinate. Under Wayland (where global mouse position querying is blocked by security boundaries), Sarthi retrieves the pointer position from the active window session context to maintain reliable cross-platform cursor visualization.
+
+**Snapshot Caching (`CACHE_TTL = 2.0s`)**: `ObserverPipeline` caches observation results for up to 2 seconds. When the agent loop replans or queries the screen in rapid succession without screen mutations, it reuses the cached snapshot and skips redundant OCR and screenshot disk operations, significantly accelerating step turnaround time.
 
 ---
 

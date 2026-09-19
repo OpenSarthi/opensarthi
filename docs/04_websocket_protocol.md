@@ -114,6 +114,7 @@ Update one or more settings. Empty string values for API keys are ignored (no ac
     "custom_openai_base_url": "http://127.0.0.1:8000/v1",
     "custom_openai_api_key": "",
     "custom_openai_provider_name": "OmniRoute",
+    "voice_persona": "JARVIS",
     "voice_accent": "af_heart",
     "voice_speed": 1.35,
     "continuous_listening": false,
@@ -210,6 +211,68 @@ Request the list of long-term memories / passive facts from the database.
   "type": "get_memories",
   "payload": {
     "thread_id": "8558d1f1-..."
+  }
+}
+```
+
+### `voice_preview`
+
+Request a live audio sample playback for a voice persona.
+
+```json
+{
+  "type": "voice_preview",
+  "payload": {
+    "persona": "JARVIS",
+    "sample_text": "Hello, I am JARVIS, your OpenSarthi assistant."
+  }
+}
+```
+
+### `integrations_status` (Request)
+
+Request status of all third-party integrations (Google Workspace & Social Channels).
+
+```json
+{
+  "type": "integrations_status"
+}
+```
+
+### `google_oauth_start`
+
+Initiate Google OAuth 2.0 flow for Calendar and Gmail read-only scopes.
+
+```json
+{
+  "type": "google_oauth_start"
+}
+```
+
+### `revoke_integration`
+
+Revoke stored authentication credentials for an integration.
+
+```json
+{
+  "type": "revoke_integration",
+  "payload": {
+    "integration": "google"
+  }
+}
+```
+
+### `update_social_credentials`
+
+Update API keys / tokens for social media and messaging channels.
+
+```json
+{
+  "type": "update_social_credentials",
+  "payload": {
+    "integration": "telegram",
+    "telegram_bot_token": "123456:ABC...",
+    "telegram_chat_id": "987654321"
   }
 }
 ```
