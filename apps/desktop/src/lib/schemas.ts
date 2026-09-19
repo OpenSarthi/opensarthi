@@ -59,6 +59,15 @@ export const WSMessageTypeSchema = z.enum([
   "screen_analysis",
   "content_update",
   "activity_log",
+  "voice_preview",
+  "integrations_status",
+  "integrations_status_response",
+  "google_oauth_start",
+  "google_oauth_url",
+  "revoke_integration",
+  "integration_revoked",
+  "update_social_credentials",
+  "social_credentials_updated",
 ]);
 export type WSMessageType = z.infer<typeof WSMessageTypeSchema>;
 

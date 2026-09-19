@@ -119,6 +119,7 @@ interface AssistantState {
   customOpenaiProviderName: string;
   activeTheme: string;
 
+  voicePersona: string;
   voiceAccent: string;
   voiceSpeed: number;
   continuousListening: boolean;
@@ -180,7 +181,8 @@ interface AssistantState {
   setCustomOpenaiProviderName: (name: string) => void;
   setAllApiKeys: (keys: { gemini: string; openai: string; anthropic: string; groq: string; openrouter: string; customOpenaiBaseUrl?: string; customOpenaiKey?: string; customOpenaiApiKey?: string; customOpenaiProviderName?: string }) => void;
   setActiveTheme: (theme: string) => void;
-  setVoiceSettings: (accent: string, speed: number, continuous: boolean) => void;
+  setVoicePersona: (persona: string) => void;
+  setVoiceSettings: (accent: string, speed: number, continuous: boolean, persona?: string) => void;
   setWakeWordSettings: (enabled: boolean, threshold: number, phrases: string[]) => void;
   updateTokenUsage: (usage: { request_tokens: number; response_tokens: number; total_tokens: number }, thread_id?: string) => void;
   resetSessionTokens: () => void;
@@ -289,7 +291,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   customOpenaiApiKey: "",
   customOpenaiProviderName: "",
   activeTheme: "theme-green-black",
-  voiceAccent: "ie",
+  voicePersona: "JARVIS",
+  voiceAccent: "com",
   voiceSpeed: 1.35,
   continuousListening: true,
   wakeWords: ["hey sarthi", "hello sarthi"],
@@ -666,7 +669,13 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   }),
   setCustomOpenaiProviderName: (customOpenaiProviderName) => set({ customOpenaiProviderName }),
   setActiveTheme: (activeTheme) => set({ activeTheme }),
-  setVoiceSettings: (voiceAccent, voiceSpeed, continuousListening) => set({ voiceAccent, voiceSpeed, continuousListening }),
+  setVoicePersona: (voicePersona) => set({ voicePersona }),
+  setVoiceSettings: (voiceAccent, voiceSpeed, continuousListening, voicePersona) => set((s) => ({
+    voiceAccent,
+    voiceSpeed,
+    continuousListening,
+    voicePersona: voicePersona || s.voicePersona || "JARVIS",
+  })),
   setWakeWordSettings: (wakeWordEnabled, wakeWordThreshold, wakeWords) => set({ wakeWordEnabled, wakeWordThreshold, wakeWords }),
 
   updateTokenUsage: (usage, thread_id) => set((s) => {

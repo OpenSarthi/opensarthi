@@ -324,8 +324,11 @@ export function useWebSocket(port: number | null) {
         if (p.custom_openai_provider_name !== undefined) {
           store.setCustomOpenaiProviderName(p.custom_openai_provider_name || "");
         }
+        if (p.voice_persona) {
+          store.setVoicePersona(p.voice_persona);
+        }
         if (p.voice_accent !== undefined && p.voice_speed !== undefined && p.continuous_listening !== undefined) {
-          store.setVoiceSettings(p.voice_accent, p.voice_speed, p.continuous_listening);
+          store.setVoiceSettings(p.voice_accent, p.voice_speed, p.continuous_listening, p.voice_persona);
         }
         if (p.wake_words !== undefined && p.wake_word_enabled !== undefined && p.wake_word_threshold !== undefined) {
           store.setWakeWordSettings(p.wake_word_enabled, p.wake_word_threshold, p.wake_words);
