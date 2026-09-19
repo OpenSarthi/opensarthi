@@ -79,6 +79,11 @@ class UpdateSettingsTool(BaseTool):
                 "type": "string",
                 "description": "OpenRouter API key (sensitive — will prompt for permission)",
             },
+            "voice_persona": {
+                "type": "string",
+                "description": "Voice persona (named character style)",
+                "enum": ["JARVIS", "NOVA", "ATLAS", "ARIA", "LUNA", "SARTHI"],
+            },
             "voice_accent": {
                 "type": "string",
                 "description": "TTS voice accent/language code",
@@ -218,6 +223,13 @@ class UpdateSettingsTool(BaseTool):
         _set_key("openrouter_api_key", "OPENROUTER_API_KEY")
 
         # Voice settings
+        if "voice_persona" in updates:
+            settings.voice_persona = str(updates["voice_persona"]).upper()
+            changed.append("voice_persona")
+            # Automatically update voice_accent to match persona fallback if needed
+            from voice.personas import get_persona
+            persona_obj = get_persona(settings.voice_persona)
+            settings.voice_accent = persona_obj.gtts_tld
         if "voice_accent" in updates:
             settings.voice_accent = str(updates["voice_accent"])
             changed.append("voice_accent")
@@ -270,15 +282,16 @@ class UpdateSettingsTool(BaseTool):
             settings.groq_api_key,
             settings.openrouter_api_key,
             settings.voice_accent,
-            settings.voice_speed,
-            settings.continuous_listening,
-            settings.active_theme,
-            settings.wake_words,
-            settings.wake_word_enabled,
-            settings.wake_word_threshold,
-            settings.user_name,
-            settings.user_skills,
-            settings.custom_prompt,
+            voice_persona=getattr(settings, "voice_persona", "JARVIS"),
+            voice_speed=settings.voice_speed,
+            continuous_listening=settings.continuous_listening,
+            active_theme=settings.active_theme,
+            wake_words=settings.wake_words,
+            wake_word_enabled=settings.wake_word_enabled,
+            wake_word_threshold=settings.wake_word_threshold,
+            user_name=settings.user_name,
+            user_skills=settings.user_skills,
+            custom_prompt=settings.custom_prompt,
             use_langgraph=settings.use_langgraph,
             use_supervisor=settings.use_supervisor,
         )
@@ -309,6 +322,7 @@ class UpdateSettingsTool(BaseTool):
                     "anthropic_api_key": settings.anthropic_api_key or "",
                     "groq_api_key": settings.groq_api_key or "",
                     "openrouter_api_key": settings.openrouter_api_key or "",
+                    "voice_persona": getattr(settings, "voice_persona", "JARVIS"),
                     "voice_accent": settings.voice_accent,
                     "voice_speed": settings.voice_speed,
                     "continuous_listening": settings.continuous_listening,

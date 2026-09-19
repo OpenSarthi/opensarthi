@@ -42,7 +42,8 @@ class Settings(BaseSettings):
     custom_openai_api_key: str | None = None
     custom_openai_provider_name: str | None = None
     
-    voice_accent: str = "ie"
+    voice_accent: str = "ie"  # Legacy gTTS fallback TLD — use voice_persona instead
+    voice_persona: str = "JARVIS"  # Active voice persona ID (JARVIS/NOVA/ATLAS/ARIA/LUNA/SARTHI)
     voice_speed: float = 1.35
     continuous_listening: bool = False
     active_theme: str = "theme-green-black"
@@ -74,6 +75,20 @@ class Settings(BaseSettings):
     sound_enabled: bool = True
     sound_volume: int = 60
 
+    # Social Media & Messaging credentials
+    twitter_api_key: str | None = None
+    twitter_api_secret: str | None = None
+    twitter_access_token: str | None = None
+    twitter_access_token_secret: str | None = None
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
+    discord_webhook_url: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    linkedin_access_token: str | None = None
+
     # Google OAuth (read-only)
     google_oauth_enabled: bool = False
     google_client_id: str | None = None
@@ -99,21 +114,22 @@ class Settings(BaseSettings):
 settings = Settings()
 
 def save_settings_to_env(
-    local_model: str,
-    cloud_model: str,
-    ai_provider: str,
-    gemini_api_key: str | None,
-    openai_api_key: str | None,
-    anthropic_api_key: str | None,
-    groq_api_key: str | None,
-    openrouter_api_key: str | None,
-    voice_accent: str,
-    voice_speed: float,
-    continuous_listening: bool,
-    active_theme: str,
-    wake_words: list[str],
-    wake_word_enabled: bool,
-    wake_word_threshold: float,
+    local_model: str = "llama3.2:3b",
+    cloud_model: str = "gemini-2.5-flash",
+    ai_provider: str = "gemini",
+    gemini_api_key: str | None = None,
+    openai_api_key: str | None = None,
+    anthropic_api_key: str | None = None,
+    groq_api_key: str | None = None,
+    openrouter_api_key: str | None = None,
+    voice_accent: str = "en",
+    voice_persona: str = "JARVIS",
+    voice_speed: float = 1.0,
+    continuous_listening: bool = False,
+    active_theme: str = "cyberpunk",
+    wake_words: list[str] = None,
+    wake_word_enabled: bool = False,
+    wake_word_threshold: float = 0.5,
     user_name: str = "",
     user_skills: list[str] = None,
     custom_prompt: str = "",
@@ -140,6 +156,19 @@ def save_settings_to_env(
     custom_openai_base_url: str | None = None,
     custom_openai_api_key: str | None = None,
     custom_openai_provider_name: str | None = None,
+    # Social credentials
+    twitter_api_key: str | None = None,
+    twitter_api_secret: str | None = None,
+    twitter_access_token: str | None = None,
+    twitter_access_token_secret: str | None = None,
+    telegram_bot_token: str | None = None,
+    telegram_chat_id: str | None = None,
+    discord_webhook_url: str | None = None,
+    smtp_host: str | None = None,
+    smtp_port: int = 587,
+    smtp_user: str | None = None,
+    smtp_password: str | None = None,
+    linkedin_access_token: str | None = None,
 ):
     import json
     # Always write to the writable user's home configuration directory (safe for read-only AppImage filesystems!)
@@ -158,6 +187,7 @@ def save_settings_to_env(
         if openrouter_api_key:
             f.write(f"OPENROUTER_API_KEY={openrouter_api_key}\n")
         f.write(f"VOICE_ACCENT={voice_accent}\n")
+        f.write(f"VOICE_PERSONA={voice_persona}\n")
         f.write(f"VOICE_SPEED={voice_speed}\n")
         f.write(f"CONTINUOUS_LISTENING={'True' if continuous_listening else 'False'}\n")
         f.write(f"ACTIVE_THEME={active_theme}\n")
@@ -193,6 +223,31 @@ def save_settings_to_env(
             f.write(f"CUSTOM_OPENAI_API_KEY={custom_openai_api_key}\n")
         if custom_openai_provider_name:
             f.write(f"CUSTOM_OPENAI_PROVIDER_NAME={custom_openai_provider_name}\n")
+        # Social media credentials
+        if twitter_api_key:
+            f.write(f"TWITTER_API_KEY={twitter_api_key}\n")
+        if twitter_api_secret:
+            f.write(f"TWITTER_API_SECRET={twitter_api_secret}\n")
+        if twitter_access_token:
+            f.write(f"TWITTER_ACCESS_TOKEN={twitter_access_token}\n")
+        if twitter_access_token_secret:
+            f.write(f"TWITTER_ACCESS_TOKEN_SECRET={twitter_access_token_secret}\n")
+        if telegram_bot_token:
+            f.write(f"TELEGRAM_BOT_TOKEN={telegram_bot_token}\n")
+        if telegram_chat_id:
+            f.write(f"TELEGRAM_CHAT_ID={telegram_chat_id}\n")
+        if discord_webhook_url:
+            f.write(f"DISCORD_WEBHOOK_URL={discord_webhook_url}\n")
+        if smtp_host:
+            f.write(f"SMTP_HOST={smtp_host}\n")
+        if smtp_port and smtp_port != 587:
+            f.write(f"SMTP_PORT={smtp_port}\n")
+        if smtp_user:
+            f.write(f"SMTP_USER={smtp_user}\n")
+        if smtp_password:
+            f.write(f"SMTP_PASSWORD={smtp_password}\n")
+        if linkedin_access_token:
+            f.write(f"LINKEDIN_ACCESS_TOKEN={linkedin_access_token}\n")
         if user_name:
             f.write(f"USER_NAME={user_name}\n")
         if user_skills:
