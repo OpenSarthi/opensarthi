@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop, Paperclip, Eye } from "lucide-react";
+import { Send, Settings, Activity, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Minimize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop, Paperclip, Eye, Link2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
@@ -31,7 +31,7 @@ const getBuildTarget = (): string => {
 };
 
 interface AssistantOverlayProps {
-  onOpenSettings: (mode?: "agent" | "interaction" | "all") => void;
+  onOpenSettings: (mode: "agent" | "interaction" | "integrations") => void;
   onOpenHistory: () => void;
   onOpenCustomizer: () => void;
   onOpenMcpSettings: () => void;
@@ -1338,7 +1338,18 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                     className="dropdown-item"
                   >
                     <Volume2 size={13} style={{ color: "var(--accent)" }} />
-                    <span>Interaction Settings</span>
+                    <span>Voice & Audio Settings</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      onOpenSettings("integrations");
+                      setShowSettingsDropdown(false);
+                    }}
+                    className="dropdown-item"
+                  >
+                    <Link2 size={13} style={{ color: "var(--accent)" }} />
+                    <span>Integrations & Sources</span>
                   </button>
 
                   <button

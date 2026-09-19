@@ -21,7 +21,7 @@ import { AnimatePresence } from "framer-motion";
 export default function App() {
   const [runtimePort, setRuntimePort] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsMode, setSettingsMode] = useState<"agent" | "interaction" | "all">("all");
+  const [settingsMode, setSettingsMode] = useState<"agent" | "interaction" | "integrations">("agent");
   const logQueue = useRef<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
@@ -44,6 +44,7 @@ export default function App() {
     customOpenaiBaseUrl,
     customOpenaiApiKey,
     customOpenaiProviderName,
+    voicePersona,
     voiceAccent,
     voiceSpeed,
     continuousListening,
@@ -201,6 +202,7 @@ export default function App() {
     customOpenaiBaseUrl: string;
     customOpenaiApiKey: string;
     customOpenaiProviderName: string;
+    voicePersona: string;
     voiceAccent: string;
     voiceSpeed: number;
     continuousListening: boolean;
@@ -228,7 +230,7 @@ export default function App() {
       customOpenaiProviderName: settings.customOpenaiProviderName,
     });
     setCustomOpenaiProviderName(settings.customOpenaiProviderName);
-    setVoiceSettings(settings.voiceAccent, settings.voiceSpeed, settings.continuousListening);
+    setVoiceSettings(settings.voiceAccent, settings.voiceSpeed, settings.continuousListening, settings.voicePersona);
     setWakeWordSettings(settings.wakeWordEnabled, settings.wakeWordThreshold, settings.wakeWords);
     setActiveTheme(settings.theme);
     setSoundSettings(settings.soundEnabled, settings.soundVolume);
@@ -249,6 +251,7 @@ export default function App() {
       custom_openai_base_url: settings.customOpenaiBaseUrl || "",
       custom_openai_api_key: settings.customOpenaiApiKey || "",
       custom_openai_provider_name: settings.customOpenaiProviderName || "",
+      voice_persona: settings.voicePersona,
       voice_accent: settings.voiceAccent,
       voice_speed: settings.voiceSpeed,
       continuous_listening: settings.continuousListening,
@@ -391,7 +394,7 @@ export default function App() {
         }}
       >
         <AssistantOverlay
-          onOpenSettings={(mode = "all") => { setSettingsMode(mode); setShowSettings(true); }}
+          onOpenSettings={(mode = "agent") => { setSettingsMode(mode); setShowSettings(true); }}
           onOpenHistory={() => setShowHistory(true)}
           onOpenCustomizer={() => setShowCustomizer(true)}
           onOpenMcpSettings={() => setShowMcpSettings(true)}
@@ -422,6 +425,7 @@ export default function App() {
             currentCustomOpenaiBaseUrl={customOpenaiBaseUrl}
             currentCustomOpenaiApiKey={customOpenaiApiKey}
             currentCustomOpenaiProviderName={customOpenaiProviderName}
+            currentVoicePersona={voicePersona}
             currentVoiceAccent={voiceAccent}
             currentVoiceSpeed={voiceSpeed}
             currentContinuousListening={continuousListening}

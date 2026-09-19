@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { X, Save, Volume2, Bell, Cpu, ChevronRight, CheckCircle2, RefreshCw, Globe, Tag } from "lucide-react";
+import { X, Save, Volume2, Bell, Cpu, ChevronRight, CheckCircle2, RefreshCw, Globe, Tag, Play } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { playCue } from "../../hooks/useAudioCues";
 import { useAssistantStore } from "../../stores/assistantStore";
+import { IntegrationsPanel } from "./IntegrationsPanel";
+import { wsClient } from "../../lib/ws";
 import {
   PROVIDER_MODELS,
   PROVIDER_LABELS,
@@ -12,8 +14,28 @@ import {
   type FetchedModel,
 } from "../../lib/models";
 
+export interface PersonaOption {
+  id: string;
+  name: string;
+  gender: "male" | "female";
+  style: string;
+  language: "en" | "hi";
+  accentFallback: string;
+  avatar: string;
+  tag: string;
+}
+
+export const VOICE_PERSONAS: PersonaOption[] = [
+  { id: "JARVIS", name: "JARVIS", gender: "male", style: "Deep, authoritative & precise", language: "en", accentFallback: "com", avatar: "🤖", tag: "English (US)" },
+  { id: "NOVA", name: "NOVA", gender: "male", style: "Calm, warm & reassuring", language: "en", accentFallback: "ca", avatar: "✨", tag: "English (CA)" },
+  { id: "ATLAS", name: "ATLAS", gender: "male", style: "Fast, energetic & crisp", language: "en", accentFallback: "co.uk", avatar: "⚡", tag: "English (UK)" },
+  { id: "ARIA", name: "ARIA", gender: "female", style: "Friendly, natural & clear", language: "en", accentFallback: "ie", avatar: "🌸", tag: "English (IE)" },
+  { id: "LUNA", name: "LUNA", gender: "female", style: "Soft, soothing & elegant", language: "en", accentFallback: "com.au", avatar: "🌙", tag: "English (AU)" },
+  { id: "SARTHI", name: "SARTHI", gender: "female", style: "Hindi-first, warm & expressive", language: "hi", accentFallback: "co.in", avatar: "🇮🇳", tag: "Hindi (IN)" },
+];
+
 interface SettingsViewProps {
-  viewMode?: "agent" | "interaction" | "all";
+  viewMode?: "agent" | "interaction" | "integrations";
   onClose: () => void;
   currentLocalModel: string;
   currentCloudModel: string;
@@ -26,6 +48,7 @@ interface SettingsViewProps {
   currentCustomOpenaiBaseUrl?: string;
   currentCustomOpenaiApiKey?: string;
   currentCustomOpenaiProviderName?: string;
+  currentVoicePersona?: string;
   currentVoiceAccent: string;
   currentVoiceSpeed: number;
   currentContinuousListening: boolean;
@@ -52,6 +75,7 @@ interface SettingsViewProps {
     customOpenaiBaseUrl: string;
     customOpenaiApiKey: string;
     customOpenaiProviderName: string;
+    voicePersona: string;
     voiceAccent: string;
     voiceSpeed: number;
     continuousListening: boolean;
@@ -170,7 +194,7 @@ function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }
 }
 
 export function SettingsView({
-  viewMode = "all",
+  viewMode = "agent",
   onClose,
   currentLocalModel,
   currentCloudModel,
@@ -183,6 +207,7 @@ export function SettingsView({
   currentCustomOpenaiBaseUrl = "",
   currentCustomOpenaiApiKey = "",
   currentCustomOpenaiProviderName = "",
+  currentVoicePersona = "JARVIS",
   currentVoiceAccent,
   currentVoiceSpeed,
   currentContinuousListening,
@@ -222,6 +247,7 @@ export function SettingsView({
   const [dynamicModels, setDynamicModels] = useState<FetchedModel[]>([]);
   const [modelFetchState, setModelFetchState] = useState<"idle" | "loading" | "live" | "offline" | "error">("idle");
 
+  const [voicePersona, setVoicePersona] = useState(currentVoicePersona || "JARVIS");
   const [voiceAccent, setVoiceAccent] = useState(currentVoiceAccent);
   const [voiceSpeed, setVoiceSpeed] = useState(currentVoiceSpeed);
   const [continuousListening, setContinuousListening] = useState(currentContinuousListening !== undefined ? currentContinuousListening : true);
@@ -235,6 +261,13 @@ export function SettingsView({
   const [useSupervisor, setUseSupervisor] = useState(currentUseSupervisor !== undefined ? currentUseSupervisor : false);
   const [useNativeVoice, setUseNativeVoice] = useState(currentUseNativeVoice !== undefined ? currentUseNativeVoice : false);
   const [saved, setSaved] = useState(false);
+  const [previewPersonaId, setPreviewPersonaId] = useState<string | null>(null);
+
+  const handlePreviewVoice = (personaId: string) => {
+    setPreviewPersonaId(personaId);
+    wsClient.send("voice_preview", { persona: personaId });
+    setTimeout(() => setPreviewPersonaId(null), 3500);
+  };
 
   const providerInfo = PROVIDER_LABELS[provider] || PROVIDER_LABELS.google;
   const isLocal = provider === "ollama";
@@ -499,6 +532,7 @@ export function SettingsView({
       useSupervisor,
       useNativeVoice: provider === "google" ? useNativeVoice : false,
       // Keep other settings unchanged (use original values from props)
+      voicePersona: currentVoicePersona || "JARVIS",
       voiceAccent: currentVoiceAccent,
       voiceSpeed: currentVoiceSpeed,
       continuousListening: currentContinuousListening,
@@ -517,34 +551,34 @@ export function SettingsView({
     }, 800);
   };
 
-  const handleSaveAll = () => {
+  const handleSaveVoice = () => {
     const parsedWakeWords = wakeWordsInput
       .split(",")
       .map((w) => w.trim())
       .filter(Boolean);
 
-    const currentKey = getCurrentKeyInput();
     onSave({
-      localModel,
-      cloudModel,
-      provider,
-      geminiKey:     provider === "google"      ? (currentKey || currentGeminiKey)      : currentGeminiKey,
-      openaiKey:     provider === "openai"      ? (currentKey || currentOpenaiKey)      : currentOpenaiKey,
-      anthropicKey:  provider === "anthropic"   ? (currentKey || currentAnthropicKey)  : currentAnthropicKey,
-      groqKey:       provider === "groq"        ? (currentKey || currentGroqKey)        : currentGroqKey,
-      openrouterKey: provider === "openrouter"  ? (currentKey || currentOpenrouterKey) : currentOpenrouterKey,
-      customOpenaiBaseUrl: provider === "custom_openai" ? (customOpenaiBaseUrl || currentCustomOpenaiBaseUrl) : currentCustomOpenaiBaseUrl,
-      customOpenaiApiKey:  provider === "custom_openai" ? (currentKey || currentCustomOpenaiApiKey || "") : currentCustomOpenaiApiKey,
-      customOpenaiProviderName: provider === "custom_openai" ? (customOpenaiProviderName || currentCustomOpenaiProviderName || "") : currentCustomOpenaiProviderName,
-      longTermMemoryEnabled,
-      useLanggraph,
-      useSupervisor,
-      useNativeVoice: provider === "google" ? useNativeVoice : false,
-      // Save all modified state values
+      localModel: currentLocalModel,
+      cloudModel: currentCloudModel,
+      provider: currentProvider,
+      geminiKey: currentGeminiKey,
+      openaiKey: currentOpenaiKey,
+      anthropicKey: currentAnthropicKey,
+      groqKey: currentGroqKey,
+      openrouterKey: currentOpenrouterKey,
+      customOpenaiBaseUrl: currentCustomOpenaiBaseUrl,
+      customOpenaiApiKey: currentCustomOpenaiApiKey,
+      customOpenaiProviderName: currentCustomOpenaiProviderName,
+      longTermMemoryEnabled: currentLongTermMemoryEnabled,
+      useLanggraph: currentUseLanggraph,
+      useSupervisor: currentUseSupervisor,
+      useNativeVoice: currentUseNativeVoice,
+      // Voice & Audio settings
+      voicePersona,
       voiceAccent,
       voiceSpeed,
       continuousListening,
-      theme: useAssistantStore.getState().activeTheme,
+      theme: currentTheme,
       wakeWords: parsedWakeWords,
       wakeWordEnabled,
       wakeWordThreshold,
@@ -582,9 +616,9 @@ export function SettingsView({
         initial={{ x: 250, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 250, opacity: 0 }}
-        transition={{ type: "spring", damping: 26, stiffness: 280 }}
+        transition={{ type: "spring", damping: 25, stiffness: 200 }}
         style={{
-          width: viewMode === "agent" || viewMode === "interaction" ? "440px" : "680px",
+          width: "680px",
           maxHeight: "calc(100vh - 66px)",
           display: "flex",
           flexDirection: "column",
@@ -596,30 +630,33 @@ export function SettingsView({
         }}
       >
         {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px 14px", borderBottom: "1px solid var(--border)" }}>
           <h2 style={{ fontSize: "14px", color: "var(--accent)", letterSpacing: "0.1em", fontWeight: "bold", margin: 0 }}>
             {viewMode === "agent"
-              ? "// AGENT CONFIGURATION"
+              ? "// AGENT SETTINGS — AI & MODEL CONFIGURATION"
               : viewMode === "interaction"
-              ? "// VOICE & AUDIO CONFIGURATION"
-              : "// SYSTEM CONFIGURATION"}
+              ? "// VOICE & AUDIO SETTINGS — INTERACTION CONFIGURATION"
+              : "// INTEGRATIONS & SOURCES — CONNECT SERVICES"}
           </h2>
           <button onClick={onClose} style={{ color: "var(--text-secondary)", cursor: "pointer", background: "none", border: "none", display: "flex", alignItems: "center" }}>
             <X size={18} />
           </button>
         </div>
 
-        {/* Scrollable content in Columns */}
-        <div style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: "20px 24px 48px", display: "grid", gridTemplateColumns: viewMode === "agent" || viewMode === "interaction" ? "1fr" : "1fr 1fr", gap: "28px" }}>
+        {/* Scrollable content */}
+        <div style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: "20px 24px 48px" }}>
           
-          {/* Column 1: AI Provider & Model Config */}
-          {(viewMode === "agent" || viewMode === "all") && (
+          {/* Integrations Panel */}
+          {viewMode === "integrations" && (
+            <IntegrationsPanel runtimePort={runtimePort} />
+          )}
+
+          {/* AI Provider & Model Config */}
+          {viewMode === "agent" && (
             <div style={{
               display: "flex",
               flexDirection: "column",
               gap: "20px",
-              borderRight: viewMode === "all" ? "1px solid rgba(255,255,255,0.06)" : "none",
-              paddingRight: viewMode === "all" ? "24px" : "0"
             }}>
             <div style={sectionStyle}>
               <SectionHeader icon={<Cpu size={12} color="var(--accent)" />} title="[ AI PROVIDER & MODEL ]" />
@@ -980,68 +1017,101 @@ export function SettingsView({
                   />
                 </div>
               )}
-
-              {/* Save AI Settings */}
-              {viewMode === "all" && (
-                <button
-                  onClick={handleSaveAI}
-                  style={{
-                    background: saved ? "var(--success)" : "var(--accent)",
-                    color: "#000",
-                    border: "none",
-                    padding: "9px 16px",
-                    fontWeight: "bold",
-                    fontSize: "12px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
-                    cursor: "pointer",
-                    borderRadius: "4px",
-                    letterSpacing: "0.05em",
-                    transition: "background 0.3s",
-                    alignSelf: "flex-start",
-                    marginTop: "8px"
-                  }}
-                >
-                  {saved ? <><CheckCircle2 size={14} /> SAVED!</> : <><Save size={14} /> SAVE AI SETTINGS</>}
-                </button>
-              )}
             </div>
             </div>
           )}
 
-          {/* Column 2: Theme & Interaction settings */}
-          {(viewMode === "interaction" || viewMode === "all") && (
+          {/* Voice & Interaction settings */}
+          {viewMode === "interaction" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
               {/* ── VOICE SECTION ── */}
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                <SectionHeader icon={<Volume2 size={12} color="var(--accent)" />} title="[ VOICE & INTERACTION ]" />
+                <SectionHeader icon={<Volume2 size={12} color="var(--accent)" />} title="[ VOICE PERSONAS & INTERACTION ]" />
 
-                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                  <label style={labelStyle}>VOICE CHARACTER / ACCENT</label>
-                  <select value={voiceAccent} onChange={(e) => setVoiceAccent(e.target.value)} style={selectStyle}>
-                    <optgroup label="English Accents">
-                      <option value="ie">🍀 F.R.I.D.A.Y. Accent (Irish Female)</option>
-                      <option value="com">🇺🇸 Google Accent (US Female)</option>
-                      <option value="co.uk">🇬🇧 British Accent (UK Female)</option>
-                      <option value="co.in">🇮🇳 Indian Accent (IN Female)</option>
-                      <option value="com.au">🇦🇺 Australian Accent (AU Female)</option>
-                      <option value="ca">🇨🇦 Canadian Accent (CA Female)</option>
-                    </optgroup>
-                    <optgroup label="International Languages">
-                      <option value="fr">🇫🇷 French / Français</option>
-                      <option value="es">🇪🇸 Spanish / Español</option>
-                      <option value="de">🇩🇪 German / Deutsch</option>
-                      <option value="hi">🇮🇳 Hindi / हिन्दी</option>
-                      <option value="ja">🇯🇵 Japanese / 日本語</option>
-                      <option value="pt">🇧🇷 Portuguese / Português</option>
-                    </optgroup>
-                  </select>
+                {/* Voice Persona Picker Cards */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <label style={labelStyle}>SELECT VOICE PERSONA (3 MALE / 3 FEMALE • ENGLISH & HINDI)</label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                    {VOICE_PERSONAS.map((p) => {
+                      const isSelected = (voicePersona || "JARVIS").toUpperCase() === p.id;
+                      const isPlaying = previewPersonaId === p.id;
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setVoicePersona(p.id);
+                            setVoiceAccent(p.accentFallback);
+                          }}
+                          style={{
+                            padding: "10px",
+                            background: isSelected ? "var(--accent-glow)" : "rgba(0,0,0,0.35)",
+                            border: `1px solid ${isSelected ? "var(--border-accent)" : "var(--border)"}`,
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "4px",
+                            transition: "all 0.15s",
+                            position: "relative",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontSize: "12px", fontWeight: "bold", color: isSelected ? "var(--accent)" : "var(--text-primary)", display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span>{p.avatar}</span>
+                              <span>{p.name}</span>
+                            </span>
+                            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                              <span style={{
+                                fontSize: "9px",
+                                fontFamily: "var(--font-mono)",
+                                padding: "1px 5px",
+                                borderRadius: "3px",
+                                background: p.gender === "male" ? "rgba(59,130,246,0.15)" : "rgba(236,72,153,0.15)",
+                                color: p.gender === "male" ? "#60a5fa" : "#f472b6",
+                                border: `1px solid ${p.gender === "male" ? "rgba(59,130,246,0.3)" : "rgba(236,72,153,0.3)"}`,
+                              }}>
+                                {p.gender === "male" ? "♂ MALE" : "♀ FEMALE"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handlePreviewVoice(p.id);
+                                }}
+                                title={`Preview ${p.name} voice`}
+                                style={{
+                                  background: isPlaying ? "var(--accent)" : "rgba(255,255,255,0.08)",
+                                  border: `1px solid ${isPlaying ? "var(--accent)" : "var(--border)"}`,
+                                  borderRadius: "4px",
+                                  padding: "2px 5px",
+                                  cursor: "pointer",
+                                  color: isPlaying ? "#000" : "var(--text-secondary)",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "3px",
+                                  fontSize: "8px",
+                                  fontFamily: "var(--font-mono)",
+                                }}
+                              >
+                                {isPlaying ? <Volume2 size={9} /> : <Play size={8} />}
+                                <span>{isPlaying ? "PLAY" : "PREV"}</span>
+                              </button>
+                            </div>
+                          </div>
+                          <span style={{ fontSize: "10px", color: "var(--text-muted)", lineHeight: 1.3 }}>
+                            {p.style}
+                          </span>
+                          <span style={{ fontSize: "9px", color: "var(--accent)", opacity: 0.8, fontFamily: "var(--font-mono)" }}>
+                            {p.tag}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "5px", marginTop: "4px" }}>
                   <label style={labelStyle}>PLAYBACK SPEECH SPEED ({voiceSpeed.toFixed(2)}x)</label>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                     <input
@@ -1158,10 +1228,10 @@ export function SettingsView({
 
         </div>
 
-        {/* Footer — Save theme+voice */}
+        {/* Footer — Save settings */}
         <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", background: "rgba(0,0,0,0.3)" }}>
           <button
-            onClick={handleSaveAll}
+            onClick={viewMode === "agent" ? handleSaveAI : viewMode === "interaction" ? handleSaveVoice : onClose}
             style={{
               background: saved ? "var(--success)" : "var(--accent)",
               color: "#000",
@@ -1185,12 +1255,12 @@ export function SettingsView({
               <><CheckCircle2 size={16} /> SETTINGS SAVED!</>
             ) : (
               <>
-                <Save size={16} />{" "}
+                {viewMode !== "integrations" && <Save size={16} />}
                 {viewMode === "agent"
-                  ? "SAVE AGENT CONFIGURATION"
+                  ? "SAVE AI CONFIGURATION"
                   : viewMode === "interaction"
-                  ? "SAVE INTERACTION CONFIGURATION"
-                  : "SAVE ALL SETTINGS"}
+                  ? "SAVE VOICE CONFIGURATION"
+                  : "CLOSE INTEGRATIONS"}
               </>
             )}
           </button>
