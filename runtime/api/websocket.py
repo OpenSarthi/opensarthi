@@ -1113,6 +1113,7 @@ class Session:
             if new_prov_name is not None:
                 settings.custom_openai_provider_name = new_prov_name.strip() or None
 
+            settings.voice_persona = payload.get("voice_persona", getattr(settings, "voice_persona", "JARVIS"))
             settings.voice_accent = payload.get("voice_accent", settings.voice_accent)
             settings.voice_speed = float(payload.get("voice_speed", settings.voice_speed))
             settings.continuous_listening = bool(payload.get("continuous_listening", settings.continuous_listening))
@@ -1168,35 +1169,36 @@ class Session:
                 settings.groq_api_key,
                 settings.openrouter_api_key,
                 settings.voice_accent,
-                settings.voice_speed,
-                settings.continuous_listening,
-                settings.active_theme,
-                settings.wake_words,
-                settings.wake_word_enabled,
-                settings.wake_word_threshold,
-                settings.user_name,
-                settings.user_skills,
-                settings.custom_prompt,
-                settings.long_term_memory_enabled,
-                settings.remote_dashboard_enabled,
-                settings.native_audio_pipeline,
-                settings.session_memory_enabled,
-                settings.session_memory_turns,
-                settings.session_memory_model,
-                settings.sound_enabled,
-                settings.sound_volume,
-                settings.google_oauth_enabled,
-                settings.google_client_id,
-                settings.google_client_secret,
-                settings.parallel_search_enabled,
-                settings.search_engines,
-                settings.background_monitoring_enabled,
-                settings.monitoring_interval_minutes,
-                settings.proactive_enabled,
-                settings.proactive_cooldown_minutes,
-                settings.use_langgraph,
-                settings.use_supervisor,
-                settings.use_native_voice,
+                voice_persona=getattr(settings, "voice_persona", "JARVIS"),
+                voice_speed=settings.voice_speed,
+                continuous_listening=settings.continuous_listening,
+                active_theme=settings.active_theme,
+                wake_words=settings.wake_words,
+                wake_word_enabled=settings.wake_word_enabled,
+                wake_word_threshold=settings.wake_word_threshold,
+                user_name=settings.user_name,
+                user_skills=settings.user_skills,
+                custom_prompt=settings.custom_prompt,
+                long_term_memory_enabled=settings.long_term_memory_enabled,
+                remote_dashboard_enabled=settings.remote_dashboard_enabled,
+                native_audio_pipeline=settings.native_audio_pipeline,
+                session_memory_enabled=settings.session_memory_enabled,
+                session_memory_turns=settings.session_memory_turns,
+                session_memory_model=settings.session_memory_model,
+                sound_enabled=settings.sound_enabled,
+                sound_volume=settings.sound_volume,
+                google_oauth_enabled=settings.google_oauth_enabled,
+                google_client_id=settings.google_client_id,
+                google_client_secret=settings.google_client_secret,
+                parallel_search_enabled=settings.parallel_search_enabled,
+                search_engines=settings.search_engines,
+                background_monitoring_enabled=settings.background_monitoring_enabled,
+                monitoring_interval_minutes=settings.monitoring_interval_minutes,
+                proactive_enabled=settings.proactive_enabled,
+                proactive_cooldown_minutes=settings.proactive_cooldown_minutes,
+                use_langgraph=settings.use_langgraph,
+                use_supervisor=settings.use_supervisor,
+                use_native_voice=settings.use_native_voice,
                 custom_openai_base_url=settings.custom_openai_base_url,
                 custom_openai_api_key=settings.custom_openai_api_key,
                 custom_openai_provider_name=settings.custom_openai_provider_name,
@@ -1235,6 +1237,7 @@ class Session:
                 "custom_openai_base_url": settings.custom_openai_base_url or "",
                 "custom_openai_api_key": settings.custom_openai_api_key or "",
                 "custom_openai_provider_name": settings.custom_openai_provider_name or "",
+                "voice_persona": getattr(settings, "voice_persona", "JARVIS"),
                 "voice_accent": settings.voice_accent,
                 "voice_speed": settings.voice_speed,
                 "continuous_listening": settings.continuous_listening,
@@ -1251,9 +1254,111 @@ class Session:
                 "use_native_voice": settings.use_native_voice,
             })
 
-
             asyncio.create_task(self.sync_voice_pipeline())
             await self.maybe_trigger_briefing(self.thread_id, True)
+
+        elif msg_type == "voice_preview":
+            persona_id = payload.get("persona", "JARVIS")
+            sample_text = payload.get("text")
+            if not sample_text:
+                if str(persona_id).upper() == "SARTHI":
+                    sample_text = "नमस्ते! मैं सारथी हूँ। मैं आपकी क्या मदद कर सकता हूँ?"
+                else:
+                    from voice.personas import get_persona
+                    p = get_persona(persona_id)
+                    sample_text = f"Hello! I am {p.display_name}. System initialized and ready."
+            if hasattr(self, "voice_pipeline") and self.voice_pipeline:
+                asyncio.create_task(self.voice_pipeline.speak(sample_text, persona_id=persona_id))
+
+        elif msg_type == "integrations_status":
+            from config import settings
+            from tools.google_tools import load_tokens
+            tokens = load_tokens()
+            has_google = bool(tokens.get("access_token") or tokens.get("refresh_token"))
+            has_twitter = bool(getattr(settings, "twitter_api_key", None))
+            has_telegram = bool(getattr(settings, "telegram_bot_token", None))
+            has_discord = bool(getattr(settings, "discord_webhook_url", None))
+            has_smtp = bool(getattr(settings, "smtp_host", None))
+            has_linkedin = bool(getattr(settings, "linkedin_access_token", None))
+            await self.send_message("integrations_status_response", {
+                "google": has_google,
+                "twitter": has_twitter,
+                "telegram": has_telegram,
+                "discord": has_discord,
+                "smtp": has_smtp,
+                "linkedin": has_linkedin,
+                "google_client_id": getattr(settings, "google_client_id", "") or "",
+                "twitter_api_key": getattr(settings, "twitter_api_key", "") or "",
+                "telegram_bot_token": getattr(settings, "telegram_bot_token", "") or "",
+                "telegram_chat_id": getattr(settings, "telegram_chat_id", "") or "",
+                "discord_webhook_url": getattr(settings, "discord_webhook_url", "") or "",
+                "smtp_host": getattr(settings, "smtp_host", "") or "",
+                "smtp_port": getattr(settings, "smtp_port", 587),
+                "smtp_user": getattr(settings, "smtp_user", "") or "",
+                "linkedin_access_token": getattr(settings, "linkedin_access_token", "") or "",
+            })
+
+        elif msg_type == "google_oauth_start":
+            import webbrowser
+            from tools.google_tools import get_auth_url
+            auth_url = get_auth_url()
+            try:
+                webbrowser.open(auth_url)
+            except Exception:
+                pass
+            await self.send_message("google_oauth_url", {"auth_url": auth_url})
+
+        elif msg_type == "revoke_integration":
+            service = payload.get("service")
+            from config import settings
+            import os
+            if service == "google":
+                from tools.google_tools import TOKEN_FILE, save_tokens
+                save_tokens({})
+                if TOKEN_FILE.exists():
+                    try:
+                        TOKEN_FILE.unlink()
+                    except Exception:
+                        pass
+            elif service == "twitter":
+                settings.twitter_api_key = None
+                settings.twitter_api_secret = None
+                settings.twitter_access_token = None
+                settings.twitter_access_token_secret = None
+                for k in ["TWITTER_API_KEY", "TWITTER_API_SECRET", "TWITTER_ACCESS_TOKEN", "TWITTER_ACCESS_TOKEN_SECRET"]:
+                    os.environ.pop(k, None)
+            elif service == "telegram":
+                settings.telegram_bot_token = None
+                settings.telegram_chat_id = None
+                for k in ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]:
+                    os.environ.pop(k, None)
+            elif service == "discord":
+                settings.discord_webhook_url = None
+                os.environ.pop("DISCORD_WEBHOOK_URL", None)
+            elif service == "smtp":
+                settings.smtp_host = None
+                settings.smtp_user = None
+                settings.smtp_password = None
+                for k in ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"]:
+                    os.environ.pop(k, None)
+            elif service == "linkedin":
+                settings.linkedin_access_token = None
+                os.environ.pop("LINKEDIN_ACCESS_TOKEN", None)
+
+            await self.send_message("integration_revoked", {"service": service, "status": "revoked"})
+
+        elif msg_type == "update_social_credentials":
+            from config import settings
+            import os
+            for k, v in payload.items():
+                if hasattr(settings, k) and v is not None:
+                    cleaned_v = str(v).strip() if str(v).strip() else None
+                    setattr(settings, k, cleaned_v)
+                    if cleaned_v:
+                        os.environ[k.upper()] = cleaned_v
+                    else:
+                        os.environ.pop(k.upper(), None)
+            await self.send_message("social_credentials_updated", {"status": "saved"})
 
     def start_listen_loop(self):
         if getattr(self, "_listen_task", None) is None or self._listen_task.done():
@@ -1358,6 +1463,7 @@ class ConnectionManager:
             "custom_openai_base_url": getattr(settings, "custom_openai_base_url", None) or "",
             "custom_openai_api_key": getattr(settings, "custom_openai_api_key", None) or "",
             "custom_openai_provider_name": getattr(settings, "custom_openai_provider_name", None) or "",
+            "voice_persona": getattr(settings, "voice_persona", "JARVIS"),
             "voice_accent": settings.voice_accent,
             "voice_speed": settings.voice_speed,
             "continuous_listening": settings.continuous_listening,
