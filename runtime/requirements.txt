@@ -13,6 +13,8 @@ SpeechRecognition>=3.10
 pyaudio>=0.2
 faster-whisper>=1.1
 openwakeword
+edge-tts>=6.1.19
+gtts
 mss>=9.0
 PyGObject>=3.50; sys_platform == 'linux'
 pyautogui>=0.9; sys_platform == 'win32'
@@ -20,7 +22,6 @@ pytesseract>=0.3
 aiosqlite>=0.20
 structlog>=24.4
 psutil>=6.0
-gtts
 # LangGraph orchestration layer (USE_LANGGRAPH=true to activate)
 langgraph>=0.4
 langchain-core>=0.3
@@ -31,3 +32,4 @@ cryptography>=50.0
 pillow>=12.3
 # Browser automation (browser_* tools) — async Playwright + Chromium download
 playwright>=1.40
+
