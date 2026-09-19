@@ -37,7 +37,8 @@ App.tsx  (Root — owns modal state + tab management)
 │   └── OverlayIdleView      (compact strip shown when window is in overlay mode)
 ├── PermissionDialog         (tool permission approval popup)
 ├── InputDialog              (agent user-input request popup)
-├── SettingsView             (tabbed settings: AI · Voice · UI · Memory)
+├── SettingsView             (tabbed settings: AI · Voice & Personas · Integrations Hub · Personalization · Memory)
+│   └── IntegrationsPanel    (Google OAuth + Twitter/Telegram/Discord/SMTP/LinkedIn credentials & live status)
 └── HistoryView              (past threads list with token restore)
 ```
 
@@ -200,49 +201,41 @@ Settings are organized in four tabs:
 | Custom OpenAI | OmniRoute, vLLM, LM Studio, or self-hosted endpoint models | `{base_url}/models` |
 | Local LLM (Ollama) | Local pulled models (`llama3.2`, `deepseek-r1`, `qwen2.5-coder`) | `{base_url}/api/tags` |
 
-### Voice & Wake Word Tab
+### Dedicated Settings Views
 
-- **Voice Accent** — TTS accent selection
-- **Voice Speed** — multiplier slider
-- **Continuous Listening** toggle
-- **Wake Word Enabled** toggle
-- **Wake Word Threshold** — sensitivity slider
-- **Custom Wake Phrases** — comma-separated list
+OpenSarthi features 3 completely separate, focused settings modals accessible directly from the header Cog dropdown menu:
 
-### UI & Sounds Tab
+1. **Agent Settings (`SettingsView.tsx` with mode `agent`)**:
+   - **AI Provider & Model Selection**: Google Gemini, OpenAI, Anthropic, Groq, OpenRouter, Custom OpenAI, Ollama.
+   - **Credentials & Validation**: API key fields with live "Test Key" validation and "Fetch Live" model discovery.
+   - **Agent Execution**: LangGraph StateGraph, Multi-Agent Supervisor routing, Gemini Native Voice toggles.
 
-- **Sound Effects** toggle + volume slider
-- *(Note: Theme Selection, Custom Color Picker, Mobile Remote Control, and Desktop Shortcut options are located directly in the header Settings Cog Dropdown Menu)*
+2. **Voice & Audio Settings (`SettingsView.tsx` with mode `interaction`)**:
+   - **6 Voice Personas**: 3 Male (`JARVIS`, `NOVA`, `ATLAS`) & 3 Female (`ARIA`, `LUNA`, `SARTHI`) with live instant previews.
+   - **Voice Customization**: Speech speed slider, accent selection, continuous listening toggle.
+   - **Wake Word & Audio**: Custom wake phrases (`openwakeword`), detection sensitivity threshold, audio cues toggle and volume.
 
-### Memory Tab
-
-- **Long-Term Memory** toggle — enables/disables semantic vector memory
-  - When disabled: `SentenceTransformer` model never loads → faster startup & lower RAM
-  - Toggle state sent to backend via `update_settings`
+3. **Integrations & Sources (`SettingsView.tsx` with mode `integrations` / `IntegrationsPanel.tsx`)**:
+   - **Google Workspace**: Google Calendar and Gmail (OAuth 2.0 read-only). Clicking **"Authorize with Google"** automatically launches the consent screen in the user's default external browser via `@tauri-apps/plugin-shell`, receives the callback on `/oauth2callback`, and automatically connects.
+   - **Social Media & Messaging**: Twitter/X, Telegram Bot, Discord Webhook, SMTP Email, LinkedIn personal access tokens.
 
 ### Settings Cog Dropdown Menu Options
 
 The Header Settings Cog Dropdown Menu houses direct UI customization and integration access:
-- **Agent, Interaction, MCP Settings, and Customizations**: Access to their respective settings dialog modals.
-- **Remote Control Option**: Opens the **Remote Access Modal** displaying connection status, active client device list, PIN code, and QR pairing code. Automatically boots up the backend remote pairing server on port `8765` when opened.
-- **Create Shortcut Option**: Creates a system desktop shortcut icon on click via a direct Tauri command.
-- **Themes Sub-menu**: Allows selecting preset UI matrix themes, and includes a **Custom Color Override** conic circle color picker. Hovering/dragging on the custom color wheel dynamically previews and animates the UI accent color in real-time, with Save/Discard controls.
-- **Custom OpenAI Endpoint (OmniRoute, vLLM, llama-server, LiteLLM)**: Full support for any OpenAI-compatible inference server with customizable Base URL and API key. Explicitly sets `stream=False` in request settings to ensure non-streaming compatibility with gateways that stream by default (such as OmniRoute).
-- **Credentials & Endpoint First Layout**: Endpoint URL and API Key inputs are positioned above Model Selection, enabling users to enter credentials, click "Test Key" (or "Fetch Live"), and select from the discovered model catalog below or specify custom model IDs.
-- **Test Key & Live Model Discovery**: Dedicated "Test Key" button validates credentials via the `/validate_key` proxy endpoint and auto-populates the dynamic model selector with live models from Google, Anthropic, OpenAI, Groq, OpenRouter, or Custom endpoints.
-
-### Dynamic Audio Waveform (`Waveform.tsx`)
-
-- **Bidirectional Oscilloscope (Ups & Downs)**: Symmetrical dual-sided vertical bars expanding both upward and downward with full intensity, matching rounded tips, and neon glow.
-- **Speaking Mode (Forward Propagation & Tall Peaks)**: Multi-harmonic wave propagating forward (left-to-right) at brisk speed, with sustained tall amplitude peaks throughout assistant speech.
-- **Listening Mode (Backward Propagation & Controlled Height)**: Real-time microphone frequency-bin reactivity propagating backward (right-to-left), with calm ambient movement during silence and responsive surges to speech.
-- **Enhanced Dimensions & Dynamic Glow**: 88px vertical canvas with height-proportional bar glow for an immersive cyberpunk HUD look.
+- **Agent Settings**: Dedicated AI provider, model, and execution configuration modal.
+- **Voice & Audio Settings**: Dedicated voice persona, speech speed, wake word, and sound effect modal.
+- **Integrations & Sources**: Dedicated hub for Google Calendar, Gmail, Twitter, Telegram, Discord, SMTP, and LinkedIn.
+- **MCP Settings**: Model Context Protocol servers and tool management modal.
+- **Customizations**: Skills, custom rules, and behavior editor modal.
+- **Remote Control**: Pairing modal with QR code and PIN for local network smartphone control (port `8765`).
+- **Create Shortcut**: Instantly generates an OS desktop shortcut icon via Tauri command.
+- **Themes**: Preset cyberpunk themes + interactive custom color wheel with real-time HUD preview.
 
 ### Save Behavior
 
-- **"Save AI Details"** → saves only AI-related settings, triggers `settings_sync`
-- **"Save All Settings"** → saves everything (AI + voice + memory), triggers `settings_sync`
-- Opening settings again always reflects the currently active model and settings
+- **"SAVE AI CONFIGURATION"** (in Agent Settings) → Saves model, provider, and credentials, syncing to backend via WebSocket.
+- **"SAVE VOICE CONFIGURATION"** (in Voice Settings) → Saves voice persona, speed, wake words, and volume.
+- **"SAVE CREDENTIALS" / "AUTHORIZE"** (in Integrations) → Saves and connects third-party services.
 
 ---
 

@@ -4,6 +4,9 @@ The intelligence layer of OpenSarthi. Runs as a **headless sidecar process** spa
 
 **Key Capabilities:**
 - **70-Tool Registry** — Desktop automation, browser automation (20 Playwright tools), Google OAuth, music, social media, system monitoring, shell, memory
+- **6 Voice Personas** — `JARVIS`, `NOVA`, `ATLAS`, `ARIA`, `LUNA`, `SARTHI` powered by offline Kokoro-82M TTS + gTTS fallback
+- **Integrations Hub** — Google Workspace (Calendar + Gmail OAuth) and Socials (Twitter, Telegram, Discord, SMTP, LinkedIn)
+- **Snapshot Caching** — Observer captures cached for 2s TTL, eliminating duplicate OCR and screenshot calls during step replanning
 - **Multi-Agent Supervisor** — Classifies task domain and scopes the planner to that domain's tools (default: on, toggle via UI)
 - **Terminal-First Browser Opening** — `open_url` hands the URL to `xdg-open` / browser binary; no GUI click path needed
 - **Browser DOM/Snapshot** — Playwright accessibility tree (`browser_snapshot`) for reliable element targeting
@@ -25,8 +28,8 @@ Tauri Shell  ──WebSocket──►  FastAPI / api/websocket.py
               ┌──────────────────────┼──────────────────────────────────┐
               ▼                      ▼                                  ▼
   AgentRuntime / LangGraph    voice/pipeline.py               config.py / db.py
-  (dual execution paths)      (Native Audio + PyAudio +       (settings + SQLite)
-         │                     SileroVAD + FasterWhisper + TTS)
+  (dual execution paths)      (Kokoro-82M + gTTS +            (settings + SQLite)
+         │                     SileroVAD + FasterWhisper)
          ├── graph/graph.py     (LangGraph, USE_LANGGRAPH=true)
          └── agent_runtime.py  (Legacy loop, default)
                │
@@ -63,6 +66,11 @@ FastAPI is configured with `CORSMiddleware` (`allow_origins=["*"]`) so that requ
 | `/health` | GET | Runtime health check. |
 | `/models` | GET | Model discovery proxy for cloud providers (Groq, OpenAI, Anthropic, Google, OpenRouter) and local endpoints (Ollama, Custom OpenAI / OmniRoute). |
 | `/validate_key` | GET | Validates API key and base URL by hitting provider model endpoints and returning discovered models list. |
+| `/oauth/google/start` | GET | Initiates Google OAuth 2.0 flow in browser for Calendar + Gmail read-only scopes. |
+| `/oauth/google/callback` | GET | Handles Google OAuth redirect callback and stores user refresh token. |
+| `/integrations/status` | GET | Returns connection status for Google, Twitter, Telegram, Discord, SMTP, and LinkedIn. |
+| `/integrations/revoke` | POST | Revokes stored tokens for an integration. |
+| `/integrations/social` | POST | Saves social & messaging credentials to config. |
 
 In packaged production builds (AppImage):
 1. A compiled Rust bootstrap runner executes first.
@@ -358,7 +366,11 @@ Microphone (PyAudio, 16kHz, 512-sample chunks)
     │
     ├── FasterWhisperSTT (voice/stt.py) — local offline transcription
     │
-    └── TTS: asyncio.subprocess → gtts/kokoro
+    └── TTS Engine (4-Tier Fallback):
+            ├── Layer 0: Edge-TTS (Crisp male/female neural voices: JARVIS, NOVA, ATLAS, ARIA, LUNA, SARTHI)
+            ├── Layer 1: Kokoro-82M ONNX offline neural TTS
+            ├── Layer 2: gTTS (Google Translate cloud TTS fallback)
+            └── Layer 3: espeak / native system TTS
             └── STT suspended during playback (echo prevention)
 ```
 

@@ -3,7 +3,7 @@
 > **Purpose:** This file is the single source of truth for any LLM (Gemini, Claude, GPT, Copilot, Cursor, Codex, etc.) working on this codebase.  
 > Read this **first** before writing or modifying any code. It captures architecture, conventions, invariants, contracts, and pitfalls that are not obvious from the code alone.
 
-> **Last updated:** September 2026 — Dual execution engine (AgentRuntime + LangGraph), SileroVAD ONNX (no PyTorch), **70-tool registry** across 10 tool domains, browser automation (Playwright, 20+ tools), terminal-first URL opening (`open_url`), multimodal screenshot analysis, instant vision acknowledgment, LangGraph as default engine (`USE_LANGGRAPH=true`), Supervisor multi-agent orchestration (default on), conversational settings tool (`update_settings`), long-term memory toggle + model caching, audio cues engine, multi-tab threads, smart overlay mode with edge snapping, full markdown response rendering + clickable URLs, separate AI/All save in settings, `DevLogger` structured run logs, `OverlayIdleView` compact strip.
+> **Last updated:** September 2026 — Dual execution engine (AgentRuntime + LangGraph), 6 Voice Personas (`JARVIS`, `NOVA`, `ATLAS`, `ARIA`, `LUNA`, `SARTHI`) via offline Kokoro-82M TTS + gTTS fallback, Integrations Hub (Google Workspace, Twitter, Telegram, Discord, SMTP, LinkedIn), Observer snapshot caching (2s TTL), SileroVAD ONNX (no PyTorch), **70-tool registry** across 10 tool domains, browser automation (Playwright, 20+ tools), terminal-first URL opening (`open_url`), multimodal screenshot analysis, instant vision acknowledgment, LangGraph as default engine (`USE_LANGGRAPH=true`), Supervisor multi-agent orchestration (default on), conversational settings tool (`update_settings`), long-term memory toggle + model caching, audio cues engine, multi-tab threads, smart overlay mode with edge snapping, full markdown response rendering + clickable URLs, separate AI/All save in settings, `DevLogger` structured run logs, `OverlayIdleView` compact strip.
 
 ---
 
@@ -582,8 +582,22 @@ Microphone
   → Dual STT: Google SpeechRecognition (fast) + Whisper (accurate, local)
   → transcript_update WS messages
   → On finalization: user_message WS message → agent
-  → Response → Kokoro TTS → speech_started/speech_completed WS
+  → Response → Persona Router → Kokoro-82M TTS (Layer 0, offline) / gTTS fallback (Layer 1) → speech_started/speech_completed WS
 ```
+
+### Voice Persona System
+
+| Persona ID | Display Name | Gender | Language | Kokoro Model | Style Description |
+|---|---|---|---|---|---|
+| `JARVIS` | JARVIS | Male | en | `am_adam` | Deep, authoritative & precise (classic AI assistant) |
+| `NOVA` | NOVA | Male | en | `am_echo` | Calm, warm & reassuring |
+| `ATLAS` | ATLAS | Male | en | `am_eric` | Fast, energetic & crisp (ideal for quick workflows) |
+| `ARIA` | ARIA | Female | en | `af_heart` | Friendly, clear & natural |
+| `LUNA` | LUNA | Female | en | `af_jessica` | Soft, soothing & elegant |
+| `SARTHI` | SARTHI | Female | hi | `hf_alpha` | Hindi-first, warm & expressive |
+
+- **Offline-First TTS**: Synthesizes with Kokoro-82M ONNX without internet access; auto-falls back to gTTS if Kokoro library is unavailable.
+- **Preview WebSocket**: `voice_preview` message triggers instant on-the-fly sample playback for any persona.
 
 ### Echo Protection
 - `is_speaking` flag prevents self-transcription during TTS playback
@@ -608,6 +622,7 @@ Single store manages:
 - `onboardingCompleted` — cold-start gate
 - `personalization` — user name, skills, custom prompt
 - `activeTheme` — one of 5 theme token sets
+- `voicePersona` — active voice persona (`JARVIS`, `NOVA`, `ATLAS`, `ARIA`, `LUNA`, `SARTHI`)
 
 ### Theme System & Transparency Invariants
 

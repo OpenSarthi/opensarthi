@@ -32,14 +32,15 @@
 
 OpenSarthi is an **agentic AI assistant** that executes local commands, automates workflows, and intercepts hardware events — built for speed, extensibility, and true multi-modal desktop + mobile automation.
 
-- 🗣️ **Speak and listen** — Full voice pipeline with wake word detection, local STT (FasterWhisper), TTS (Kokoro), and **native audio streaming** (Gemini Live / OpenAI Realtime) for sub-500ms latency.
-- 🖥️ **Automate your desktop** — Cursor clicking, keyboard emulation, screen snapshots, shell command parsing, app launching, **browser automation (20+ tools, Playwright)**, **terminal-first URL opening**, **social media posting**, **music playback**, and **coding agent** (Claude Code subprocess).
+- 🗣️ **Speak and listen** — Full voice pipeline with wake word detection, local STT (FasterWhisper), **6 Voice Personas** (`JARVIS`, `NOVA`, `ATLAS`, `ARIA`, `LUNA`, `SARTHI`) powered by offline **Kokoro-82M** TTS with gTTS fallback, and **native audio streaming** (Gemini Live / OpenAI Realtime) for sub-500ms latency.
+- 🖥️ **Automate your desktop** — Cursor clicking, keyboard emulation, cached screen snapshots (2s TTL), shell command parsing, app launching, **browser automation (20+ tools, Playwright)**, **terminal-first URL opening**, **social media posting**, **music playback**, and **coding agent** (Claude Code subprocess).
 - 📱 **Run on Android** — Integrated mobile agent powered by Capacitor + Chaquopy with **phone audio relay** for native audio on mobile.
 - 🦾 **Flexible LLM Backend** — Model-agnostic configuration supporting Gemini, Claude, GPT, Groq, OpenRouter, Ollama, and custom OpenAI-compatible endpoints (vLLM, llama-server, Together AI) with integrated credential validation and model discovery.
 - 🪙 **Token Accounting** — Real-time tracking separating requests and active model session aggregates.
 - 🔧 **Customizable Skills** — Gated capability sets mapped to specific user authorization groups.
 - 🔀 **LangGraph Orchestration** — Advanced stateful graph scheduling with transaction-level crash-healing loops.
 - 🧠 **Multi-Agent Supervisor** — Routes to WebAgent, CalendarAgent, MailAgent, CodeAgent, BrowserAgent, MusicAgent, SocialAgent.
+- 🌐 **Integrations Hub** — Dedicated settings hub for Google Workspace OAuth (Calendar + Gmail) and Social/Messaging channels (Twitter/X, Telegram Bot, Discord, SMTP, LinkedIn) without placeholders.
 - 📅 **Two-Phase Morning Briefing** — Instant greeting (<1s) + background fetch (calendar, weather, news, memories) → full briefing + Content Panel.
 - ⚡ **Instant Vision Acknowledgment** — Immediate "looking" response while screen analysis runs in background.
 - 🔍 **Parallel Search** — Multi-engine (DuckDuckGo, Gemini, Brave) first-wins pattern for instant answers.
