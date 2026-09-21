@@ -225,14 +225,14 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
-        if (data.google_client_id && !googleClientId) {
-          setGoogleClientId(data.google_client_id);
+        if (data.google_client_id) {
+          setGoogleClientId((prev) => prev || data.google_client_id);
         }
       }
     } catch {
       // Backend might not have this endpoint yet — silently ignore
     }
-  }, [runtimePort, googleClientId]);
+  }, [runtimePort]);
 
   useEffect(() => {
     fetchStatus();
@@ -246,21 +246,30 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
 
   const showSaved = (msg: string) => {
     setSavedMsg(msg);
-    setTimeout(() => setSavedMsg(null), 2500);
+    setTimeout(() => setSavedMsg(null), 3000);
   };
 
   const handleGoogleOAuth = async () => {
     if (!runtimePort) return;
 
+    const trimmedClientId = googleClientId.trim();
+    const trimmedClientSecret = googleClientSecret.trim();
+
     // If user modified client ID or secret, save them first
-    if (googleClientId || googleClientSecret) {
+    if (trimmedClientId || trimmedClientSecret) {
       await saveSocial("google", {
-        google_client_id: googleClientId,
-        google_client_secret: googleClientSecret,
+        google_client_id: trimmedClientId,
+        google_client_secret: trimmedClientSecret,
       });
     }
 
-    const oauthUrl = `http://127.0.0.1:${runtimePort}/oauth/google/start`;
+    // Build query params as zero-latency fail-safe so OAuth start always receives fresh keys
+    const params = new URLSearchParams();
+    if (trimmedClientId) params.set("client_id", trimmedClientId);
+    if (trimmedClientSecret) params.set("client_secret", trimmedClientSecret);
+
+    const qs = params.toString();
+    const oauthUrl = `http://127.0.0.1:${runtimePort}/oauth/google/start${qs ? `?${qs}` : ""}`;
 
     // Try opening via Tauri shell plugin in system browser, with fallback to window.open
     try {
@@ -270,13 +279,13 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
       window.open(oauthUrl, "_blank");
     }
 
-    // Auto-poll status every 2 seconds for 30 seconds to catch successful callback
+    // Auto-poll status every 2 seconds for 40 seconds to catch successful callback
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     let attempts = 0;
     pollIntervalRef.current = setInterval(async () => {
       attempts++;
       await fetchStatus();
-      if (attempts > 15) {
+      if (attempts > 20) {
         clearInterval(pollIntervalRef.current);
       }
     }, 2000);
@@ -308,10 +317,14 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
         if (integration !== "google") {
           setStatus((s) => ({ ...s, [integration]: true }));
         }
-        showSaved(`${integration} credentials saved`);
+        showSaved(`${integration.toUpperCase()} credentials saved successfully`);
         await fetchStatus();
+      } else {
+        showSaved(`Failed to save ${integration} credentials`);
       }
-    } catch { /* ignore */ }
+    } catch (err: any) {
+      showSaved(`Save error: ${err.message || "Failed to reach backend"}`);
+    }
     setSaving(null);
   };
 
@@ -327,19 +340,32 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             style={{
-              background: "rgba(34,197,94,0.15)",
-              border: "1px solid rgba(34,197,94,0.4)",
+              background: savedMsg.toLowerCase().includes("failed") || savedMsg.toLowerCase().includes("error")
+                ? "rgba(239,68,68,0.15)"
+                : "rgba(34,197,94,0.15)",
+              border: `1px solid ${
+                savedMsg.toLowerCase().includes("failed") || savedMsg.toLowerCase().includes("error")
+                  ? "rgba(239,68,68,0.4)"
+                  : "rgba(34,197,94,0.4)"
+              }`,
               borderRadius: "6px",
               padding: "8px 12px",
               fontSize: "11px",
               fontFamily: "var(--font-mono)",
-              color: "#22c55e",
+              color: savedMsg.toLowerCase().includes("failed") || savedMsg.toLowerCase().includes("error")
+                ? "#ef4444"
+                : "#22c55e",
               display: "flex",
               alignItems: "center",
               gap: "6px",
             }}
           >
-            <CheckCircle2 size={12} /> {savedMsg}
+            {savedMsg.toLowerCase().includes("failed") || savedMsg.toLowerCase().includes("error") ? (
+              <XCircle size={12} />
+            ) : (
+              <CheckCircle2 size={12} />
+            )}
+            {savedMsg}
           </motion.div>
         )}
       </AnimatePresence>
@@ -432,8 +458,8 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
               <button
                 disabled={saving === "google"}
                 onClick={() => saveSocial("google", {
-                  google_client_id: googleClientId,
-                  google_client_secret: googleClientSecret,
+                  google_client_id: googleClientId.trim(),
+                  google_client_secret: googleClientSecret.trim(),
                 })}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",

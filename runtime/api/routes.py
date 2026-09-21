@@ -374,14 +374,33 @@ async def validate_api_key(
 # ─── Google OAuth & Integrations Endpoints ─────────────────────────────────────
 
 @router.get("/oauth/google/start")
-async def google_oauth_start():
+async def google_oauth_start(
+    client_id: Optional[str] = None,
+    client_secret: Optional[str] = None,
+    redirect_uri: Optional[str] = None,
+):
     """Initiates Google OAuth 2.0 flow by redirecting to Google authorization URL."""
     from fastapi.responses import HTMLResponse, RedirectResponse
-    from config import settings
+    from config import settings, save_settings_to_env
     from tools.google_tools import get_auth_url
+    import os
 
-    client_id = getattr(settings, "google_client_id", None)
-    if not client_id:
+    # If credentials were provided in request query parameters, update in-memory settings & environment
+    if client_id and client_id.strip():
+        settings.google_client_id = client_id.strip()
+        os.environ["GOOGLE_CLIENT_ID"] = client_id.strip()
+    if client_secret and client_secret.strip():
+        settings.google_client_secret = client_secret.strip()
+        os.environ["GOOGLE_CLIENT_SECRET"] = client_secret.strip()
+
+    if (client_id and client_id.strip()) or (client_secret and client_secret.strip()):
+        save_settings_to_env(
+            google_client_id=settings.google_client_id,
+            google_client_secret=settings.google_client_secret,
+        )
+
+    effective_client_id = getattr(settings, "google_client_id", None) or os.environ.get("GOOGLE_CLIENT_ID")
+    if not effective_client_id:
         return HTMLResponse("""<!DOCTYPE html>
 <html>
 <head>
@@ -404,7 +423,7 @@ async def google_oauth_start():
 </body>
 </html>""", status_code=400)
 
-    auth_url = get_auth_url()
+    auth_url = get_auth_url(client_id=effective_client_id, redirect_uri=redirect_uri)
     return RedirectResponse(url=auth_url)
 
 
@@ -414,7 +433,7 @@ async def google_oauth_callback(code: Optional[str] = None, error: Optional[str]
     """Handles Google OAuth 2.0 redirect callback, exchanging code for tokens."""
     from fastapi.responses import HTMLResponse
     from tools.google_tools import exchange_code_for_tokens
-    from config import settings
+    from config import settings, save_settings_to_env
 
     if error:
         return HTMLResponse(f"""<!DOCTYPE html>
@@ -434,6 +453,7 @@ async def google_oauth_callback(code: Optional[str] = None, error: Optional[str]
     success = await exchange_code_for_tokens(code)
     if success:
         settings.google_oauth_enabled = True
+        save_settings_to_env(google_oauth_enabled=True)
         return HTMLResponse("""<!DOCTYPE html>
 <html>
 <head>
@@ -471,15 +491,18 @@ async def get_integrations_status():
     """Returns current integration connection states and client configuration."""
     from config import settings
     from tools.google_tools import load_tokens
+    import os
 
     tokens = load_tokens()
     has_google = bool(tokens.get("access_token") or tokens.get("refresh_token"))
+    client_id = getattr(settings, "google_client_id", "") or os.environ.get("GOOGLE_CLIENT_ID", "")
+    has_secret = bool(getattr(settings, "google_client_secret", None) or os.environ.get("GOOGLE_CLIENT_SECRET"))
 
     return {
         "google_calendar": has_google,
         "google_gmail": has_google,
-        "google_client_id": getattr(settings, "google_client_id", "") or "",
-        "google_client_secret_configured": bool(getattr(settings, "google_client_secret", None)),
+        "google_client_id": client_id,
+        "google_client_secret_configured": has_secret,
         "twitter": bool(getattr(settings, "twitter_api_key", None)),
         "telegram": bool(getattr(settings, "telegram_bot_token", None)),
         "discord": bool(getattr(settings, "discord_webhook_url", None)),
@@ -493,6 +516,7 @@ async def save_social_integration(req: Request):
     """Save integration credentials (Google OAuth or social media)."""
     from fastapi.responses import JSONResponse
     from config import settings, save_settings_to_env
+    import os
 
     try:
         body = await req.json()
@@ -501,11 +525,15 @@ async def save_social_integration(req: Request):
 
     integration = body.get("integration", "")
 
-    if integration == "google" or "google_client_id" in body:
-        if "google_client_id" in body:
-            settings.google_client_id = body["google_client_id"]
-        if "google_client_secret" in body:
-            settings.google_client_secret = body["google_client_secret"]
+    if integration == "google" or "google_client_id" in body or "google_client_secret" in body:
+        if "google_client_id" in body and body["google_client_id"] is not None:
+            val = str(body["google_client_id"]).strip()
+            settings.google_client_id = val
+            os.environ["GOOGLE_CLIENT_ID"] = val
+        if "google_client_secret" in body and body["google_client_secret"] is not None:
+            val = str(body["google_client_secret"]).strip()
+            settings.google_client_secret = val
+            os.environ["GOOGLE_CLIENT_SECRET"] = val
     elif integration == "twitter":
         settings.twitter_api_key = body.get("twitter_api_key")
         settings.twitter_api_secret = body.get("twitter_api_secret")
@@ -549,7 +577,7 @@ async def save_social_integration(req: Request):
 async def revoke_integration(req: Request):
     """Revoke and delete credentials/tokens for an integration."""
     from fastapi.responses import JSONResponse
-    from config import settings
+    from config import settings, save_settings_to_env
     from tools.google_tools import TOKEN_FILE, save_tokens
 
     try:
@@ -566,6 +594,7 @@ async def revoke_integration(req: Request):
             except Exception:
                 pass
         settings.google_oauth_enabled = False
+        save_settings_to_env(google_oauth_enabled=False)
 
     return {"ok": True, "revoked": integration}
 
