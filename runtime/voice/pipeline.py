@@ -351,10 +351,16 @@ class VoicePipeline:
             asyncio.create_task(dashboard_server.broadcast("speech_started", {}))
 
         try:
-            logger.info("Synthesizing speech", text=text)
+            # Strip tool_call, function, think, and XML tags before speech synthesis
+            clean_speech = re.sub(r'<tool_call>[\s\S]*?</tool_call>', '', text, flags=re.IGNORECASE)
+            clean_speech = re.sub(r'<function=[^>]+>[\s\S]*?</function>', '', clean_speech, flags=re.IGNORECASE)
+            clean_speech = re.sub(r'<think>[\s\S]*?</think>', '', clean_speech, flags=re.IGNORECASE)
+            clean_speech = re.sub(r'<[^>]+>', '', clean_speech)
+
+            logger.info("Synthesizing speech", text=clean_speech.strip())
 
             # Clean text from emojis or problematic characters
-            cleaned_text = "".join(c for c in text if c.isalnum() or c.isspace() or c in ".,!?;:'\"-")
+            cleaned_text = "".join(c for c in clean_speech if c.isalnum() or c.isspace() or c in ".,!?;:'\"-")
             if not cleaned_text.strip():
                 # Broadcast speech_completed for empty text
                 if getattr(dashboard_server, "_running", False):
