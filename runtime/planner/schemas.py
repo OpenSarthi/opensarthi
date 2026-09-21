@@ -32,8 +32,8 @@ class ToolResult(BaseModel):
 
 class PlanStep(BaseModel):
     tool: str                            # Tool name from registry
-    args: dict                           # Tool arguments
-    description: str                     # Human-readable description of this step
+    args: dict = {}                      # Tool arguments
+    description: str = ""                # Human-readable description of this step
     verify_with: Optional[str] = None   # Post-condition: text/window to verify
     wait_after: Optional[float] = None  # Seconds to wait after execution
     retryable: bool = True

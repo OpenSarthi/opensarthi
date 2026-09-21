@@ -160,6 +160,10 @@ TOOL ROUTING (Use EXACT registered tool names):
 • Save a note → save_note(title: str, content: str)
 • Search/list notes → get_notes(query?: str)
 • Fix OpenSarthi code → self_fix(description: str, target_file: str)
+• Check emails / read inbox / unread emails → gmail_read(query?: str, max_results?: int)
+• Search emails by keyword, sender, order, receipt (e.g. Amazon orders) → gmail_search(query: str, max_results?: int)
+• Check schedule / upcoming calendar events → calendar_read(time_min?: str, time_max?: str, max_results?: int)
+• Search calendar events by title or keyword → calendar_search(query: str, max_results?: int)
 • Change any assistant setting (theme, model, provider, API key, voice speed, wake words, accent, user name, etc.) → update_settings(theme?, provider?, cloud_model?, local_model?, gemini_api_key?, openai_api_key?, anthropic_api_key?, groq_api_key?, openrouter_api_key?, voice_accent?, voice_speed?, continuous_listening?, wake_word_enabled?, wake_words?, wake_word_threshold?, user_name?, user_skills?, custom_prompt?)
 
 JSON PLAN FORMAT:
@@ -232,6 +236,10 @@ TOOL ROUTING (Use EXACT registered tool names):
 • Save a note → save_note(title: str, content: str)
 • Search/list notes → get_notes(query?: str)
 • Fix OpenSarthi code → self_fix(description: str, target_file: str)
+• Check emails / read inbox / unread emails → gmail_read(query?: str, max_results?: int)
+• Search emails by keyword, sender, order, receipt (e.g. Amazon orders, flight tickets) → gmail_search(query: str, max_results?: int)
+• Check schedule / upcoming calendar events → calendar_read(time_min?: str, time_max?: str, max_results?: int)
+• Search calendar events by title or keyword → calendar_search(query: str, max_results?: int)
 • Change any assistant setting (theme, model, provider, API key, voice speed, wake words, accent, user name, etc.) → update_settings(theme?, provider?, cloud_model?, local_model?, gemini_api_key?, openai_api_key?, anthropic_api_key?, groq_api_key?, openrouter_api_key?, voice_accent?, voice_speed?, continuous_listening?, wake_word_enabled?, wake_words?, wake_word_threshold?, user_name?, user_skills?, custom_prompt?)
 
 JSON PLAN FORMAT:

@@ -19,38 +19,156 @@ TOOL_ARG_ORDER = {
     "shell": ["command", "timeout"],
     "wait_for_window": ["title", "timeout"],
     "wait_for_text": ["text", "timeout"],
-    "click_element": ["role", "name"],
     "focus_window": ["title"],
 }
+
+
+def _parse_xml_or_tag_tool_calls(text: str) -> Optional[list]:
+    """Parse XML / <tool_call> / <function=...> tags into structured plan steps."""
+    import re
+    import json
+
+    steps = []
+
+    # Case 1: <tool_call> ... </tool_call> or <toolcall> ... </toolcall>
+    tool_call_blocks = re.findall(r'<tool_?call>([\s\S]*?)</tool_?call>', text, re.IGNORECASE)
+    for block in tool_call_blocks:
+        block_clean = block.strip()
+        # Subcase 1A: JSON object inside <tool_call>
+        try:
+            d = json.loads(block_clean)
+            if isinstance(d, dict):
+                tool_name = d.get("tool") or d.get("name") or d.get("function")
+                args = d.get("args") or d.get("arguments") or d.get("parameters") or {}
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except Exception:
+                        pass
+                if tool_name:
+                    steps.append({"tool": tool_name, "args": args, "description": f"Execute {tool_name}"})
+                    continue
+            elif isinstance(d, list):
+                for item in d:
+                    if isinstance(item, dict):
+                        t_name = item.get("tool") or item.get("name")
+                        args = item.get("args") or item.get("arguments") or {}
+                        if t_name:
+                            steps.append({"tool": t_name, "args": args, "description": f"Execute {t_name}"})
+                if steps:
+                    continue
+        except Exception:
+            pass
+
+        # Subcase 1B: <function=tool_name>...parameters...</function>
+        fn_matches = re.findall(r'<function[:=]([a-zA-Z0-9_-]+)>([\s\S]*?)</function>', block_clean, re.IGNORECASE)
+        for fn_name, fn_body in fn_matches:
+            args = {}
+            fn_body_clean = re.sub(r'</?parameter>', '', fn_body).strip()
+            try:
+                d = json.loads(fn_body_clean)
+                if isinstance(d, dict):
+                    args = d
+            except Exception:
+                for line in fn_body_clean.split("\n"):
+                    line = line.strip()
+                    if ":" in line:
+                        parts = re.split(r',\s*(?=[a-zA-Z0-9_]+:)', line)
+                        for part in parts:
+                            if ":" in part:
+                                k, v = part.split(":", 1)
+                                k = k.strip()
+                                v = v.strip().strip("'\"")
+                                try:
+                                    if v.isdigit():
+                                        v = int(v)
+                                    elif v.replace(".", "", 1).isdigit():
+                                        v = float(v)
+                                except Exception:
+                                    pass
+                                if k:
+                                    args[k] = v
+            steps.append({"tool": fn_name, "args": args, "description": f"Execute {fn_name}"})
+
+    # Case 2: Direct <function=tool_name> tags outside <tool_call>
+    if not steps:
+        fn_matches = re.findall(r'<function[:=]([a-zA-Z0-9_-]+)>([\s\S]*?)</function>', text, re.IGNORECASE)
+        for fn_name, fn_body in fn_matches:
+            args = {}
+            fn_body_clean = re.sub(r'</?parameter>', '', fn_body).strip()
+            try:
+                d = json.loads(fn_body_clean)
+                if isinstance(d, dict):
+                    args = d
+            except Exception:
+                for line in fn_body_clean.split("\n"):
+                    line = line.strip()
+                    if ":" in line:
+                        parts = re.split(r',\s*(?=[a-zA-Z0-9_]+:)', line)
+                        for part in parts:
+                            if ":" in part:
+                                k, v = part.split(":", 1)
+                                k = k.strip()
+                                v = v.strip().strip("'\"")
+                                try:
+                                    if v.isdigit():
+                                        v = int(v)
+                                    elif v.replace(".", "", 1).isdigit():
+                                        v = float(v)
+                                except Exception:
+                                    pass
+                                if k:
+                                    args[k] = v
+            steps.append({"tool": fn_name, "args": args, "description": f"Execute {fn_name}"})
+
+    return steps if steps else None
+
 
 def _cleanup_step(s: dict) -> dict:
     if not isinstance(s, dict):
         return s
     
+    import re
+    from tools.registry import all_tools, get
+
     if "tool" not in s and "action" in s:
         s["tool"] = s.pop("action")
+    elif "tool" not in s and "name" in s:
+        s["tool"] = s.pop("name")
+    elif "tool" not in s and "function" in s:
+        s["tool"] = s.pop("function")
     
-    # Auto-detect if a key in the step is a registered tool name (e.g. {"open_app": "kate"})
-    if "tool" not in s:
-        from tools.registry import all_tools, get
-        try:
-            registered_names = {t.name for t in all_tools()}
-        except Exception:
-            registered_names = set()
+    # Auto-detect or normalize tool name against registered tools
+    try:
+        registered = {t.name: t for t in all_tools()}
+    except Exception:
+        registered = {}
+
+    tool_canonical_map = {}
+    for r_name in registered:
+        clean_key = re.sub(r'[^a-zA-Z0-9]', '', r_name).lower()
+        tool_canonical_map[clean_key] = r_name
+        tool_canonical_map[r_name.lower()] = r_name
+
+    if "tool" in s and isinstance(s["tool"], str):
+        t_raw = s["tool"].strip()
+        cleaned_t = re.sub(r'[^a-zA-Z0-9]', '', t_raw).lower()
+        if cleaned_t in tool_canonical_map:
+            s["tool"] = tool_canonical_map[cleaned_t]
+    elif "tool" not in s:
         for k, v in list(s.items()):
-            if k in registered_names:
-                s["tool"] = k
+            cleaned_k = re.sub(r'[^a-zA-Z0-9]', '', k).lower()
+            if cleaned_k in tool_canonical_map:
+                s["tool"] = tool_canonical_map[cleaned_k]
                 if isinstance(v, dict):
                     s["args"] = v
                 else:
-                    # Retrieve arguments schema dynamically
-                    t = get(k)
+                    t = get(s["tool"])
                     arg_keys = []
                     if t and hasattr(t, "schema") and isinstance(t.schema, dict):
                         arg_keys = list(t.schema.get("properties", {}).keys())
                     if not arg_keys:
-                        arg_keys = TOOL_ARG_ORDER.get(k, [])
-                    
+                        arg_keys = TOOL_ARG_ORDER.get(s["tool"], [])
                     if arg_keys:
                         s["args"] = {arg_keys[0]: v}
                     else:
@@ -61,7 +179,7 @@ def _cleanup_step(s: dict) -> dict:
     if "description" not in s and "comment" in s:
         s["description"] = s.pop("comment")
     elif "description" not in s:
-        s["description"] = ""
+        s["description"] = f"Execute {s.get('tool', 'tool')}"
     for p_key in ("params", "arguments", "parameters"):
         if "args" not in s and p_key in s:
             s["args"] = s.pop(p_key)
@@ -69,14 +187,27 @@ def _cleanup_step(s: dict) -> dict:
         s["args"] = {}
     elif isinstance(s["args"], list):
         tool_name = s.get("tool", "")
-        from tools.registry import get as get_tool
-        t = get_tool(tool_name)
+        t = get(tool_name)
         arg_keys = []
         if t and hasattr(t, "schema") and isinstance(t.schema, dict):
             arg_keys = list(t.schema.get("properties", {}).keys())
         if not arg_keys:
             arg_keys = TOOL_ARG_ORDER.get(tool_name, [])
         s["args"] = {k: v for k, v in zip(arg_keys, s["args"])}
+
+    # Normalize argument keys against tool schema properties
+    tool_obj = get(s.get("tool", ""))
+    if tool_obj and hasattr(tool_obj, "schema") and isinstance(tool_obj.schema, dict):
+        props = tool_obj.schema.get("properties", {})
+        arg_prop_map = {re.sub(r'[^a-zA-Z0-9]', '', p).lower(): p for p in props}
+        if isinstance(s.get("args"), dict):
+            new_args = {}
+            for ak, av in s["args"].items():
+                ak_clean = re.sub(r'[^a-zA-Z0-9]', '', str(ak)).lower()
+                canonical_k = arg_prop_map.get(ak_clean, ak)
+                new_args[canonical_k] = av
+            s["args"] = new_args
+
     reserved_step_keys = {"tool", "action", "args", "description",
                           "comment", "params", "arguments",
                           "parameters", "verify_with", "wait_after",
@@ -995,54 +1126,65 @@ Explain to the user why the task could not be completed. Do NOT output a JSON pl
             think_blocks = re.findall(r'<think>([\s\S]*?)</think>', text)
             text_for_json = re.sub(r'<think>[\s\S]*?</think>', '', text).strip()
 
-            json_text = None
-            json_match = re.search(r'```json\s*([\s\S]*?)\s*```', text_for_json)
-            if json_match:
-                json_text = json_match.group(1).strip()
-            else:
-                json_match = re.search(r'```\s*(\[[\s\S]*?\]|\{[\s\S]*?\})\s*```', text_for_json)
+            # ── 1. Extract JSON data (Direct, Markdown, or balanced object scan) ──
+            data = None
+            try:
+                data = json.loads(text_for_json)
+            except Exception:
+                pass
+
+            if data is None:
+                json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text_for_json)
                 if json_match:
-                    json_text = json_match.group(1).strip()
-                else:
-                    json_match = re.search(r'(\[[\s\S]*?\]|\{[\s\S]*?\})', text_for_json)
-                    if json_match:
-                        json_text = json_match.group(1).strip()
-
-            if json_text:
-                data = None
-                try:
-                    data = json.loads(json_text)
-                except Exception:
-                    # Clean trailing commas and try again
-                    cleaned = re.sub(r',\s*([\]}])', r'\1', json_text)
                     try:
-                        data = json.loads(cleaned)
+                        data = json.loads(json_match.group(1).strip())
                     except Exception:
+                        pass
+
+            if data is None:
+                decoder = json.JSONDecoder()
+                for i, ch in enumerate(text_for_json):
+                    if ch in ("{", "["):
                         try:
-                            import ast
-                            val = ast.literal_eval(json_text)
-                            if isinstance(val, (list, dict)):
-                                data = val
+                            obj, _ = decoder.raw_decode(text_for_json[i:])
+                            if isinstance(obj, (list, dict)):
+                                data = obj
+                                break
                         except Exception:
-                            pass
+                            continue
 
-                if data is not None:
-                    try:
+            if data is not None:
+                try:
+                    if isinstance(data, list):
+                        steps = [PlanStep(**_cleanup_step(s)) for s in data]
+                        return Plan(goal="", steps=steps), None
+                    elif isinstance(data, dict):
+                        steps_list = None
+                        for key in ("steps", "plan", "actions", "tasks", "tool_calls"):
+                            if key in data and isinstance(data[key], list):
+                                steps_list = data[key]
+                                break
 
+                        if steps_list is not None:
+                            steps = [PlanStep(**_cleanup_step(s)) for s in steps_list]
+                            return Plan(goal=data.get("goal", ""), steps=steps), None
+                        else:
+                            step = PlanStep(**_cleanup_step(data))
+                            return Plan(goal="", steps=[step]), None
+                except Exception as e:
+                    import structlog
+                    structlog.get_logger().error("Plan JSON parsed but validation failed", error=str(e))
 
-                        if isinstance(data, list):
-                            steps = [PlanStep(**_cleanup_step(s)) for s in data]
-                            return Plan(goal="", steps=steps), None
-                        elif isinstance(data, dict):
-                            if "steps" in data:
-                                data["steps"] = [_cleanup_step(s) for s in data["steps"]]
-                                return Plan(**data), None
-                            else:
-                                step = PlanStep(**_cleanup_step(data))
-                                return Plan(goal="", steps=[step]), None
-                    except Exception as e:
-                        import structlog
-                        structlog.get_logger().error("Plan JSON parsed but validation failed", error=str(e))
+            # ── Fallback Parser: XML / <tool_call> / <function=...> tag formats ──
+            tag_steps = _parse_xml_or_tag_tool_calls(text_for_json)
+            if tag_steps:
+                try:
+                    steps = [PlanStep(**_cleanup_step(s)) for s in tag_steps]
+                    return Plan(goal="", steps=steps), None
+                except Exception as e:
+                    import structlog
+                    structlog.get_logger().error("Tag tool call parsed but PlanStep validation failed", error=str(e))
+
             return None, raw_output
 
         return None, str(raw_output)
