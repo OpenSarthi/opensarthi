@@ -17,9 +17,19 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     # ── Startup ──────────────────────────────────────────────────────────────
+    try:
+        from tools.google_tools import start_oauth_callback_server
+        start_oauth_callback_server(8765)
+    except Exception as e:
+        logger.warning("Failed to initialize background OAuth callback server", error=str(e))
     yield
     # ── Shutdown ─────────────────────────────────────────────────────────────
     logger.info("Stopping OpenSarthi runtime, cleaning up active services...")
+    try:
+        from tools.google_tools import stop_oauth_callback_server
+        stop_oauth_callback_server()
+    except Exception:
+        pass
     try:
         from dashboard.server import dashboard_server
         dashboard_server.stop()
