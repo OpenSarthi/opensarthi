@@ -3,7 +3,7 @@
 > **Purpose:** This file is the single source of truth for any LLM (Gemini, Claude, GPT, Copilot, Cursor, Codex, etc.) working on this codebase.  
 > Read this **first** before writing or modifying any code. It captures architecture, conventions, invariants, contracts, and pitfalls that are not obvious from the code alone.
 
-> **Last updated:** September 2026 — Dual execution engine (AgentRuntime + LangGraph), 6 Voice Personas (`JARVIS`, `NOVA`, `ATLAS`, `ARIA`, `LUNA`, `SARTHI`) via offline Kokoro-82M TTS + gTTS fallback, Integrations Hub (Google Workspace, Twitter, Telegram, Discord, SMTP, LinkedIn), Observer snapshot caching (2s TTL), SileroVAD ONNX (no PyTorch), **70-tool registry** across 10 tool domains, browser automation (Playwright, 20+ tools), terminal-first URL opening (`open_url`), multimodal screenshot analysis, instant vision acknowledgment, LangGraph as default engine (`USE_LANGGRAPH=true`), Supervisor multi-agent orchestration (default on), conversational settings tool (`update_settings`), long-term memory toggle + model caching, audio cues engine, multi-tab threads, smart overlay mode with edge snapping, full markdown response rendering + clickable URLs, separate AI/All save in settings, `DevLogger` structured run logs, `OverlayIdleView` compact strip.
+> **Last updated:** September 2026 — Dual execution engine (AgentRuntime + LangGraph), 6 Voice Personas (`JARVIS`, `NOVA`, `ATLAS`, `ARIA`, `LUNA`, `SARTHI`) via offline Kokoro-82M TTS + gTTS fallback, Integrations Hub (Google Workspace, Twitter, Telegram, Discord, SMTP, LinkedIn), Observer snapshot caching (2s TTL), SileroVAD ONNX (no PyTorch), **71-tool registry** across 10 tool domains, multi-format plan & XML tag tool parser, browser automation (Playwright, 20+ tools), terminal-first URL opening (`open_url`), multimodal screenshot analysis, instant vision acknowledgment, LangGraph as default engine (`USE_LANGGRAPH=true`), Supervisor multi-agent orchestration (default on), conversational settings tool (`update_settings`), long-term memory toggle + model caching, audio cues engine, multi-tab threads, smart overlay mode with edge snapping, full markdown response rendering + clickable URLs, separate AI/All save in settings, `DevLogger` structured run logs, `OverlayIdleView` compact strip.
 
 ---
 
@@ -153,7 +153,7 @@ opensarthi/
 │   │   └── schemas.py              # Plan, PlanStep, ToolResult
 │   ├── tools/
 │   │   ├── base.py                 # BaseTool ABC + RiskLevel enum + safe_execute
-│   │   ├── desktop.py              # click, type_text, press_key, open_app, click_element, focus_window
+│   │   ├── desktop.py              # click, type_text, press_key, open_app, click_element, focus_window, scroll
 │   │   ├── system.py               # shell (bubblewrap-sandboxed)
 │   │   ├── wait_tools.py           # wait_for_window, wait_for_text
 │   │   ├── memory.py               # remember, recall, forget_memory tools
@@ -168,7 +168,7 @@ opensarthi/
 │   │   ├── music.py                # Music/YouTube: youtube_search, youtube_control, music_play
 │   │   ├── social.py               # Social Media: twitter, linkedin, telegram, whatsapp, discord, email
 │   │   ├── system_monitor.py       # System Monitoring: system_status, weather, reminders, monitor_control
-│   │   └── registry.py             # 70-tool registry across 10 domains (all_tools, get, get_schemas)
+│   │   └── registry.py             # 71-tool registry across 10 domains (all_tools, get, get_schemas)
 │   ├── memory/
 │   │   ├── long_term.py            # Semantic SQLite memory (all-MiniLM-L6-v2, cached model)
 │   │   ├── manager.py              # Unified MemoryManager (recall, store)

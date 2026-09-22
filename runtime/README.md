@@ -3,9 +3,9 @@
 The intelligence layer of OpenSarthi. Runs as a **headless sidecar process** spawned by the Tauri shell. Built with **FastAPI + PydanticAI + LangGraph**, it handles all AI orchestration, tool execution, voice processing, real-time WebSocket communication, memory, and persistent storage.
 
 **Key Capabilities:**
-- **70-Tool Registry** — Desktop automation, browser automation (20 Playwright tools), Google OAuth, music, social media, system monitoring, shell, memory
-- **6 Voice Personas** — `JARVIS`, `NOVA`, `ATLAS`, `ARIA`, `LUNA`, `SARTHI` powered by offline Kokoro-82M TTS + gTTS fallback
-- **Integrations Hub** — Google Workspace (Calendar + Gmail OAuth) and Socials (Twitter, Telegram, Discord, SMTP, LinkedIn)
+- **71-Tool Registry** — Desktop automation (8 tools), browser automation (20 Playwright tools), Google OAuth, music, social media, system monitoring, shell, memory
+- **6 Voice Personas** — `JARVIS`, `NOVA`, `ATLAS`, `ARIA`, `LUNA`, `SARTHI` powered by offline Kokoro-82M TTS + gTTS fallback with automatic XML/tool tag sanitization
+- **Integrations Hub** — Google Workspace (Calendar + Gmail OAuth on port 8765 loopback) and Socials (Twitter, Telegram, Discord, SMTP, LinkedIn)
 - **Snapshot Caching** — Observer captures cached for 2s TTL, eliminating duplicate OCR and screenshot calls during step replanning
 - **Multi-Agent Supervisor** — Classifies task domain and scopes the planner to that domain's tools (default: on, toggle via UI)
 - **Terminal-First Browser Opening** — `open_url` hands the URL to `xdg-open` / browser binary; no GUI click path needed
@@ -15,7 +15,7 @@ The intelligence layer of OpenSarthi. Runs as a **headless sidecar process** spa
 - **Instant Vision Acknowledgment** — Immediate "looking" state while screen analysis runs in background
 - **Parallel Search** — Multi-engine (DuckDuckGo, Gemini, Brave) first-wins pattern
 - **Session Memory** — Consumed after use (1-2 sentence summary via flash model)
-- **Google OAuth (Read-Only)** — calendar.readonly + gmail.readonly for briefing data
+- **Google OAuth (Read-Only)** — calendar.readonly + gmail.readonly for briefing & search data with local port 8765 loopback callback listener
 - **Content Panel Data Types** — briefing, screen_analysis, browser_result, code_output, file_preview, system_status, music, map
 
 ---
@@ -36,7 +36,7 @@ Tauri Shell  ──WebSocket──►  FastAPI / api/websocket.py
        ┌───────┴────────┐
        ▼                ▼
  planner/agent.py    tools/registry.py
- (PydanticAI)        (70 tools registered)
+ (PydanticAI)        (71 tools registered)
        │
        ▼
 ┌──────┴────────────────────────────────────────┐
@@ -55,7 +55,7 @@ Tauri Shell  ──WebSocket──►  FastAPI / api/websocket.py
 
 ### Startup & Port Negotiation
 
-`main.py` binds to an OS-assigned free port and prints `PORT:<number>` to stdout. The Tauri Rust layer (`sidecar.rs`) reads this, stores the port, and the frontend WebSocket client connects automatically.
+`main.py` binds to an OS-assigned free port and prints `PORT:<number>` to stdout. The Tauri Rust layer (`sidecar.rs`) reads this, stores the port, and the frontend WebSocket client connects automatically. Additionally, a loopback callback server is started on port `8765` during lifespan to capture OAuth2 redirect callbacks (`/oauth2callback`).
 
 FastAPI is configured with `CORSMiddleware` (`allow_origins=["*"]`) so that requests from both local Tauri dev webview (`http://localhost:1420`) and production shell (`tauri://localhost`) can communicate with the runtime HTTP endpoints.
 
@@ -66,11 +66,11 @@ FastAPI is configured with `CORSMiddleware` (`allow_origins=["*"]`) so that requ
 | `/health` | GET | Runtime health check. |
 | `/models` | GET | Model discovery proxy for cloud providers (Groq, OpenAI, Anthropic, Google, OpenRouter) and local endpoints (Ollama, Custom OpenAI / OmniRoute). |
 | `/validate_key` | GET | Validates API key and base URL by hitting provider model endpoints and returning discovered models list. |
-| `/oauth/google/start` | GET | Initiates Google OAuth 2.0 flow in browser for Calendar + Gmail read-only scopes. |
+| `/oauth/google/start` | GET | Initiates Google OAuth 2.0 flow in browser for Calendar + Gmail read-only scopes. Accepts dynamic `client_id` / `client_secret` params. |
 | `/oauth/google/callback` | GET | Handles Google OAuth redirect callback and stores user refresh token. |
 | `/integrations/status` | GET | Returns connection status for Google, Twitter, Telegram, Discord, SMTP, and LinkedIn. |
 | `/integrations/revoke` | POST | Revokes stored tokens for an integration. |
-| `/integrations/social` | POST | Saves social & messaging credentials to config. |
+| `/integrations/social` | POST | Saves social & messaging credentials to config and synchronizes runtime environment. |
 
 In packaged production builds (AppImage):
 1. A compiled Rust bootstrap runner executes first.
@@ -97,7 +97,7 @@ In packaged production builds (AppImage):
 │    │     ├── WebSocket connection to provider                   │  │
 │    │     ├── Audio input: 16kHz PCM chunks (Opus/PCM)           │  │
 │    │     ├── Audio output: 24kHz PCM chunks                     │  │
-│    │     ├── Function calling → Tool Registry (42+ new tools)   │  │
+│    │     ├── Function calling → Tool Registry (71 tools)        │  │
 │    │     └── Voice Activity Detection (server-side)             │  │
 │    │                                                            │  │
 │    ├── native_audio_chunk ◀────────────────────────────────────┘  │
@@ -113,11 +113,11 @@ In packaged production builds (AppImage):
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### Tool Registry (70 Tools)
+### Tool Registry (71 Tools)
 
-**Core 49 Tools** (`tools/registry.py` — desktop, system, wait, memory, notes, self-improvement, settings, productivity, media):
+**Core 50 Tools** (`tools/registry.py` — desktop, system, wait, memory, notes, self-improvement, settings, productivity, media):
 
-Desktop Automation (7), System (1), Wait (2), Memory (3), Notes (2), Self-Improvement (1), Settings (1), Productivity (11), Media (1), plus generalization helpers.
+Desktop Automation (8 tools: `click`, `type_text`, `press_key`, `open_app`, `focus_window`, `click_element`, `observe_desktop`, `scroll`), System (1), Wait (2), Memory (3), Notes (2), Self-Improvement (1), Settings (1), Productivity (11), Media (1), plus generalization helpers.
 
 **Generalization Tools (21) by Category:**
 
@@ -387,15 +387,15 @@ Microphone (PyAudio, 16kHz, 512-sample chunks)
 
 ---
 
-### 5. Tool Registry (70 Tools)
+### 5. Tool Registry (71 Tools)
 
 All tools registered in `tools/registry.py` with `validate_registry()` at import.
 
-#### Core 49 Tools
+#### Core 50 Tools
 
 | Category | Tools |
 |----------|-------|
-| **Desktop Automation** | `click`, `type_text`, `press_key`, `open_app`, `focus_window`, `click_element`, `observe_desktop` |
+| **Desktop Automation (8)** | `click`, `type_text`, `press_key`, `open_app`, `focus_window`, `click_element`, `observe_desktop`, `scroll` |
 | **System** | `shell` (bubblewrap-sandboxed on Linux) |
 | **Wait Utilities** | `wait_for_window`, `wait_for_text` (OCR polling via pytesseract) |
 | **Memory** | `remember`, `recall`, `forget_memory` |
@@ -624,7 +624,7 @@ runtime/
 │   ├── music.py          # youtube_search, youtube_control, music_play
 │   ├── social.py         # twitter_post, linkedin_post, telegram_send, whatsapp_send, discord_send, email_send
 │   ├── system_monitor.py # system_status, weather_report, flight_finder, reminders, monitor_control, agent_shutdown
-│   └── registry.py       # 70 tools registered, get_tools_by_domain(), validate_registry()
+│   └── registry.py       # 71 tools registered, get_tools_by_domain(), validate_registry()
 │
 ├── memory/
 │   ├── long_term.py      # Semantic SQLite memory (all-MiniLM-L6-v2, cached model)

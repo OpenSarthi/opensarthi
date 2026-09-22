@@ -2,7 +2,7 @@
 
 This document describes the complete execution lifecycle of OpenSarthi from user input to final response.
 
-> **Updated:** September 2026 — LangGraph dual-engine, SileroVAD ONNX, self-healing cap, smart overlay minimize, conversational settings tool, **70-tool registry across 10 tool domains**, audio cues, multi-tab threads, full markdown response rendering, **Native Audio Pipeline (Gemini Live/OpenAI Realtime), Multi-Agent Supervisor (default on), Browser Automation (Playwright), Terminal-First URL Opening, Multimodal Screenshots, Google OAuth (Calendar/Gmail), Two-Phase Morning Briefing, Content Panel, Session Memory (consumed after use), Parallel Search**.
+> **Updated:** September 2026 — LangGraph dual-engine, SileroVAD ONNX, self-healing cap, smart overlay minimize, conversational settings tool, **71-tool registry across 10 tool domains**, multi-format plan & XML tag tool parser, audio cues, multi-tab threads, full markdown response rendering, **Native Audio Pipeline (Gemini Live/OpenAI Realtime), Multi-Agent Supervisor (default on), Browser Automation (Playwright), Terminal-First URL Opening, Multimodal Screenshots, Google OAuth (Calendar/Gmail), Two-Phase Morning Briefing, Content Panel, Session Memory (consumed after use), Parallel Search**.
 
 ---
 

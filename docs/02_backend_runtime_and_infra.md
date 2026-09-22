@@ -1,6 +1,6 @@
 # OpenSarthi — Backend Runtime & Infrastructure
 
-> **Updated:** September 2026 — 70-tool registry (browser automation via Playwright, Google OAuth, music, social media, system monitoring), Multi-Agent Supervisor (task domain classification + scoped tool routing), Terminal-first URL opener (`open_url`), Multimodal screenshots to LLM (vision-capable models only), LangGraph (default), SileroVAD ONNX (no PyTorch), long-term memory toggle, DevLogger structured run logs, smart overlay minimize, cancellation/pause architecture, token tracking, Mobile Control Dashboard Server with auto-boot lifecycle and connection telemetry, **Native Audio Pipeline (Gemini Live/OpenAI Realtime), Two-Phase Morning Briefing, Content Panel, Session Memory (consumed after use), Parallel Search**.
+> **Updated:** September 2026 — 71-tool registry (browser automation via Playwright, Google OAuth, music, social media, system monitoring), Multi-Agent Supervisor (task domain classification + scoped tool routing), Terminal-first URL opener (`open_url`), Multimodal screenshots to LLM (vision-capable models only), LangGraph (default), SileroVAD ONNX (no PyTorch), long-term memory toggle, DevLogger structured run logs, smart overlay minimize, cancellation/pause architecture, token tracking, Mobile Control Dashboard Server with auto-boot lifecycle and connection telemetry, **Native Audio Pipeline (Gemini Live/OpenAI Realtime), Two-Phase Morning Briefing, Content Panel, Session Memory (consumed after use), Parallel Search**.
 
 ---
 
@@ -23,7 +23,7 @@ AgentRuntime              LangGraph Graph
      ┌──────────┴────────────────────────────┐
      │           Shared Services             │
      ├── planner/agent.py  (PydanticAI)      │
-     ├── tools/registry.py (70 tools)        │
+     ├── tools/registry.py (71 tools)        │
      ├── memory/manager.py (semantic SQLite) │
      ├── observation.py    (desktop snapshot)│
      ├── voice/pipeline.py (full pipeline)   │
@@ -41,8 +41,9 @@ AgentRuntime              LangGraph Graph
 2. Initialize SQLite database (`db.py`)
 3. Initialize `MemoryManager` (loads `SentenceTransformer` **only** if `long_term_memory_enabled=True`)
 4. Boot voice pipeline (`VoicePipeline.initialize()`) in background thread
-5. Bind to a free OS port → print `PORT:<n>` to stdout (Tauri reads this)
-6. Start Uvicorn ASGI server
+5. Start local OAuth2 loopback server on port `8765` for Google OAuth redirect callbacks
+6. Bind to a free OS port → print `PORT:<n>` to stdout (Tauri reads this)
+7. Start Uvicorn ASGI server
 
 ### HTTP Endpoints
 
@@ -53,11 +54,11 @@ AgentRuntime              LangGraph Graph
 | `/port` | GET | Returns `{port: <n>}` |
 | `/models` | GET | Proxies model discovery for Google, OpenAI, Anthropic, Groq, OpenRouter, Ollama, and Custom OpenAI |
 | `/validate_key` | GET | Validates provider credentials and discovers available models (`{valid: bool, message: str, models: [...]}`) |
-| `/oauth/google/start` | GET | Initiates Google OAuth 2.0 flow for Calendar + Gmail read-only scopes |
-| `/oauth/google/callback` | GET | Handles OAuth redirect callback and stores user refresh token |
+| `/oauth/google/start` | GET | Initiates Google OAuth 2.0 flow for Calendar + Gmail read-only scopes. Accepts query params for dynamic credentials. |
+| `/oauth/google/callback` | GET | Handles OAuth redirect callback and stores user tokens |
 | `/integrations/status` | GET | Returns connection status for Google, Twitter, Telegram, Discord, SMTP, and LinkedIn |
 | `/integrations/revoke` | POST | Revokes stored tokens for an integration |
-| `/integrations/social` | POST | Saves social & messaging credentials to config |
+| `/integrations/social` | POST | Saves social & messaging credentials to config and synchronizes runtime environment |
 
 ### CORS Policy
 
@@ -217,7 +218,7 @@ Converts the flat `Plan.steps` list into parallel execution groups using **topol
 
 ## 6. Tool System (`tools/`)
 
-> **Current Registry:** 70 tools across 10 domains: desktop, system, web, calendar, mail, browser, music, social, monitoring, and general. The Supervisor scopes tool access by task domain (default: on).
+> **Current Registry:** 71 tools across 10 domains: desktop, system, web, calendar, mail, browser, music, social, monitoring, and general. The Supervisor scopes tool access by task domain (default: on).
 
 ### BaseTool (`tools/base.py`)
 
@@ -246,7 +247,7 @@ class BaseTool(ABC):
 
 ### Tool Registry (`tools/registry.py`)
 
-70 tools registered at import time. `validate_registry()` runs at import → logs warning for any tool missing a schema.
+71 tools registered at import time. `validate_registry()` runs at import → logs warning for any tool missing a schema.
 
 Key registry functions:
 - `get(name: str) → BaseTool | None`
@@ -255,7 +256,7 @@ Key registry functions:
 
 ### Tool Categories
 
-**Desktop Automation (7 tools):** `click`, `type_text`, `press_key`, `open_app`, `focus_window`, `click_element`, `observe_desktop`
+**Desktop Automation (8 tools):** `click`, `type_text`, `press_key`, `open_app`, `focus_window`, `click_element`, `observe_desktop`, `scroll`
 
 **System (1):** `shell` — executes arbitrary shell commands. On Linux, wrapped with `bubblewrap` when available for filesystem sandboxing. Streaming output sent via `shell_output` WebSocket events.
 
@@ -277,7 +278,7 @@ Key registry functions:
 
 ### Implemented Tool Categories (Generalization — as of September 2026)
 
-All categories below are now registered in `tools/registry.py` (70 tools total):
+All categories below are now registered in `tools/registry.py` (71 tools total):
 
 **Google Integration (4 tools, read-only OAuth2):**
 - `calendar_read` — upcoming events, free/busy (`calendar.readonly`)
@@ -328,7 +329,7 @@ All categories below are now registered in `tools/registry.py` (70 tools total):
 
 ### Tool Registry Expansion Strategy
 
-To support 70 tools without token bloat:
+To support 71 tools without token bloat:
 
 1. **RAG-Based Dynamic Tool Injection** (Tier 1.8): Embed all tool descriptions → at plan time, retrieve top 6-8 most relevant tools by cosine similarity
 2. **Multi-Agent Supervisor** (Tier 2.11): Sub-agents only see their domain-specific tool subset (ShellAgent, DesktopUIAgent, WebAgent, CalendarAgent, MusicAgent, SocialAgent, BrowserAgent)
