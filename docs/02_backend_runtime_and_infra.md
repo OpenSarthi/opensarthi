@@ -116,8 +116,11 @@ Client disconnects → cleanup active tasks
 ### Engine Selection
 
 ```python
-USE_LANGGRAPH = os.getenv("USE_LANGGRAPH", "false").lower() == "true"
+# config.py (pydantic-settings)
+use_langgraph: bool = True  # LangGraph is the default; override via USE_LANGGRAPH=false in .env
 ```
+
+**LangGraph is the default execution engine.** `AgentRuntime` is the legacy fallback, activated via `USE_LANGGRAPH=false`.
 
 Both engines receive identical inputs and emit identical WebSocket events.
 
@@ -285,6 +288,7 @@ All categories below are now registered in `tools/registry.py` (71 tools total):
 - `gmail_read` — unread subjects/snippets, search (`gmail.readonly`)
 - `calendar_search` — find events by query
 - `gmail_search` — find emails by query
+- **Token storage**: OAuth refresh token → `~/.config/opensarthi/google_tokens.json`; client credentials → `~/.config/opensarthi/.env`. Persists across restarts.
 
 **Browser Automation (21 tools, Playwright backend):**
 - Navigation: `browser_go_to`, `browser_back`, `browser_forward`, `browser_reload`, `browser_get_url`

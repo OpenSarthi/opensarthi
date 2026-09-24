@@ -72,6 +72,8 @@ FastAPI is configured with `CORSMiddleware` (`allow_origins=["*"]`) so that requ
 | `/integrations/revoke` | POST | Revokes stored tokens for an integration. |
 | `/integrations/social` | POST | Saves social & messaging credentials to config and synchronizes runtime environment. |
 
+> **Google OAuth Token Persistence**: After successful authorization, the OAuth refresh token is stored at `~/.config/opensarthi/google_tokens.json` (constant `TOKEN_FILE` in `runtime/tools/google_tools.py`). The client credentials (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) are persisted in `~/.config/opensarthi/.env`. Both files survive restarts — no re-authorization needed until the token is revoked or expires.
+
 In packaged production builds (AppImage):
 1. A compiled Rust bootstrap runner executes first.
 2. Checks `~/.config/opensarthi/.venv` for a valid Python 3.12 venv.
@@ -242,8 +244,8 @@ OpenSarthi ships two parallel execution engines sharing the same tools, memory, 
 
 | Engine | Activate | Best For |
 |--------|----------|----------|
-| **AgentRuntime** (default) | `USE_LANGGRAPH=false` | Simpler tasks, lower memory overhead |
-| **LangGraph Graph** | `USE_LANGGRAPH=true` | Stateful multi-step tasks, crash recovery, advanced routing |
+| **LangGraph Graph** (default) | `USE_LANGGRAPH=true` (default) | Stateful multi-step tasks, crash recovery, advanced routing |
+| **AgentRuntime** (legacy) | `USE_LANGGRAPH=false` | Simpler tasks, lower memory overhead |
 
 #### AgentRuntime (`agent_runtime.py`)
 
@@ -661,9 +663,9 @@ python main.py
 # Output: PORT:38495  ← picked up by Tauri frontend
 ```
 
-LangGraph mode:
+LangGraph is the **default**. To use the legacy AgentRuntime instead:
 ```bash
-USE_LANGGRAPH=true python main.py
+USE_LANGGRAPH=false python main.py
 ```
 
 ---

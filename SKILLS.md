@@ -3,7 +3,7 @@
 > **Purpose:** This file is the single source of truth for any LLM (Gemini, Claude, GPT, Copilot, Cursor, Codex, etc.) working on this codebase.  
 > Read this **first** before writing or modifying any code. It captures architecture, conventions, invariants, contracts, and pitfalls that are not obvious from the code alone.
 
-> **Last updated:** September 2026 — Dual execution engine (AgentRuntime + LangGraph), 6 Voice Personas (`JARVIS`, `NOVA`, `ATLAS`, `ARIA`, `LUNA`, `SARTHI`) via offline Kokoro-82M TTS + gTTS fallback, Integrations Hub (Google Workspace, Twitter, Telegram, Discord, SMTP, LinkedIn), Observer snapshot caching (2s TTL), SileroVAD ONNX (no PyTorch), **71-tool registry** across 10 tool domains, multi-format plan & XML tag tool parser, browser automation (Playwright, 20+ tools), terminal-first URL opening (`open_url`), multimodal screenshot analysis, instant vision acknowledgment, LangGraph as default engine (`USE_LANGGRAPH=true`), Supervisor multi-agent orchestration (default on), conversational settings tool (`update_settings`), long-term memory toggle + model caching, audio cues engine, multi-tab threads, smart overlay mode with edge snapping, full markdown response rendering + clickable URLs, separate AI/All save in settings, `DevLogger` structured run logs, `OverlayIdleView` compact strip.
+> **Last updated:** September 2026 — Dual execution engine (LangGraph default + legacy AgentRuntime), 6 Voice Personas (`JARVIS`, `NOVA`, `ATLAS`, `ARIA`, `LUNA`, `SARTHI`) via 4-tier TTS (Edge-TTS primary → Kokoro-82M ONNX → gTTS → eSpeak), Integrations Hub (Google Workspace OAuth, Twitter, Telegram, Discord, SMTP, LinkedIn), Observer snapshot caching (2s TTL), SileroVAD ONNX (no PyTorch), **71-tool registry** across 10 tool domains, multi-format plan & XML tag tool parser, browser automation (Playwright, 20+ tools), terminal-first URL opening (`open_url`), multimodal screenshot analysis, instant vision acknowledgment, Supervisor multi-agent orchestration (default on), conversational settings tool (`update_settings`), long-term memory toggle + model caching, audio cues engine, multi-tab threads, smart overlay mode with edge snapping, full markdown response rendering + clickable URLs, `DevLogger` structured run logs, `OverlayIdleView` compact strip, Google OAuth token persistence (`~/.config/opensarthi/google_tokens.json`).
 
 ---
 
@@ -56,7 +56,7 @@
 3. **WebSocket-first Communication with Local Proxy Helpers** — Primary messaging is WebSocket-based (`/ws`). Lightweight local HTTP endpoints (`/models`, `/validate_key`) serve as local proxies for dynamic model discovery and credential verification without CSP violations.
 4. **Monorepo** — pnpm workspaces. `apps/desktop/` is the Tauri+React app. `apps/android/` is the Capacitor+React app. `runtime/` is the Python sidecar/embedded server.
 5. **Linux-first, Windows in progress, Android active** — Android uses `OPENSARTHI_PLATFORM=android` env var to switch tool registry and voice pipeline.
-6. **Dual execution mode** — `USE_LANGGRAPH=true` activates `runtime/graph/` (LangGraph stateful graph with `SqliteSaver` checkpointing). Default is the legacy `AgentRuntime` agentic loop.
+6. **Dual execution mode** — LangGraph (`runtime/graph/`) is the **default** execution engine (`use_langgraph: bool = True` in `config.py`). Set `USE_LANGGRAPH=False` to fall back to the legacy `AgentRuntime` loop.
 7. **Word-by-word streaming** — Both Desktop and Android receive `stream_chunk` / `stream_end` WebSocket events during chat responses, powering a typing animation in the UI.
 
 ---
@@ -83,7 +83,7 @@
 | Python | **3.12** | 3.13+ not supported (no ML wheels) |
 | API | **FastAPI** + **uvicorn** | Single WebSocket endpoint `/ws` |
 | Agent | **PydanticAI ≥ 0.2** | `Agent` with `deps_type=AgentDependencies` |
-| Graph | **LangGraph ≥ 0.4** | Optional; activate with `USE_LANGGRAPH=true` |
+| Graph | **LangGraph ≥ 0.4** | **Default** execution engine; disable with `USE_LANGGRAPH=False` |
 | Checkpoints | **langgraph-checkpoint-sqlite** | `SqliteSaver` at `~/.config/opensarthi/checkpoints.db` |
 | Validation | **Pydantic v2** | Schemas in `planner/schemas.py` |
 | Config | **pydantic-settings** | Loads from `~/.config/opensarthi/.env` |
@@ -215,8 +215,8 @@ User input (text or voice)
     → WebSocket message { type: "user_message" }
     → Session.handle_user_message()
     → Builds the active model based on provider setting
-    → Creates AgentRuntime instance
-    → Calls runtime.run(goal, model, message_history)
+    → use_langgraph=True (default): routes to LangGraph graph.ainvoke()
+    → use_langgraph=False (legacy): creates AgentRuntime → runtime.run(goal, model, message_history)
 ```
 
 ### 5.2 AgentRuntime.run() — The Core Loop
@@ -224,7 +224,7 @@ User input (text or voice)
 ```
 1. Take desktop snapshot (observation.py)
 2. Auto-recall memories:
-   a. Top-5 semantic memories (cosine search against the goal)
+   a. Top-8 semantic memories (cosine search against the goal)
    b. All [PREFERENCE] memories from behavioral_observer (always injected)
 3. Build structured context string (planner/agent.py::build_structured_context)
    — injects: goal, desktop state, USER PREFERENCES, RELEVANT PAST EXPERIENCE,
@@ -582,7 +582,13 @@ Microphone
   → Dual STT: Google SpeechRecognition (fast) + Whisper (accurate, local)
   → transcript_update WS messages
   → On finalization: user_message WS message → agent
-  → Response → Persona Router → Kokoro-82M TTS (Layer 0, offline) / gTTS fallback (Layer 1) → speech_started/speech_completed WS
+  → Response → Persona Router → 4-tier TTS fallback:
+       Layer 0: Edge-TTS neural voices (primary, online)
+       Layer 1: Kokoro-82M ONNX offline neural TTS (offline fallback)
+       Layer 2: gTTS cloud TTS (English + Hindi)
+       Layer 3: Speech Dispatcher client (system offline)
+       Layer 4: eSpeak (last-resort offline)
+  → speech_started/speech_completed WS
 ```
 
 ### Voice Persona System
@@ -596,7 +602,7 @@ Microphone
 | `LUNA` | LUNA | Female | en | `af_jessica` | Soft, soothing & elegant |
 | `SARTHI` | SARTHI | Female | hi | `hf_alpha` | Hindi-first, warm & expressive |
 
-- **Offline-First TTS**: Synthesizes with Kokoro-82M ONNX without internet access; auto-falls back to gTTS if Kokoro library is unavailable.
+- **Edge-TTS Primary**: Layer 0 uses Microsoft Edge-TTS for crisp neural voices. Falls back to Kokoro-82M ONNX (Layer 1, offline) if Edge-TTS is unavailable, then gTTS (Layer 2), Speech Dispatcher (Layer 3), and eSpeak (Layer 4).
 - **Preview WebSocket**: `voice_preview` message triggers instant on-the-fly sample playback for any persona.
 
 ### Echo Protection
@@ -782,6 +788,8 @@ These are rules that **must not be violated**. Breaking them will cause subtle b
 
 11. **Auto-collapse loop on plan updates**: When updating execution states during graph runs, do not trigger collapsibility overrides, as this will lead to a visual auto-collapse flicker loop between replans.
 
+12. **Google OAuth token persistence**: Credentials are stored at `~/.config/opensarthi/google_tokens.json` (defined as `TOKEN_FILE` in `runtime/tools/google_tools.py`). This file persists across restarts. The OAuth client credentials (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) are saved in `~/.config/opensarthi/.env`. Both must be present for Google Calendar/Gmail tools to work without re-authorizing.
+
 ---
 
 ## 20. Roadmap & Status
@@ -807,9 +815,9 @@ These are rules that **must not be violated**. Breaking them will cause subtle b
 
 ### Planned Features
 - [x] Parallel task execution (`depends_on` in PlanStep + `asyncio.gather`)
+- [x] Web Search Tool (`WebSearchTool` in `tools/productivity.py` — DuckDuckGo/Brave/Gemini multi-engine)
 - [ ] ElevenLabs streaming TTS
-- [ ] Web Search Tool (Tavily/Brave)
-- [ ] Morning Briefing
+- [ ] Morning Briefing (documented architecture; trigger logic not yet implemented in `websocket.py`)
 - [ ] MCP Server (expose tools as MCP)
 - [ ] API Key Keyring (libsecret migration from plaintext .env)
 - [ ] Wayland Window Tracking (ydotool for KDE/GNOME)
