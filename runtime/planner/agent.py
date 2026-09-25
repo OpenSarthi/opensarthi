@@ -1,3 +1,17 @@
+"""
+planner/agent.py — FLOW STEP 4: Second LLM call — action plan generation.
+
+Called by plan_node (graph/nodes.py) for every TASK and for each re-plan attempt.
+Builds the full structured context passed to the planner LLM:
+  • build_system_prompt()    → tool schema list, user skills, desktop rules, personalization
+  • build_structured_context() → desktop state, completed/failed actions, recalled memories,
+                                  allowed_tools (from supervisor), retry info
+  • build_agent_user_content() → attaches base64 PNG screenshot for vision-capable models
+
+The agent responds with optional <think>...</think> reasoning + a ```json plan block.
+plan_node parses the JSON via AgentRuntime._parse_response(), filters already-done
+steps (deduplication), and writes the result to state.plan_steps.
+"""
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai import Agent, RunContext
 from typing import Any, Optional, List

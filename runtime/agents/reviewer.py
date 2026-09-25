@@ -1,12 +1,21 @@
 """
-ReviewerAgent — Self-improving post-task learner for OpenSarthi.
+agents/reviewer.py — FLOW STEP 6: Final LLM call pair — learn + format response.
 
-After every task run (success or failure), the Reviewer analyses the execution log
-and writes concrete, actionable lessons to long-term memory.  These lessons are
-auto-injected into the planner context on the next similar task, progressively
-making the agent smarter over time.
+Called by review_node (graph/nodes.py) after all plan steps complete (success or failure).
+Spawns two concurrent asyncio tasks:
+  a. review_and_learn()  \u2014 LLM call: analyses the full execution log (cumulative_steps),
+                             extracts concrete reusable lessons (e.g. "always focus input
+                             before typing"), and stores them in long-term memory with
+                             importance=0.9, source='self_review'.  These are auto-recalled
+                             by observe_node on the next similar task, making the agent
+                             progressively smarter without any manual tuning.
+  b. memory_manager.store() \u2014 stores a success/failure summary for semantic recall.
 
-Runs as a fire-and-forget asyncio task — never blocks the user response.
+After both tasks are dispatched (fire-and-forget), review_node runs a second LLM call via
+an inline PydanticAgent "formatter" to produce the user-facing Markdown response from the
+execution log (avoids the generic "Task completed!" message).
+
+Runs as fire-and-forget asyncio tasks — never blocks the user response.
 """
 import json
 import asyncio

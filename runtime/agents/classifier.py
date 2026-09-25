@@ -1,3 +1,14 @@
+"""
+agents/classifier.py — FLOW STEP 1: First LLM call in the entire pipeline.
+
+Called by classify_node (graph/nodes.py) for every incoming user prompt.
+Uses a lightweight PydanticAI agent with a concise system prompt to route:
+  • CHAT    → chat_node (conversational response, no tools, no plan)
+  • TASK    → observe_node (full desktop automation pipeline)
+  • CLARIFY → END (ask the user to rephrase — handled upstream in websocket.py)
+
+Fallback on any exception: returns TASK (never silently drops automation requests).
+"""
 from typing import Literal, Any
 from pydantic_ai import Agent as PydanticAgent
 import structlog

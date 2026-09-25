@@ -1,6 +1,21 @@
 """
 graph/graph.py — Graph assembly and compilation for OpenSarthi.
 
+━━━ AGENTIC FLOW — GRAPH WIRING ━━━
+This file assembles the LangGraph StateGraph that orchestrates the pipeline.
+All nodes are implemented in graph/nodes.py. Edge routing logic is in graph/edges.py.
+
+Entry point: run_graph() (called from websocket.py after the WS message is received)
+
+  FLOW A — TASK path:
+    classify → observe → supervise → plan → execute (loop)
+                                                 ↳ heal → execute   (self-heal retry)
+                                                 ↳ replan → observe → plan  (full replan)
+                                             → review → END
+
+  FLOW B — CHAT path:
+    classify → chat → END
+
 Usage:
     graph = get_compiled_graph()
     config = {
@@ -49,8 +64,17 @@ from graph.edges import (
 logger = structlog.get_logger()
 
 # ── Replan increment wrapper ────────────────────────────────────────────────────
+# FLOW STEP 5b — Replan (no LLM call; state mutation only).
+# Triggered by route_after_execute() when:
+#   • A step fails and is NOT retryable (retryable=False)
+#   • heal_node ran but could not fix the step (no healed payload returned)
+#   • heal_node hit its max heal attempts (>2) for the same step index
+# Increments retry_count, clears plan_steps and current_step_index,
+# then routes back to observe_node → plan_node for a fresh plan using the
+# updated desktop state. If retry_count >= max_retries, routes to review_node
+# (terminates the task with whatever partial results exist).
 async def replan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
-    """Increment retry_count and clear current plan before replanning."""
+    """[FLOW 5b] Increment retry_count and clear plan before re-entering observe → plan."""
     new_retry = state.retry_count + 1
     logger.info("replan_node", retry_count=new_retry, goal=state.goal[:60])
     ws = config["configurable"].get("ws_handler")

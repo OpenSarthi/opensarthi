@@ -1,6 +1,23 @@
 """
 graph/nodes.py — All LangGraph node implementations for OpenSarthi.
 
+━━━ AGENTIC FLOW OVERVIEW ━━━
+The full pipeline (numbered below) for a user prompt:
+
+  FLOW A — TASK path (LLM automation):
+    1. classify_node      → First LLM call: classify prompt as CHAT | TASK | CLARIFY
+    2. observe_node       → Capture desktop snapshot + recall relevant memories
+    3. supervise_node     → Domain-classify the task; resolve allowed tool set
+    4. plan_node          → Second LLM call (planner): generate JSON action plan + inject screenshot
+    5. execute_step_node  → Execute one tool step from the plan
+       ↳ 5a. heal_node    → (on failure) Third LLM call: self-heal the failed step
+       ↳ 5b. replan_node  → (if heal fails / max retries) Re-observe and call plan_node again
+    6. review_node        → Final LLM call: ReviewerAgent formats response + stores memories
+
+  FLOW B — CHAT path (direct conversational response):
+    1. classify_node      → First LLM call: classify as CHAT
+    2. chat_node          → Second LLM call: conversational response (no tools)
+
 Each node is an async function that:
   - Receives the full OpenSarthiState
   - Performs its work (LLM call, tool exec, memory lookup, etc.)
@@ -97,8 +114,15 @@ def _clean_completed_actions(completed: list[str]) -> list[str]:
 
 
 # ── classify_node ───────────────────────────────────────────────────────────────
+# FLOW STEP 1 — First LLM call in the entire pipeline.
+# Entry point for every user prompt (speech-transcribed or typed).
+# Calls agents/classifier.py → classify_intent_with_usage() which sends the raw
+# goal text to the LLM and returns one of: "CHAT", "TASK", or "CLARIFY".
+# • CHAT   → routes to chat_node (direct conversational response, no tools)
+# • TASK   → routes to observe_node (desktop automation pipeline)
+# • CLARIFY → routes to END (ask the user to rephrase; handled upstream)
 async def classify_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
-    """Classify the user goal into CHAT | TASK | CLARIFY."""
+    """[FLOW 1] Classify the user goal into CHAT | TASK | CLARIFY. First LLM call."""
     model = config["configurable"]["model"]
     from agents.classifier import classify_intent_with_usage
     ws = config["configurable"].get("ws_handler")
@@ -132,6 +156,12 @@ async def classify_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
 
 
 # ── supervise_node ───────────────────────────────────────────────────────────────
+# FLOW STEP 3 — Multi-agent supervisor (optional, guarded by settings.use_supervisor).
+# Runs AFTER observe_node and BEFORE plan_node.
+# Sends the goal to agents/supervisor.py → Supervisor.classify() which uses an LLM
+# to determine which tool domain(s) the task belongs to (e.g. SHELL, DESKTOP_UI,
+# PRODUCTIVITY) and produces an allowed_tools allowlist.
+# If supervisor is disabled (default), all tools remain available.
 async def supervise_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
     """
     Multi-agent supervisor: classify task into domain(s) and resolve allowed tools.
@@ -209,8 +239,18 @@ async def supervise_node(state: OpenSarthiState, config: RunnableConfig) -> dict
 
 
 # ── observe_node ────────────────────────────────────────────────────────────────
+# FLOW STEP 2 — Desktop perception. Runs after TASK classification.
+# Calls observation.py → DesktopObserver.snapshot() which:
+#   • Captures a screenshot via observer/screen.py → capture_screenshot()
+#     (mss on Linux/Win/Mac, screencap on Android)
+#   • Grabs the active window title (xdotool/AT-SPI/Win32 API)
+#   • Reads the accessibility tree (AT-SPI2 on Linux, UIA on Windows)
+#   • Runs OCR if configured (observer/ocr.py)
+#   • Base64-encodes the screenshot for the planner vision pass
+# Also recalls top-k semantic memories from the long-term memory store so the
+# planner has user context (preferences, past actions) baked in from the start.
 async def observe_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
-    """Take a desktop snapshot and recall relevant memories."""
+    """[FLOW 2] Capture desktop snapshot (screenshot + a11y tree) and recall memories."""
     ws = config["configurable"].get("ws_handler")
     thread_id = config["configurable"].get("thread_id")
     if ws:
@@ -260,8 +300,20 @@ async def observe_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
 
 
 # ── plan_node ───────────────────────────────────────────────────────────────────
+# FLOW STEP 4 — Second LLM call: planning (also the re-plan entry if retry_count > 0).
+# Builds the structured context string via planner/agent.py → build_structured_context():
+#   • System prompt (skills, desktop rules, tool routing guide)
+#   • Current desktop state (active window, focused element, accessibility tree)
+#   • Previous completed/failed actions (for replanning continuity)
+#   • Auto-recalled memories and user preferences
+#   • Allowed tool list (from supervisor or unrestricted)
+# If the model supports vision (screenshots_for_model()), attaches the base64 PNG
+# screenshot as an inline image part so the LLM can SEE the screen while planning.
+# The LLM responds with <think>...</think> + a ```json plan array.
+# plan_node parses the response, filters already-completed steps, and stores
+# the resulting plan_steps list. Sends plan_created WS event to the frontend.
 async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
-    """Call PydanticAI planner to generate the next action plan."""
+    """[FLOW 4] Second LLM call: generate JSON action plan (with optional screenshot)."""
     model = config["configurable"]["model"]
     deps = config["configurable"]["deps"]
     ws = config["configurable"].get("ws_handler")
@@ -461,8 +513,21 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
 
 
 # ── execute_step_node ───────────────────────────────────────────────────────────
+# FLOW STEP 5 — Tool execution loop (no LLM call; pure deterministic execution).
+# Runs once per plan step. The graph loops back here via route_after_execute()
+# until all steps are consumed or a failure triggers heal/replan.
+# Execution path:
+#   a. Deduplication guard: skip step if already done in a prior attempt.
+#   b. Supervisor authorization check: reject if tool not in allowed_tools.
+#   c. tool.safe_execute(args, permission_manager=ws) — dispatches to the
+#      concrete BaseTool subclass in runtime/tools/ (desktop.py, system.py, etc.).
+#      Tools are cross-platform: desktop.py uses provider pattern
+#      (XdotoolProvider | YdotoolProvider | MacOSProvider | PyAutoGUIProvider).
+#   d. On success: appends to completed_actions with a canonical signature.
+#   e. On failure: appends to failed_actions; graph routes to heal_node.
+# Emits tool_started / tool_action / tool_completed WS events for the UI.
 async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
-    """Execute the current pending step from the plan."""
+    """[FLOW 5] Execute one tool step from the plan (no LLM, pure deterministic dispatch)."""
     ws = config["configurable"].get("ws_handler")
     thread_id = config["configurable"].get("thread_id")
     if ws:
@@ -692,8 +757,17 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
 
 
 # ── heal_node ───────────────────────────────────────────────────────────────────
+# FLOW STEP 5a — Third LLM call (on tool failure): self-healing.
+# Triggered by route_after_execute() when a step fails and retry budget remains.
+# Calls agents/healer.py → HealerAgent.diagnose_and_fix():
+#   • Takes failed_tool, failed_args, error message, and the current screen text
+#   • Asks the LLM to suggest a corrected tool name + args (or an alternative tool)
+#   • Max 2 self-heal attempts per step index (tracked in state.heal_attempts)
+# On success: patches plan_steps[idx] with the healed tool/args in-place
+#             and routes back to execute_step_node to retry the same step.
+# On failure (no fix found, or 3rd attempt): routes to replan_node.
 async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
-    """Try to self-heal a failed step using HealerAgent."""
+    """[FLOW 5a] Third LLM call (on failure): self-heal the failed step or escalate to replan."""
     model = config["configurable"]["model"]
     deps = config["configurable"]["deps"]
     ws = config["configurable"].get("ws_handler")
@@ -835,8 +909,18 @@ async def heal_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
 
 
 # ── review_node ─────────────────────────────────────────────────────────────────
+# FLOW STEP 6 — Final LLM call: review, summarise, and learn.
+# Triggered by route_after_execute() when all plan steps are done, or after
+# max retries are exhausted (review acts as the terminal node for both paths).
+# Two async tasks are created:
+#   a. ReviewerAgent.review_and_learn() — analyses the execution log, extracts
+#      lessons, and stores behavioural patterns back into long-term memory.
+#   b. memory_manager.store() — records success/failure summary for future recall.
+# Then a PydanticAgent "formatter" call (LLM) generates the user-facing final
+# response in Markdown from the cumulative_steps log (avoids generic "Task done").
+# Emits window_control restore_hint so the UI sidebar returns from overlay mode.
 async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
-    """ReviewerAgent learns from execution and formats final response."""
+    """[FLOW 6] Final LLM call: ReviewerAgent learns from execution + formats user response."""
     model = config["configurable"]["model"]
     deps = config["configurable"]["deps"]
     memory_manager = config["configurable"].get("memory_manager")
@@ -1037,8 +1121,16 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
 
 
 # ── chat_node ───────────────────────────────────────────────────────────────────
+# FLOW B STEP 2 — Second LLM call on the CHAT path (no desktop tools, no planning).
+# Triggered when classify_node returns "CHAT".
+# Builds a chat-mode system prompt (no tool schemas, markdown-friendly) from
+# planner/agent.py → build_system_prompt(chat_only=True).
+# Pulls the user's semantic memories and preferences so the conversation is
+# personalised. Passes the full message_history for multi-turn awareness.
+# Result is streamed word-by-word to the frontend via ws_handler.stream_text()
+# if the WebSocket handler supports it. No tool calls, no plan, no replay.
 async def chat_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
-    """Handle CHAT classification: direct conversational LLM response."""
+    """[FLOW B-2] Direct conversational LLM response (no tools/planning). CHAT path only."""
     model = config["configurable"]["model"]
     deps = config["configurable"]["deps"]
     ws = config["configurable"].get("ws_handler")

@@ -1,10 +1,18 @@
 """
-HealerAgent — Self-healing step correction for OpenSarthi.
+agents/healer.py — FLOW STEP 5a: Third LLM call (on tool failure).
 
-When a plan step fails, instead of immediately retrying with the same args,
-the Healer performs a targeted LLM diagnosis and returns a corrected PlanStep
-with patched args or an alternative tool. If healing isn't possible, returns None
-and the caller falls back to normal replanning.
+Called by heal_node (graph/nodes.py) when execute_step_node reports a failed step.
+Healing strategy (two-stage, escalating):
+  1. Quick heuristic: pattern-match the error against known failure modes
+     (e.g. "focus" error on type_text → inject click_element before typing)
+     — no LLM call needed, zero latency.
+  2. LLM-based diagnosis: if no heuristic matches, call the model with a focused
+     prompt describing the failed tool, args, error message, and current screen text.
+     The model suggests a corrected tool/args pair or an alternative tool.
+
+If healing succeeds: heal_node patches plan_steps[idx] in-place and routes back to
+execute_step_node to retry. Max 2 self-heal attempts per step index (state.heal_attempts).
+If healing fails: control falls through to replan_node (FLOW STEP 5b).
 """
 import json
 import asyncio

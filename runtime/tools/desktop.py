@@ -1,3 +1,39 @@
+"""
+tools/desktop.py — Cross-platform desktop automation tools for OpenSarthi.
+
+━━━ TOOL EXECUTION FLOW (called from FLOW STEP 5 – execute_step_node) ━━━
+Each concrete tool class (ClickTool, TypeTextTool, etc.) inherits from BaseTool
+and is dispatched by tools/registry.py. execute_step_node calls tool.safe_execute()
+which calls tool.execute() which delegates to the module-level _provider singleton.
+
+━━━ CROSS-PLATFORM PROVIDER DECISION TREE ━━━
+Selected once at import time by get_desktop_provider() based on platform / display:
+
+  macOS  (platform.system() == "Darwin")  →  MacOSProvider
+                                                • osascript (AppleScript) for keystroke / click
+                                                • pbcopy + cmd+v for long text paste
+                                                • pyautogui as fallback
+
+  Windows (platform.system() == "Windows") →  PyAutoGUIProvider
+                                                • pyautogui for all mouse/keyboard ops
+                                                • No xdotool/ydotool dependency
+
+  Linux + Wayland (WAYLAND_DISPLAY set)    →  YdotoolProvider
+                                                • ydotool as primary (native Wayland input injector)
+                                                • wtype as secondary text-typing tool
+                                                • xdotool/XWayland as tertiary fallback
+                                                • wl-copy / xsel for clipboard paste
+                                                • pyautogui as last resort
+
+  Linux + X11 (default)                    →  XdotoolProvider
+                                                • xdotool for all ops
+                                                • xsel for clipboard paste on long text
+                                                • pyautogui for smooth mouse glide
+
+The _provider singleton is set at module import (line 697). All tool execute()
+methods call _provider.click() / _provider.type_text() etc. — no platform branches
+needed inside individual tool classes.
+"""
 import os
 import asyncio
 import subprocess
@@ -682,7 +718,14 @@ class MacOSProvider:
             return False
 
 
-# Helper to check display environment and select provider
+# ── Provider factory ────────────────────────────────────────────────────────────────────
+# Runs ONCE at module import. Selects the correct provider based on OS and
+# display server so every tool class delegates through a single _provider object.
+# Decision order:
+#   1. macOS   → MacOSProvider    (osascript + pyautogui)
+#   2. Windows → PyAutoGUIProvider (pyautogui)
+#   3. Linux+Wayland → YdotoolProvider (ydotool → wtype → xdotool → clipboard → pyautogui)
+#   4. Linux+X11     → XdotoolProvider (xdotool → xsel+ctrl+v → pyautogui)
 def get_desktop_provider():
     if platform.system() == "Darwin":
         return MacOSProvider()
