@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { Mic, MicOff, Send, MessageSquare } from "lucide-react";
+import { Mic, MicOff, Send } from "lucide-react";
 import type { Message } from "../../lib/schemas";
 
 interface OverlayIdleViewProps {
@@ -147,22 +147,24 @@ export function OverlayIdleView({
           <div style={{
             flex: 1, display: "flex", flexDirection: "column",
             alignItems: "center", justifyContent: "center",
-            gap: "10px", padding: "20px",
+            gap: "12px", padding: "20px",
           }}>
-            <div style={{
-              width: "40px", height: "40px", borderRadius: "50%",
-              border: "1.5px solid rgba(255,255,255,0.1)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              background: "rgba(255,255,255,0.03)",
-            }}>
-              <MessageSquare size={16} style={{ opacity: 0.3 }} />
+            <div className="os-empty-orb is-compact" aria-hidden="true">
+              <div className="os-empty-orb-ring" />
+              <div className="os-empty-orb-core" style={{ padding: "2px", overflow: "hidden" }}>
+                <img
+                  src="/opensarthi-icon.png"
+                  alt="OpenSarthi"
+                  style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }}
+                />
+              </div>
             </div>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>
+              <div style={{ fontSize: "12px", color: "var(--text-primary)", fontWeight: 600, letterSpacing: "-0.01em" }}>
                 I&apos;m listening
               </div>
               <div style={{
-                fontSize: "10px", color: "rgba(255,255,255,0.25)",
+                fontSize: "10px", color: "var(--text-muted)",
                 marginTop: "4px", lineHeight: "1.5",
               }}>
                 Speak or type a message.<br />I can help while you work.
@@ -290,10 +292,10 @@ export function OverlayIdleView({
       {/* ── Mini input bar ────────────────────────────────────────── */}
       <div style={{
         flexShrink: 0,
-        borderTop: "1px solid rgba(255,255,255,0.06)",
+        borderTop: "1px solid var(--line-soft)",
         padding: "8px 10px",
         display: "flex", gap: "6px", alignItems: "center",
-        background: "rgba(0,0,0,0.15)",
+        background: "linear-gradient(180deg, var(--glass-tint) 0%, transparent 100%), var(--bg-secondary)",
       }}>
         {/* Mic toggle */}
         <button
@@ -301,30 +303,30 @@ export function OverlayIdleView({
           title={isListening ? "Stop listening" : isSpeaking ? "Stop speaking" : "Start listening"}
           style={{
             flexShrink: 0,
-            width: "30px", height: "30px",
-            borderRadius: "8px",
+            width: "32px", height: "32px",
+            borderRadius: "var(--radius-md)",
             background: isListening
               ? "rgba(60,220,100,0.15)"
               : isSpeaking
               ? "rgba(100,160,255,0.15)"
-              : "rgba(255,255,255,0.05)",
+              : "var(--surface)",
             border: isListening
               ? "1px solid rgba(60,220,100,0.4)"
               : isSpeaking
               ? "1px solid rgba(100,160,255,0.4)"
-              : "1px solid rgba(255,255,255,0.1)",
+              : "1px solid var(--border)",
             color: isListening
               ? "rgb(60,220,100)"
               : isSpeaking
               ? "rgb(100,160,255)"
-              : "rgba(255,255,255,0.5)",
+              : "var(--text-secondary)",
             display: "flex", alignItems: "center", justifyContent: "center",
             cursor: "pointer",
             transition: "all 0.15s",
             animation: isListening ? "pulse 1.4s ease-in-out infinite" : "none",
           }}
         >
-          {isListening ? <Mic size={13} /> : <MicOff size={13} />}
+          {isListening ? <Mic size={14} /> : <MicOff size={14} />}
         </button>
 
         {/* Text input */}
@@ -342,19 +344,25 @@ export function OverlayIdleView({
           disabled={!isConnected}
           style={{
             flex: 1,
-            height: "30px",
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: "8px",
+            height: "32px",
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid var(--glass-stroke)",
+            borderRadius: "var(--radius-md)",
             padding: "0 10px",
             fontSize: "11px",
-            color: "rgba(255,255,255,0.85)",
+            color: "var(--text-primary)",
             fontFamily: "var(--font-sans, sans-serif)",
             outline: "none",
-            transition: "border-color 0.15s",
+            transition: "border-color 0.15s, box-shadow 0.15s",
           }}
-          onFocus={(e) => { e.target.style.borderColor = "rgba(0,200,120,0.5)"; }}
-          onBlur={(e)  => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; }}
+          onFocus={(e) => {
+            e.target.style.borderColor = "var(--accent)";
+            e.target.style.boxShadow = "0 0 8px var(--accent-glow)";
+          }}
+          onBlur={(e)  => {
+            e.target.style.borderColor = "var(--glass-stroke)";
+            e.target.style.boxShadow = "none";
+          }}
         />
 
         {/* Send button */}
