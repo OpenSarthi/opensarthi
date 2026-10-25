@@ -1,9 +1,10 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertTriangle, ShieldAlert, Shield, X, Check, ShieldCheck, Terminal, Clock } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { usePermission } from "../../hooks/usePermission";
 import { RISK_COLORS } from "../../lib/constants";
 import type { RiskLevel } from "../../lib/schemas";
+import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 
 const RISK_ICONS: Record<RiskLevel, React.ReactNode> = {
   safe:      <Shield size={18} />,
@@ -15,6 +16,12 @@ const RISK_ICONS: Record<RiskLevel, React.ReactNode> = {
 export function PermissionDialog() {
   const { pendingRequest, respond } = usePermission();
   const [timeLeft, setTimeLeft] = useState(0);
+  const allowButtonRef = useRef<HTMLButtonElement>(null);
+  const modalRef = useModalFocusTrap<HTMLDivElement>({
+    onClose: () => respond(false),
+    initialFocusRef: allowButtonRef,
+    enabled: !!pendingRequest,
+  });
 
   useEffect(() => {
     if (!pendingRequest) { setTimeLeft(0); return; }
@@ -53,36 +60,22 @@ export function PermissionDialog() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.15)",
-            backdropFilter: "blur(32px) saturate(180%)",
-            WebkitBackdropFilter: "blur(32px) saturate(180%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 99999,
-            padding: "20px",
-          }}
+          className="os-scrim"
+          style={{ padding: "20px" }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="permission-dialog-title"
         >
           <motion.div
+            ref={modalRef}
             initial={{ scale: 0.92, y: 16, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.92, y: 16, opacity: 0 }}
             transition={{ type: "spring", damping: 28, stiffness: 360 }}
+            className="os-dialog"
             style={{
               width: "min(580px, 94vw)",
-              background: "rgba(4, 8, 20, 0.92)",
-              backdropFilter: "blur(24px) saturate(160%)",
-              WebkitBackdropFilter: "blur(24px) saturate(160%)",
-              border: `1px solid ${color}66`,
-              borderRadius: "12px",
-              boxShadow: `
-                0 0 0 1px ${color}22,
-                0 32px 80px rgba(0, 0, 0, 0.9),
-                inset 0 0 40px ${color}0d
-              `,
+              border: `1px solid ${color}55`,
               padding: "22px 24px",
               display: "flex",
               flexDirection: "column",
@@ -106,11 +99,11 @@ export function PermissionDialog() {
                   {RISK_ICONS[pendingRequest.risk_level]}
                 </div>
                 <div>
-                  <h3 style={{ fontSize: "13px", fontWeight: "bold", color: "var(--text-primary)", letterSpacing: "0.08em", margin: 0, textTransform: "uppercase" }}>
+                  <h3 id="permission-dialog-title" style={{ fontSize: "13px", fontWeight: "bold", color: "var(--text-primary)", letterSpacing: "0.08em", margin: 0, textTransform: "uppercase" }}>
                     {pendingRequest.risk_level} ACTION REQUIRED
                   </h3>
-                  <p style={{ fontSize: "10px", color: "var(--text-muted)", margin: "2px 0 0 0", fontFamily: "var(--font-mono)", display: "flex", alignItems: "center", gap: "4px" }}>
-                    <Clock size={10} /> AUTO-DENYING IN {timeLeft}S
+                  <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: "2px 0 0 0", fontFamily: "var(--font-mono)", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <Clock size={12} /> AUTO-DENYING IN {timeLeft}S
                   </p>
                 </div>
               </div>
@@ -195,17 +188,18 @@ export function PermissionDialog() {
             <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
               <div style={{ display: "flex", gap: "10px" }}>
                 <button
+                  ref={allowButtonRef}
                   id="permission-allow-once"
                   onClick={() => respond(true, false)}
                   style={{
                     flex: 1,
                     padding: "10px 14px",
-                    background: "rgba(0, 230, 180, 0.16)",
-                    border: "1px solid rgba(0, 230, 180, 0.45)",
+                    background: "var(--accent-glow)",
+                    border: "1px solid var(--border-accent)",
                     borderRadius: "6px",
                     fontSize: "11px",
                     fontWeight: "bold",
-                    color: "#00f5c4",
+                    color: "var(--accent)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -214,8 +208,8 @@ export function PermissionDialog() {
                     letterSpacing: "0.08em",
                     transition: "all 0.15s",
                   }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0, 230, 180, 0.28)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0, 230, 180, 0.16)"; }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.2)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.filter = "none"; }}
                 >
                   <Check size={14} /> ALLOW ONCE
                 </button>
@@ -252,10 +246,10 @@ export function PermissionDialog() {
                 onClick={() => respond(true, true)}
                 style={{
                   padding: "9px 14px",
-                  background: "rgba(0, 230, 180, 0.06)",
-                  border: "1px solid rgba(0, 230, 180, 0.3)",
+                  background: "var(--accent-glow-lg)",
+                  border: "1px solid var(--border)",
                   borderRadius: "6px",
-                  fontSize: "10.5px",
+                  fontSize: "11px",
                   fontWeight: "bold",
                   color: "var(--accent)",
                   display: "flex",
@@ -266,8 +260,8 @@ export function PermissionDialog() {
                   letterSpacing: "0.08em",
                   transition: "all 0.15s",
                 }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0, 230, 180, 0.14)"; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0, 230, 180, 0.06)"; }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.2)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.filter = "none"; }}
               >
                 <ShieldCheck size={14} /> ALLOW ALWAYS FOR THIS ACTION
               </button>

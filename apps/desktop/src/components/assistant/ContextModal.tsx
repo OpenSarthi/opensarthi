@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Cpu, Brain, Database, Activity, MessageSquare,
@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useAssistantStore } from "../../stores/assistantStore";
 import { wsClient } from "../../lib/ws";
+import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 
 interface ContextModalProps {
   isOpen: boolean;
@@ -66,7 +67,7 @@ function Section({ title, icon, children, defaultOpen = true, badge, badgeColor 
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)"; }}
       >
         <span style={{ color: "var(--accent)", display: "flex" }}>{icon}</span>
-        <span style={{ fontSize: "11px", fontWeight: "bold", letterSpacing: "0.08em", flex: 1, color: "var(--accent)" }}>
+        <span style={{ fontSize: "var(--text-meta)", fontWeight: 600, letterSpacing: "-0.01em", flex: 1, color: "var(--text-primary)" }}>
           {title}
         </span>
         {badge !== undefined && (
@@ -145,6 +146,8 @@ function KVRow({ label, value, accent = false }: { label: string; value: string 
 }
 
 export function ContextModal({ isOpen, onClose }: ContextModalProps) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const modalRef = useModalFocusTrap<HTMLDivElement>({ onClose, initialFocusRef: closeButtonRef, enabled: isOpen });
   const {
     userName,
     userSkills,
@@ -244,10 +247,10 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
   const currentReasonings = planReasonings[activeThreadId] ?? [];
 
   const tabs_: { id: TabId; label: string; icon: React.ReactNode }[] = [
-    { id: "context", label: "LLM CONTEXT", icon: <MessageSquare size={12} /> },
+    { id: "context", label: "LLM context", icon: <MessageSquare size={12} /> },
     { id: "graph", label: "GRAPH STATE", icon: <GitBranch size={12} /> },
-    { id: "memory", label: "MEMORY", icon: <Database size={12} /> },
-    { id: "settings", label: "CAPABILITIES", icon: <Shield size={12} /> },
+    { id: "memory", label: "Memory", icon: <Database size={12} /> },
+    { id: "settings", label: "Capabilities", icon: <Shield size={12} /> },
   ];
 
   return (
@@ -258,19 +261,16 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
-          style={{
-            position: "fixed",
-            top: 0, left: 0, right: 0, bottom: 0,
-            background: "rgba(0, 0, 0, 0.05)",
-            display: "flex",
-            justifyContent: "flex-end",
-            alignItems: "flex-start",
-            padding: "54px 12px 12px 12px",
-            zIndex: 200,
-          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="context-modal-title"
+          className="os-scrim"
+          style={{ zIndex: 200, justifyContent: "flex-end", alignItems: "flex-start" }}
           onClick={e => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
+            ref={modalRef}
+            className="hud-panel os-dialog"
             initial={{ x: 250, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 250, opacity: 0 }}
@@ -280,9 +280,6 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
               height: "calc(100vh - 66px)",
               display: "flex",
               flexDirection: "column",
-              background: "rgba(10, 10, 10, 0.98)",
-              border: "1px solid var(--border)",
-              boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)",
               overflow: "hidden",
             }}
           >
@@ -292,25 +289,25 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
               justifyContent: "space-between",
               alignItems: "center",
               padding: "14px 20px",
-              borderBottom: "1px solid rgba(255,255,255,0.06)",
-              background: "rgba(0, 230, 180, 0.04)",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--accent-glow-lg)",
               flexShrink: 0,
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                 <div style={{
                   width: "28px", height: "28px", borderRadius: "6px",
-                  background: "rgba(0, 230, 180, 0.12)",
-                  border: "1px solid rgba(0, 230, 180, 0.25)",
+                  background: "var(--accent-glow)",
+                  border: "1px solid var(--border-accent)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
                   <Cpu size={14} color="var(--accent)" />
                 </div>
                 <div>
-                  <h2 style={{ fontSize: "12px", color: "var(--accent)", letterSpacing: "0.12em", fontWeight: "bold", margin: 0 }}>
-                    AGENT CONTEXT DEBUGGER
+                  <h2 id="context-modal-title" style={{ fontSize: "var(--text-title)", color: "var(--text-primary)", letterSpacing: "-0.02em", fontWeight: 600, margin: 0 }}>
+                    Agent context
                   </h2>
-                  <span style={{ fontSize: "9px", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
-                    THREAD: {activeThreadId?.slice(0, 16)}... · {messages.length} MESSAGES
+                  <span style={{ fontSize: "var(--text-micro)", color: "var(--text-muted)" }}>
+                    Thread {activeThreadId?.slice(0, 16)}… · {messages.length} messages
                   </span>
                 </div>
               </div>
@@ -322,26 +319,28 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                   padding: "4px 10px",
                   borderRadius: "99px",
                   background: lastClassification === "TASK" ? "rgba(255,100,50,0.12)" :
-                    lastClassification === "CHAT" ? "rgba(0,230,180,0.1)" : "rgba(255,255,255,0.05)",
+                    lastClassification === "CHAT" ? "var(--accent-glow)" : "rgba(255,255,255,0.05)",
                   border: `1px solid ${lastClassification === "TASK" ? "rgba(255,100,50,0.3)" :
-                    lastClassification === "CHAT" ? "rgba(0,230,180,0.25)" : "rgba(255,255,255,0.1)"}`,
+                    lastClassification === "CHAT" ? "var(--border-accent)" : "var(--border)"}`,
                 }}>
-                  <Activity size={9} color={lastClassification === "TASK" ? "#ff6432" : lastClassification === "CHAT" ? "var(--accent)" : "var(--text-muted)"} />
+                  <Activity size={12} color={lastClassification === "TASK" ? "#ff6432" : lastClassification === "CHAT" ? "var(--accent)" : "var(--text-muted)"} />
                   <span style={{
-                    fontSize: "9px", fontWeight: "bold", letterSpacing: "0.1em",
+                    fontSize: "var(--text-micro)", fontWeight: 600, letterSpacing: 0,
                     color: lastClassification === "TASK" ? "#ff6432" : lastClassification === "CHAT" ? "var(--accent)" : "var(--text-muted)"
                   }}>
-                    {lastClassification ?? "IDLE"}
+                    {lastClassification ? (lastClassification.charAt(0) + lastClassification.slice(1).toLowerCase()) : "Idle"}
                   </span>
                 </div>
 
                 <button
+                  ref={closeButtonRef}
                   onClick={onClose}
+                  aria-label="Close context debugger"
                   style={{
                     color: "var(--text-secondary)",
                     cursor: "pointer",
                     background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.08)",
+                    border: "1px solid var(--border)",
                     borderRadius: "6px",
                     display: "flex",
                     alignItems: "center",
@@ -350,35 +349,41 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                     height: "28px",
                     padding: 0,
                   }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,60,60,0.12)"; (e.currentTarget as HTMLButtonElement).style.color = "#ff4444"; }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,60,60,0.12)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--danger)"; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--text-secondary)"; }}
                 >
-                  <X size={14} />
+                  <X size={16} />
                 </button>
               </div>
             </div>
 
             {/* ── Tabs ── */}
-            <div style={{
-              display: "flex",
-              gap: "2px",
-              padding: "8px 20px 0",
-              borderBottom: "1px solid rgba(255,255,255,0.06)",
-              flexShrink: 0,
-              background: "rgba(0,0,0,0.15)",
-            }}>
+            <div
+              role="tablist"
+              aria-label="Context debugger views"
+              style={{
+                display: "flex",
+                gap: "2px",
+                padding: "8px 20px 0",
+                borderBottom: "1px solid var(--border)",
+                flexShrink: 0,
+                background: "rgba(0,0,0,0.15)",
+              }}
+            >
               {tabs_.map(tab => (
                 <button
                   key={tab.id}
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   style={{
                     display: "flex", alignItems: "center", gap: "5px",
                     padding: "6px 14px 8px",
-                    fontSize: "10px", fontWeight: "bold", letterSpacing: "0.08em",
+                    fontSize: "var(--text-meta)", fontWeight: 500, letterSpacing: 0,
                     background: "transparent", border: "none",
-                    color: activeTab === tab.id ? "var(--accent)" : "var(--text-muted)",
+                    color: activeTab === tab.id ? "var(--text-primary)" : "var(--text-muted)",
                     cursor: "pointer",
-                    borderBottom: activeTab === tab.id ? "2px solid var(--accent)" : "2px solid transparent",
+                    borderBottom: activeTab === tab.id ? "1.5px solid var(--accent)" : "1.5px solid transparent",
                     transition: "all 0.15s",
                     borderRadius: "0",
                   }}
@@ -390,13 +395,17 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
             </div>
 
             {/* ── Scrollable Body ── */}
-            <div style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: "16px 20px 48px", display: "flex", flexDirection: "column", gap: "14px" }}>
+            <div
+              role="tabpanel"
+              aria-label={`${activeTab} panel`}
+              style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: "16px 20px 48px", display: "flex", flexDirection: "column", gap: "14px" }}
+            >
 
               {/* ═══════════ TAB: LLM CONTEXT ═══════════ */}
               {activeTab === "context" && (
                 <>
                   {/* System Prompt */}
-                  <Section title="ACTIVE SYSTEM PROMPT" icon={<Zap size={12} />} badge="LIVE">
+                  <Section title="Active system prompt" icon={<Zap size={12} />} badge="Live">
                     <div style={{ position: "relative" }}>
                       <MonoBlock maxH={300}>
                         {systemPromptPreview}
@@ -473,7 +482,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
 
                   {/* Plan Reasonings (LLM Thinking) */}
                   {currentReasonings.length > 0 && (
-                    <Section title="AI PLAN REASONINGS (LAST RUN)" icon={<Brain size={12} />} badge={currentReasonings.length}>
+                    <Section title="Plan reasoning (last run)" icon={<Brain size={12} />} badge={currentReasonings.length}>
                       <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "300px", overflowY: "auto", paddingRight: "4px" }}>
                         {currentReasonings.map((r, i) => (
                           <div key={i} style={{
@@ -496,7 +505,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
 
                   {/* Active Plan Steps */}
                   {currentPlan && (
-                    <Section title="ACTIVE EXECUTION PLAN" icon={<Layers size={12} />} badge={`${currentPlan.steps.length} STEPS`}>
+                    <Section title="Active execution plan" icon={<Layers size={12} />} badge={`${currentPlan.steps.length} steps`}>
                       <div style={{ marginBottom: "6px" }}>
                         <KVRow label="GOAL" value={currentPlan.goal} accent />
                         <KVRow label="PLAN ID" value={currentPlan.id?.slice(0, 16) + "..."} />
@@ -549,7 +558,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
 
                   {/* Shell Output */}
                   {shellOutputLines.length > 0 && (
-                    <Section title="LIVE TERMINAL OUTPUT BUFFER" icon={<Terminal size={12} />} badge={shellOutputLines.length} defaultOpen={true}>
+                    <Section title="Terminal output" icon={<Terminal size={12} />} badge={shellOutputLines.length} defaultOpen={true}>
                       <MonoBlock maxH={300}>
                         <span style={{ color: "rgba(130,255,130,0.85)" }}>
                           {shellOutputLines.slice(-25).join("\n")}
@@ -563,7 +572,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
               {/* ═══════════ TAB: GRAPH STATE ═══════════ */}
               {activeTab === "graph" && (
                 <>
-                  <Section title="LANGGRAPH NODE PIPELINE" icon={<GitBranch size={12} />}>
+                  <Section title="Node pipeline" icon={<GitBranch size={12} />}>
                     <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                       {graphNodes.map((node, ni) => (
                         <div key={ni} style={{
@@ -613,7 +622,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                   </Section>
 
                   {/* Runtime Information */}
-                  <Section title="RUNTIME INFO" icon={<Activity size={12} />}>
+                  <Section title="Runtime info" icon={<Activity size={12} />}>
                     <div>
                       <KVRow label="ACTIVE THREAD ID" value={activeThreadId} />
                       <KVRow label="PROVIDER" value={(activeProvider === "custom_openai" && customOpenaiProviderName?.trim()) ? customOpenaiProviderName.trim().toUpperCase() : activeProvider?.toUpperCase()} accent />
@@ -627,7 +636,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                   </Section>
 
                   {/* Token Usage */}
-                  <Section title="TOKEN USAGE (CURRENT THREAD)" icon={<Hash size={12} />} defaultOpen={false}>
+                  <Section title="Token usage (current thread)" icon={<Hash size={12} />} defaultOpen={false}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
                       {[
                         { label: "REQUEST TOKENS", val: activeTab_?.tokenUsage.requestTokens ?? tokenUsage.requestTokens },
@@ -655,7 +664,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
               {/* ═══════════ TAB: MEMORY ═══════════ */}
               {activeTab === "memory" && (
                 <>
-                  <Section title="SHORT-TERM MEMORY (CONVERSATION CONTEXT)" icon={<Clock size={12} />} badge={`${(activeTab_?.messages ?? messages).length} turns`}>
+                  <Section title="Short-term memory" icon={<Clock size={12} />} badge={`${(activeTab_?.messages ?? messages).length} turns`}>
                     <p style={{ fontSize: "10.5px", color: "var(--text-secondary)", marginBottom: "10px", lineHeight: "1.5" }}>
                       Short-term memory is the full conversation history sent with every LLM call.
                       Each message below contributes to the context window.
@@ -691,7 +700,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                     </div>
                   </Section>
 
-                  <Section title="LONG-TERM MEMORY (PASSIVE FACTS)" icon={<Database size={12} />} badge={longTermMemories?.length ?? 0} defaultOpen={true}>
+                  <Section title="Long-term memory" icon={<Database size={12} />} badge={longTermMemories?.length ?? 0} defaultOpen={true}>
                     <p style={{ fontSize: "10.5px", color: "var(--text-secondary)", marginBottom: "8px", lineHeight: "1.5" }}>
                       Passively extracted facts from conversations. Stored in persistent memory. Injected into future prompts.
                     </p>
@@ -733,7 +742,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                     </div>
                   </Section>
 
-                  <Section title="PLAN REASONING HISTORY" icon={<Brain size={12} />} badge={currentReasonings.length} defaultOpen={true}>
+                  <Section title="Plan reasoning history" icon={<Brain size={12} />} badge={currentReasonings.length} defaultOpen={true}>
                     {currentReasonings.length === 0 ? (
                       <span style={{ fontSize: "10.5px", color: "var(--text-muted)" }}>No reasoning recorded for this thread yet.</span>
                     ) : (
@@ -762,7 +771,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
               {/* ═══════════ TAB: CAPABILITIES ═══════════ */}
               {activeTab === "settings" && (
                 <>
-                  <Section title="ACTIVE SKILL CONTEXTS" icon={<Box size={12} />}>
+                  <Section title="Active skill contexts" icon={<Box size={12} />}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
                       {AVAILABLE_SKILLS.map(skill => {
                         const active = localSkills.includes(skill.id);
@@ -796,7 +805,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                     </div>
                   </Section>
 
-                  <Section title="CUSTOM PROMPT DIRECTIVES" icon={<Network size={12} />}>
+                  <Section title="Custom prompt directives" icon={<Network size={12} />}>
                     <textarea
                       value={localPrompt}
                       onChange={e => setLocalPrompt(e.target.value)}
@@ -819,7 +828,7 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
                     />
                   </Section>
 
-                  <Section title="SYSTEM PROMPT PREVIEW" icon={<RefreshCcw size={12} />} defaultOpen={true}>
+                  <Section title="System prompt preview" icon={<RefreshCcw size={12} />} defaultOpen={true}>
                     <div style={{ position: "relative" }}>
                       <MonoBlock maxH={300}>
                         {systemPromptPreview}

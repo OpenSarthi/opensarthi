@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Cpu, Plus, Trash2, HelpCircle, CheckCircle2 } from "lucide-react";
+import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 
 interface McpSettingsModalProps {
   isOpen: boolean;
@@ -8,6 +9,8 @@ interface McpSettingsModalProps {
 }
 
 export function McpSettingsModal({ isOpen, onClose }: McpSettingsModalProps) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const modalRef = useModalFocusTrap<HTMLDivElement>({ onClose, initialFocusRef: closeButtonRef, enabled: isOpen });
   const [mcpExposeLocal, setMcpExposeLocal] = useState(() => {
     return localStorage.getItem("opensarthi_mcp_expose_local") !== "false";
   });
@@ -64,13 +67,12 @@ export function McpSettingsModal({ isOpen, onClose }: McpSettingsModalProps) {
   };
 
   const inputStyle: React.CSSProperties = {
-    background: "rgba(0,0,0,0.5)",
+    background: "var(--bg-tertiary)",
     border: "1px solid var(--border)",
     padding: "9px 12px",
     color: "var(--text-primary)",
     fontFamily: "var(--font-mono)",
     fontSize: "13px",
-    outline: "none",
     borderRadius: "6px",
     width: "100%",
     boxSizing: "border-box",
@@ -85,10 +87,13 @@ export function McpSettingsModal({ isOpen, onClose }: McpSettingsModalProps) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mcp-dialog-title"
           style={{
             position: "fixed",
             top: 0, left: 0, right: 0, bottom: 0,
-            background: "rgba(0, 0, 0, 0.05)",
+            background: "rgba(0, 0, 0, 0.25)",
             display: "flex",
             justifyContent: "flex-end",
             alignItems: "flex-start",
@@ -98,6 +103,7 @@ export function McpSettingsModal({ isOpen, onClose }: McpSettingsModalProps) {
           onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
+            ref={modalRef}
             className="hud-panel"
             initial={{ x: 250, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
@@ -110,7 +116,7 @@ export function McpSettingsModal({ isOpen, onClose }: McpSettingsModalProps) {
               flexDirection: "column",
               gap: "0",
               overflow: "hidden",
-              background: "rgba(10, 10, 10, 0.95)",
+              background: "var(--bg-secondary)",
               border: "1px solid var(--border)",
               boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)",
             }}
@@ -119,7 +125,7 @@ export function McpSettingsModal({ isOpen, onClose }: McpSettingsModalProps) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px", borderBottom: "1px solid var(--border)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                 <Cpu size={16} color="var(--accent)" />
-                <h2 style={{ fontSize: "14px", color: "var(--accent)", letterSpacing: "0.1em", fontWeight: "bold", margin: 0 }}>
+                <h2 id="mcp-dialog-title" style={{ fontSize: "14px", color: "var(--accent)", letterSpacing: "0.1em", fontWeight: "bold", margin: 0 }}>
                   MODEL CONTEXT PROTOCOL (MCP)
                 </h2>
               </div>
@@ -131,14 +137,33 @@ export function McpSettingsModal({ isOpen, onClose }: McpSettingsModalProps) {
                     cursor: "pointer",
                     background: "none",
                     border: "none",
+                    minWidth: "28px",
+                    minHeight: "28px",
                     display: "flex",
-                    alignItems: "center"
+                    alignItems: "center",
+                    justifyContent: "center"
                   }}
                   title="What is MCP?"
+                  aria-label="What is MCP?"
                 >
                   <HelpCircle size={18} />
                 </button>
-                <button onClick={onClose} style={{ color: "var(--text-secondary)", cursor: "pointer", background: "none", border: "none", display: "flex", alignItems: "center" }}>
+                <button
+                  ref={closeButtonRef}
+                  onClick={onClose}
+                  aria-label="Close MCP settings"
+                  style={{
+                    color: "var(--text-secondary)",
+                    cursor: "pointer",
+                    background: "none",
+                    border: "none",
+                    minWidth: "28px",
+                    minHeight: "28px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                >
                   <X size={18} />
                 </button>
               </div>

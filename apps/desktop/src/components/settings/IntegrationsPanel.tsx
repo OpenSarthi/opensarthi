@@ -37,23 +37,23 @@ interface IntegrationsPanelProps {
 }
 
 const inputStyle: React.CSSProperties = {
-  background: "rgba(0,0,0,0.5)",
-  border: "1px solid var(--border)",
-  padding: "8px 12px",
+  background: "var(--surface-hover)",
+  border: "1px solid var(--line-strong)",
+  padding: "9px 12px",
   color: "var(--text-primary)",
-  fontFamily: "var(--font-mono)",
-  fontSize: "12px",
+  fontFamily: "inherit",
+  fontSize: "var(--text-meta)",
   outline: "none",
-  borderRadius: "4px",
+  borderRadius: "var(--radius-sm)",
   width: "100%",
   boxSizing: "border-box" as const,
 };
 
 const labelStyle: React.CSSProperties = {
-  fontSize: "11px",
+  fontSize: "var(--text-micro)",
   color: "var(--text-secondary)",
-  letterSpacing: "0.06em",
-  marginBottom: "4px",
+  letterSpacing: 0,
+  marginBottom: "5px",
   display: "block",
 };
 
@@ -64,12 +64,11 @@ function StatusBadge({ connected }: { connected: boolean }) {
         display: "inline-flex",
         alignItems: "center",
         gap: "4px",
-        fontSize: "10px",
-        fontFamily: "var(--font-mono)",
-        letterSpacing: "0.04em",
-        color: connected ? "#22c55e" : "var(--text-muted)",
-        background: connected ? "rgba(34,197,94,0.08)" : "rgba(255,255,255,0.04)",
-        border: `1px solid ${connected ? "rgba(34,197,94,0.3)" : "var(--border)"}`,
+        fontSize: "var(--text-micro)",
+        letterSpacing: 0,
+        color: connected ? "var(--success)" : "var(--text-muted)",
+        background: connected ? "color-mix(in srgb, var(--success) 10%, transparent)" : "var(--surface-hover)",
+        border: `1px solid ${connected ? "color-mix(in srgb, var(--success) 30%, transparent)" : "var(--line-soft)"}`,
         padding: "2px 8px",
         borderRadius: "10px",
       }}
@@ -97,10 +96,10 @@ function SectionAccordion({
   return (
     <div
       style={{
-        border: "1px solid var(--border)",
-        borderRadius: "6px",
+        border: "1px solid var(--line-soft)",
+        borderRadius: "var(--radius-md)",
         overflow: "hidden",
-        background: "rgba(255,255,255,0.02)",
+        background: "var(--surface-hover)",
       }}
     >
       <button
@@ -117,7 +116,7 @@ function SectionAccordion({
           color: "var(--text-primary)",
         }}
       >
-        <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "var(--text-meta)", fontWeight: 500, letterSpacing: 0 }}>
           {icon} {title}
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -348,10 +347,9 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
                   ? "rgba(239,68,68,0.4)"
                   : "rgba(34,197,94,0.4)"
               }`,
-              borderRadius: "6px",
-              padding: "8px 12px",
-              fontSize: "11px",
-              fontFamily: "var(--font-mono)",
+              borderRadius: "var(--radius-sm)",
+              padding: "9px 12px",
+              fontSize: "var(--text-meta)",
               color: savedMsg.toLowerCase().includes("failed") || savedMsg.toLowerCase().includes("error")
                 ? "#ef4444"
                 : "#22c55e",
@@ -373,7 +371,7 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
       {/* ── Google Workspace ── */}
       <SectionAccordion
         icon={<Mail size={13} />}
-        title="GOOGLE WORKSPACE"
+        title="Google Workspace"
         badge={<StatusBadge connected={googleConnected} />}
         defaultOpen
       >
@@ -383,35 +381,35 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
           <div style={{
-            padding: "8px 10px",
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid var(--border)",
-            borderRadius: "4px",
+            padding: "9px 10px",
+            background: "var(--surface-hover)",
+            border: "1px solid var(--line-soft)",
+            borderRadius: "var(--radius-sm)",
             display: "flex",
             alignItems: "center",
             gap: "8px",
           }}>
             <Calendar size={12} />
-            <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)" }}>Calendar</span>
+            <span style={{ fontSize: "var(--text-meta)" }}>Calendar</span>
             <StatusBadge connected={status.google_calendar} />
           </div>
           <div style={{
-            padding: "8px 10px",
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid var(--border)",
-            borderRadius: "4px",
+            padding: "9px 10px",
+            background: "var(--surface-hover)",
+            border: "1px solid var(--line-soft)",
+            borderRadius: "var(--radius-sm)",
             display: "flex",
             alignItems: "center",
             gap: "8px",
           }}>
             <Mail size={12} />
-            <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)" }}>Gmail</span>
+            <span style={{ fontSize: "var(--text-meta)" }}>Gmail</span>
             <StatusBadge connected={status.google_gmail} />
           </div>
         </div>
 
         {/* OAuth Credentials Configuration */}
-        <div style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: "4px", padding: "8px 10px", background: "rgba(0,0,0,0.2)" }}>
+        <div style={{ border: "1px solid var(--line-soft)", borderRadius: "var(--radius-sm)", padding: "9px 10px", background: "var(--surface-hover)" }}>
           <button
             onClick={() => setShowGoogleConfig(!showGoogleConfig)}
             style={{
@@ -525,7 +523,7 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
       {/* ── Twitter / X ── */}
       <SectionAccordion
         icon={<Twitter size={13} />}
-        title="TWITTER / X"
+        title="Twitter / X"
         badge={<StatusBadge connected={status.twitter} />}
       >
         <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>
@@ -571,7 +569,7 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
       {/* ── Telegram ── */}
       <SectionAccordion
         icon={<MessageCircle size={13} />}
-        title="TELEGRAM"
+        title="Telegram"
         badge={<StatusBadge connected={status.telegram} />}
       >
         <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>
@@ -613,7 +611,7 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
       {/* ── Discord ── */}
       <SectionAccordion
         icon={<Zap size={13} />}
-        title="DISCORD"
+        title="Discord"
         badge={<StatusBadge connected={status.discord} />}
       >
         <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>
@@ -642,7 +640,7 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
       {/* ── Email (SMTP) ── */}
       <SectionAccordion
         icon={<AtSign size={13} />}
-        title="EMAIL (SMTP)"
+        title="Email (SMTP)"
         badge={<StatusBadge connected={status.smtp} />}
       >
         <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>
@@ -685,7 +683,7 @@ export function IntegrationsPanel({ runtimePort }: IntegrationsPanelProps) {
       {/* ── LinkedIn ── */}
       <SectionAccordion
         icon={<Link2 size={13} />}
-        title="LINKEDIN"
+        title="LinkedIn"
         badge={<StatusBadge connected={status.linkedin} />}
       >
         <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>

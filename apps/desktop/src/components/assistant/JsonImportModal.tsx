@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Play, AlertCircle, ChevronDown, ChevronUp, Book } from "lucide-react";
 import { wsClient } from "../../lib/ws";
 import { useAssistantStore } from "../../stores/assistantStore";
+import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 
 const KNOWN_TOOLS = [
   { name: "click",           args: "x, y" },
@@ -33,6 +34,8 @@ interface JsonImportModalProps {
 }
 
 export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const modalRef = useModalFocusTrap<HTMLDivElement>({ onClose, initialFocusRef: closeButtonRef, enabled: isOpen });
   const [jsonInput, setJsonInput] = useState("");
   const [jsonError, setJsonError] = useState("");
   const [jsonWarning, setJsonWarning] = useState("");
@@ -99,11 +102,14 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="json-import-title"
           style={{
             position: "fixed",
             inset: 0,
             zIndex: 99999, // Ensure it sits above overlay containers
-            background: "rgba(0, 0, 0, 0.05)",
+            background: "rgba(0, 0, 0, 0.25)",
             display: "flex",
             justifyContent: "flex-start",
             alignItems: "flex-start",
@@ -112,6 +118,7 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
           onClick={onClose}
         >
           <motion.div
+            ref={modalRef}
             initial={{ x: -250, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -250, opacity: 0 }}
@@ -119,7 +126,7 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "560px",
-              background: "rgba(10, 10, 10, 0.98)",
+              background: "var(--bg-secondary)",
               border: "1px solid var(--border)",
               boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)",
               display: "flex",
@@ -129,18 +136,26 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: "white", letterSpacing: "0.03em" }}>Import JSON Task Plan</span>
+              <h2 id="json-import-title" style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "0.03em", margin: 0 }}>
+                Import JSON Task Plan
+              </h2>
               <button
+                ref={closeButtonRef}
                 onClick={onClose}
+                aria-label="Close import dialog"
                 style={{
                   background: "none",
                   border: "none",
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--text-secondary)",
                   cursor: "pointer",
-                  padding: 4,
+                  minWidth: "28px",
+                  minHeight: "28px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </div>
 
@@ -148,9 +163,9 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
             <div>
               <label
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: 600,
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--text-secondary)",
                   letterSpacing: "0.06em",
                   display: "block",
                   marginBottom: 6,
@@ -166,12 +181,11 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
                 style={{
                   width: "100%",
                   padding: "9px 12px",
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  background: "var(--bg-tertiary)",
+                  border: "1px solid var(--border)",
                   borderRadius: 8,
-                  color: "white",
+                  color: "var(--text-primary)",
                   fontSize: 12,
-                  outline: "none",
                   boxSizing: "border-box",
                   fontFamily: "inherit",
                 }}
@@ -182,9 +196,9 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
             <div>
               <label
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: 600,
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--text-secondary)",
                   letterSpacing: "0.06em",
                   display: "block",
                   marginBottom: 6,
@@ -204,19 +218,18 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
                   width: "100%",
                   padding: "10px 12px",
                   resize: "vertical",
-                  background: "rgba(255,255,255,0.04)",
+                  background: "var(--bg-tertiary)",
                   border: `1px solid ${
                     jsonError
-                      ? "rgba(255,80,80,0.4)"
+                      ? "var(--danger)"
                       : parsedSteps
-                      ? "rgba(0,200,120,0.3)"
-                      : "rgba(255,255,255,0.1)"
+                      ? "var(--success)"
+                      : "var(--border)"
                   }`,
                   borderRadius: 8,
-                  color: "white",
+                  color: "var(--text-primary)",
                   fontSize: 11,
                   fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                  outline: "none",
                   boxSizing: "border-box",
                   lineHeight: 1.6,
                   transition: "border-color 0.2s",

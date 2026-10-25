@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { X, Save, Volume2, Bell, Cpu, ChevronRight, CheckCircle2, RefreshCw, Globe, Tag, Play } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { playCue } from "../../hooks/useAudioCues";
 import { useAssistantStore } from "../../stores/assistantStore";
 import { IntegrationsPanel } from "./IntegrationsPanel";
 import { wsClient } from "../../lib/ws";
+import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 import {
   PROVIDER_MODELS,
   PROVIDER_LABELS,
@@ -95,49 +96,47 @@ interface SettingsViewProps {
 
 
 const selectStyle: React.CSSProperties = {
-  background: "rgba(0,0,0,0.5)",
-  border: "1px solid var(--border)",
-  padding: "9px 36px 9px 12px",
+  background: "var(--surface-hover)",
+  border: "1px solid var(--line-strong)",
+  padding: "10px 36px 10px 12px",
   color: "var(--text-primary)",
-  fontFamily: "var(--font-mono)",
-  fontSize: "13px",
-  outline: "none",
-  borderRadius: "4px",
+  fontFamily: "var(--font-sans)",
+  fontSize: "var(--text-meta)",
+  borderRadius: "var(--radius-sm)",
   width: "100%",
   WebkitAppearance: "none",
   MozAppearance: "none",
   appearance: "none",
-  backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ff3b30' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+  backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
   backgroundRepeat: "no-repeat",
   backgroundPosition: "right 10px center",
   backgroundSize: "14px",
-  colorScheme: "dark",
   cursor: "pointer",
 };
 
 const inputStyle: React.CSSProperties = {
-  background: "rgba(0,0,0,0.5)",
-  border: "1px solid var(--border)",
-  padding: "9px 12px",
+  background: "var(--surface-hover)",
+  border: "1px solid var(--line-strong)",
+  padding: "10px 12px",
   color: "var(--text-primary)",
-  fontFamily: "var(--font-mono)",
-  fontSize: "13px",
-  outline: "none",
-  borderRadius: "4px",
+  fontFamily: "var(--font-sans)",
+  fontSize: "var(--text-meta)",
+  borderRadius: "var(--radius-sm)",
   width: "100%",
   boxSizing: "border-box",
 };
 
 const labelStyle: React.CSSProperties = {
-  fontSize: "11px",
+  fontSize: "var(--text-label)",
   color: "var(--text-secondary)",
-  letterSpacing: "0.06em",
-  marginBottom: "4px",
+  letterSpacing: 0,
+  fontWeight: 550,
+  marginBottom: "5px",
 };
 
 const sectionStyle: React.CSSProperties = {
-  borderBottom: "1px solid rgba(255,255,255,0.07)",
-  paddingBottom: "16px",
+  borderBottom: "1px solid var(--line-soft)",
+  paddingBottom: "18px",
   display: "flex",
   flexDirection: "column",
   gap: "12px",
@@ -151,7 +150,7 @@ function Toggle({ id, checked, onChange, label, sublabel }: { id: string; checke
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
         <label htmlFor={id} style={{ ...labelStyle, marginBottom: 0, cursor: "pointer" }}>{label}</label>
-        {sublabel && <span style={{ fontSize: "10px", color: "var(--text-muted)", letterSpacing: "0.04em" }}>{sublabel}</span>}
+        {sublabel && <span style={{ fontSize: "var(--text-micro)", color: "var(--text-muted)", lineHeight: 1.4 }}>{sublabel}</span>}
       </div>
       <div
         id={id}
@@ -187,7 +186,7 @@ function Toggle({ id, checked, onChange, label, sublabel }: { id: string; checke
 
 function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
-    <h3 style={{ fontSize: "11px", color: "var(--text-secondary)", letterSpacing: "0.05em", margin: 0, display: "flex", alignItems: "center", gap: "6px" }}>
+    <h3 style={{ fontSize: "var(--text-label)", color: "var(--text-secondary)", letterSpacing: "0.01em", fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: "6px" }}>
       {icon} {title}
     </h3>
   );
@@ -224,6 +223,8 @@ export function SettingsView({
   runtimePort,
   onSave,
 }: SettingsViewProps) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const modalRef = useModalFocusTrap<HTMLDivElement>({ onClose, initialFocusRef: closeButtonRef });
 
   const [provider, setProvider] = useState(currentProvider || "google");
   const [cloudModel, setCloudModel] = useState(currentCloudModel);
@@ -599,11 +600,11 @@ export function SettingsView({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-dialog-title"
+      className="os-scrim"
       style={{
-        position: "fixed",
-        top: 0, left: 0, right: 0, bottom: 0,
-        background: "rgba(0, 0, 0, 0.05)",
-        display: "flex",
         justifyContent: "flex-end",
         alignItems: "flex-start",
         padding: "54px 12px 12px 12px",
@@ -612,7 +613,8 @@ export function SettingsView({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <motion.div
-        className="hud-panel"
+        ref={modalRef}
+        className="hud-panel os-dialog"
         initial={{ x: 250, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 250, opacity: 0 }}
@@ -624,22 +626,33 @@ export function SettingsView({
           flexDirection: "column",
           gap: "0",
           overflow: "hidden",
-          background: "rgba(10, 10, 10, 0.98)",
-          border: "1px solid var(--border)",
-          boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)"
         }}
       >
         {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px 14px", borderBottom: "1px solid var(--border)" }}>
-          <h2 style={{ fontSize: "14px", color: "var(--accent)", letterSpacing: "0.1em", fontWeight: "bold", margin: 0 }}>
-            {viewMode === "agent"
-              ? "// AGENT SETTINGS — AI & MODEL CONFIGURATION"
-              : viewMode === "interaction"
-              ? "// VOICE & AUDIO SETTINGS — INTERACTION CONFIGURATION"
-              : "// INTEGRATIONS & SOURCES — CONNECT SERVICES"}
-          </h2>
-          <button onClick={onClose} style={{ color: "var(--text-secondary)", cursor: "pointer", background: "none", border: "none", display: "flex", alignItems: "center" }}>
-            <X size={18} />
+        <div className="os-dialog-header">
+          <div>
+            <h2 id="settings-dialog-title" className="os-dialog-title">
+              {viewMode === "agent"
+                ? "Agent settings"
+                : viewMode === "interaction"
+                ? "Voice & audio"
+                : "Integrations"}
+            </h2>
+            <p className="os-dialog-subtitle">
+              {viewMode === "agent"
+                ? "Models, keys, and runtime behaviour."
+                : viewMode === "interaction"
+                ? "Persona, listening, and feedback."
+                : "Connect the services your agent can use."}
+            </p>
+          </div>
+          <button
+            ref={closeButtonRef}
+            onClick={onClose}
+            aria-label="Close settings"
+            className="os-icon-btn"
+          >
+            <X size={17} />
           </button>
         </div>
 
@@ -1229,38 +1242,27 @@ export function SettingsView({
         </div>
 
         {/* Footer — Save settings */}
-        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", background: "rgba(0,0,0,0.3)" }}>
+        <div className="os-dialog-footer">
           <button
             onClick={viewMode === "agent" ? handleSaveAI : viewMode === "interaction" ? handleSaveVoice : onClose}
+            className="os-btn os-btn-primary"
             style={{
-              background: saved ? "var(--success)" : "var(--accent)",
-              color: "#000",
-              border: "none",
-              padding: "10px",
-              fontWeight: "bold",
-              fontSize: "13px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
-              cursor: "pointer",
-              borderRadius: "4px",
-              letterSpacing: "0.06em",
               width: "100%",
-              transition: "background 0.3s",
+              minHeight: 38,
+              background: saved ? "var(--success)" : undefined,
+              borderColor: saved ? "var(--success)" : undefined,
             }}
-            className="hover-glow"
           >
             {saved ? (
-              <><CheckCircle2 size={16} /> SETTINGS SAVED!</>
+              <><CheckCircle2 size={15} /> Settings saved</>
             ) : (
               <>
-                {viewMode !== "integrations" && <Save size={16} />}
+                {viewMode !== "integrations" && <Save size={15} />}
                 {viewMode === "agent"
-                  ? "SAVE AI CONFIGURATION"
+                  ? "Save changes"
                   : viewMode === "interaction"
-                  ? "SAVE VOICE CONFIGURATION"
-                  : "CLOSE INTEGRATIONS"}
+                  ? "Save voice settings"
+                  : "Close integrations"}
               </>
             )}
           </button>

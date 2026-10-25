@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { KeyRound, ShieldQuestion, Send, X } from "lucide-react";
 import { usePermissionStore } from "../../stores/permissionStore";
 import { wsClient } from "../../lib/ws";
+import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 
 export function InputDialog() {
   const { pendingInputRequest, setPendingInputRequest } = usePermissionStore();
   const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,6 +23,12 @@ export function InputDialog() {
     setPendingInputRequest(null);
   };
 
+  const modalRef = useModalFocusTrap<HTMLDivElement>({
+    onClose: handleCancel,
+    initialFocusRef: inputRef,
+    enabled: !!pendingInputRequest,
+  });
+
   return (
     <AnimatePresence>
       {pendingInputRequest && (
@@ -28,31 +36,20 @@ export function InputDialog() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.15)",
-            backdropFilter: "blur(32px) saturate(180%)",
-            WebkitBackdropFilter: "blur(32px) saturate(180%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 99999,
-            padding: "16px",
-          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="input-dialog-title"
+          className="os-scrim"
         >
           <motion.div
+            ref={modalRef}
             initial={{ scale: 0.92, y: 12, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.92, y: 12, opacity: 0 }}
+            className="os-dialog"
             style={{
               width: "min(440px, 94vw)",
-              background: "rgba(4, 8, 20, 0.92)",
-              backdropFilter: "blur(24px) saturate(160%)",
-              WebkitBackdropFilter: "blur(24px) saturate(160%)",
-              border: "1px solid rgba(0, 230, 180, 0.25)",
-              borderRadius: "12px",
-              boxShadow: "0 32px 80px rgba(0,0,0,0.85), inset 0 0 30px rgba(0,230,180,0.05)",
+              borderColor: "color-mix(in srgb, var(--accent) 35%, transparent)",
               padding: "24px",
             }}
           >
@@ -67,7 +64,7 @@ export function InputDialog() {
                 {pendingInputRequest.input_type === "password" ? <KeyRound size={22} /> : <ShieldQuestion size={22} />}
               </div>
               <div>
-                <h3 style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+                <h3 id="input-dialog-title" style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
                   {pendingInputRequest.input_type === "password" ? "Authentication Required" : "Input Required"}
                 </h3>
                 <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>
@@ -93,6 +90,7 @@ export function InputDialog() {
             {/* Form */}
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
               <input
+                ref={inputRef}
                 id="input-dialog-field"
                 type={pendingInputRequest.input_type}
                 value={value}
@@ -107,7 +105,6 @@ export function InputDialog() {
                   border: "1px solid var(--border)",
                   borderRadius: "var(--radius-sm)",
                   color: "var(--text-primary)",
-                  outline: "none",
                   transition: "border-color 0.2s"
                 }}
                 onFocus={(e) => e.target.style.borderColor = "var(--accent)"}
