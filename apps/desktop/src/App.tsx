@@ -90,42 +90,75 @@ export default function App() {
 
   useEffect(() => {
     if (customAccent) {
-      // Helper: parse hex → HSL hue (0-360)
-      const hex = customAccent.replace("#", "");
-      const r = parseInt(hex.slice(0, 2), 16) / 255;
-      const g = parseInt(hex.slice(2, 4), 16) / 255;
-      const b = parseInt(hex.slice(4, 6), 16) / 255;
-      const max = Math.max(r, g, b), min = Math.min(r, g, b);
-      let h = 0;
-      if (max !== min) {
+      // Helper: parse hex → RGB components (returns null if not a valid hex color)
+      const parseHex = (hex: string): [number, number, number] | null => {
+        const clean = hex.replace("#", "");
+        if (!/^[0-9a-fA-F]{6}$/.test(clean)) return null;
+        return [
+          parseInt(clean.slice(0, 2), 16) / 255,
+          parseInt(clean.slice(2, 4), 16) / 255,
+          parseInt(clean.slice(4, 6), 16) / 255,
+        ];
+      };
+
+      // Helper: RGB → HSL hue (0-360)
+      const rgbToHue = (r: number, g: number, b: number): number => {
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        if (max === min) return 0;
         const d = max - min;
+        let h = 0;
         switch (max) {
           case r: h = (g - b) / d + (g < b ? 6 : 0); break;
           case g: h = (b - r) / d + 2; break;
           case b: h = (r - g) / d + 4; break;
         }
-        h = Math.round((h / 6) * 360);
-      }
+        return Math.round((h / 6) * 360);
+      };
 
-      // Core accent vars
+      const rgb = parseHex(customAccent);
+      const h = rgb ? rgbToHue(...rgb) : 180; // fallback hue if non-hex
+
+      // Detect whether the active theme uses a light background
+      const isLightTheme = document.body.classList.contains("theme-light-clean")
+        || document.body.classList.contains("theme-light-slate")
+        || document.body.classList.contains("theme-light-sakura")
+        || document.body.classList.contains("theme-multicolor-light");
+
+      // Core accent vars — use hex if available, otherwise keep as-is
       document.documentElement.style.setProperty("--accent", customAccent);
       document.documentElement.style.setProperty("--border-accent", customAccent);
-      document.documentElement.style.setProperty("--accent-dim", `hsl(${h}, 100%, 40%)`);
-      document.documentElement.style.setProperty("--accent-glow", `${customAccent}66`);
-      document.documentElement.style.setProperty("--accent-glow-lg", `${customAccent}26`);
-      document.documentElement.style.setProperty("--shadow-accent", `0 0 24px ${customAccent}66`);
+      document.documentElement.style.setProperty("--accent-dim", isLightTheme
+        ? `hsl(${h}, 90%, 35%)`
+        : `hsl(${h}, 100%, 40%)`);
+      // Use hsla() so glows work even for accents stored as hsl/named values
+      document.documentElement.style.setProperty("--accent-glow",
+        `hsla(${h}, 100%, 55%, ${isLightTheme ? 0.25 : 0.4})`);
+      document.documentElement.style.setProperty("--accent-glow-lg",
+        `hsla(${h}, 100%, 55%, ${isLightTheme ? 0.1 : 0.15})`);
+      document.documentElement.style.setProperty("--shadow-accent",
+        `0 0 24px hsla(${h}, 100%, 55%, ${isLightTheme ? 0.2 : 0.4})`);
 
-      // Derived text / border vars so ALL theme colors follow
-      document.documentElement.style.setProperty("--text-primary", `hsl(${h}, 60%, 92%)`);
-      document.documentElement.style.setProperty("--text-secondary", `hsl(${h}, 100%, 65%)`);
-      document.documentElement.style.setProperty("--text-muted", `hsl(${h}, 80%, 40%)`);
-      document.documentElement.style.setProperty("--border", `hsla(${h}, 100%, 40%, 0.3)`);
-
-      // Background gradient tuned to hue
-      document.documentElement.style.setProperty(
-        "--bg-body-gradient",
-        `radial-gradient(ellipse at 20% 50%, hsla(${h}, 100%, 3%, 0.9) 0%, hsla(${h}, 60%, 1%, 0.98) 70%)`
-      );
+      if (isLightTheme) {
+        // Light theme: dark text on light background for readability
+        document.documentElement.style.setProperty("--text-primary",   `hsl(${h}, 30%, 12%)`);
+        document.documentElement.style.setProperty("--text-secondary", `hsl(${h}, 40%, 30%)`);
+        document.documentElement.style.setProperty("--text-muted",     `hsl(${h}, 25%, 45%)`);
+        document.documentElement.style.setProperty("--border", `hsla(${h}, 80%, 50%, 0.25)`);
+        document.documentElement.style.setProperty(
+          "--bg-body-gradient",
+          `radial-gradient(ellipse at 20% 50%, hsl(${h}, 40%, 97%) 0%, hsl(${h}, 20%, 94%) 100%)`
+        );
+      } else {
+        // Dark theme: light text on dark background
+        document.documentElement.style.setProperty("--text-primary",   `hsl(${h}, 60%, 92%)`);
+        document.documentElement.style.setProperty("--text-secondary", `hsl(${h}, 100%, 65%)`);
+        document.documentElement.style.setProperty("--text-muted",     `hsl(${h}, 70%, 55%)`);
+        document.documentElement.style.setProperty("--border", `hsla(${h}, 100%, 40%, 0.3)`);
+        document.documentElement.style.setProperty(
+          "--bg-body-gradient",
+          `radial-gradient(ellipse at 20% 50%, hsla(${h}, 100%, 3%, 0.9) 0%, hsla(${h}, 60%, 1%, 0.98) 70%)`
+        );
+      }
     } else {
       // Remove all overrides → let active theme CSS take over
       [
@@ -135,7 +168,7 @@ export default function App() {
         "--border", "--bg-body-gradient",
       ].forEach(v => document.documentElement.style.removeProperty(v));
     }
-  }, [customAccent]);
+  }, [customAccent, activeTheme]);
 
   // Disable default browser context menu globally to feel like a native desktop app
   useEffect(() => {
@@ -390,7 +423,6 @@ export default function App() {
           height: "100%",
           display: "flex",
           flexDirection: "column",
-          transition: "filter 0.2s ease-out, transform 0.2s ease-out"
         }}
       >
         <AssistantOverlay
