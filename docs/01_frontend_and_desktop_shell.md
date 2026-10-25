@@ -667,12 +667,47 @@ In **overlay mode**, the compact strip shows the ActionLog directly with `curren
 
 ---
 
-## 16. UI Backlog
+## 16. UI/UX Accessibility & Apple HIG Desktop Translation Standards
 
-Backend features with no frontend UI yet:
+To deliver a production-grade desktop experience aligned with WCAG 2.2 AA and Apple Human Interface Guidelines desktop patterns while preserving the futuristic Jarvis/HUD cyberpunk aesthetic:
 
-| Feature | Backend Event | Status |
-|---------|--------------|--------|
-| Intent badge in UI | `intent_classified` | Store captured; no badge shown |
-| Pause/Resume buttons | `pause_execution`/`resume_execution` | Backend works; no UI buttons |
-| Read Aloud on past messages | `speak_text` manual flag | TTS works on new responses; no button on history |
+### 16.1 Contrast AA Token Parity Across 10 Themes
+- All 10 themes define WCAG AA compliant `--text-muted` tokens ($\ge 4.5:1$ contrast ratio against their respective container backgrounds: Dark Crimson `#ff6b6b`, Dark Nebula `#df80ff`, Dark Ocean `#38bdf8`, Light Sakura `#a61b42`, Light Clean `#595959`, Mono Dark `#9e9e9e`, Multicolor Dark `#a594f9`, Multicolor Light `#555577`).
+- Custom accent engine in `App.tsx` dynamically calculates perceived luminance ($L = 0.299R + 0.587G + 0.114B$) and dynamically flips accent text to dark (`#0d1117`) on light accents and light (`#f0f6fc`) on dark accents, guaranteeing high-contrast readability.
+
+### 16.2 Full Modal Focus Trapping (`useModalFocusTrap`)
+- All 6 application modals (`SettingsView`, `HistoryView`, `McpSettingsModal`, `JsonImportModal`, `PermissionDialog`, `InputDialog`, and `OnboardingView` customize mode) implement `useModalFocusTrap`:
+  - Traps `Tab` and `Shift+Tab` within the dialog container.
+  - Dismisses dialog on `Escape` key press.
+  - Automatically focuses the first interactive element or close button upon mounting.
+  - Restores keyboard focus to the triggering element upon dialog unmount.
+  - Enforces `role="dialog"`, `aria-modal="true"`, and explicit `aria-labelledby`/`aria-label` screen reader announcements.
+
+### 16.3 Apple HIG Desktop Ergonomics & Minimum Hit Targets
+- **Target Sizes**: All desktop control buttons, modal close triggers, tab close buttons, and inline action icons enforce a minimum clickable hit target of $\ge 28\times 28$px (with $\ge 40\times 40$px on primary touch/mic targets).
+- **Legible Font Floor**: Replaced illegible 9px/10px micro-labels with an 11px font floor across `TaskList`, `RuntimeConsole`, and technical metadata badges.
+- **Reading Flow**: Monospace uppercase text transformation is strictly scoped to technical HUD badges (`.hud-panel-title`, `.hud-label`, `.status-badge`); all conversational prose, markdown messages, and modal bodies use natural sentence case rendered with Inter.
+- **Focus Rings**: Replaced unstyled browser focus rings with an accessible 2px high-contrast glowing `:focus-visible` indicator (`2px solid var(--accent)`).
+- **Reduced Motion**: System-level `@media (prefers-reduced-motion: reduce)` media query disables continuous decorative animations (scanlines, neon panel cycles, background particle drift) for vestibular accessibility.
+- **Color-Blind Status Labels**: System metrics (CPU, RAM, GPU, TEMP) include explicit textual status indicators (`(NORM)`, `(ELEV ⚠)`, `(CRIT ‼)`) alongside color codings.
+
+### 16.4 Interactive Execution Controls & Markdown Streaming
+- **Live Response Retry**: `ResponseBubble` provides an immediate `RETRY` action button alongside `COPY` and `LISTEN`, allowing users to re-dispatch the preceding prompt to the active thread with a single click.
+- **Structured Live Streaming**: In-progress agent responses stream directly through `react-markdown` and `remark-gfm` rather than raw unformatted text blocks, rendering code blocks and tables progressively.
+- **Task Item Keyboard Accessibility**: `TaskList` cards support full keyboard interaction (`Enter`/`Space` activation, `aria-selected` status, permanent accessible delete triggers).
+- **Responsive Layout Bounds**: Main HUD panels enforce responsive minimum and maximum constraints (`minWidth: 220px`, `maxWidth: 30vw` on left task panel; `minWidth: 200px`, `maxWidth: 28vw` on right activity panel; `minWidth: 360px` on center chat) to prevent layout distortion on compact screens.
+
+---
+
+## 17. Frontend Implementation Status
+
+All core desktop runtime capabilities are fully wired and exposed in the UI:
+
+| Capability | Frontend UI Component | Verification |
+|------------|-----------------------|--------------|
+| **Intent Classification Badge** | Top HUD status bar & `AssistantOverlay` | Live `lastClassification` badge displayed (`TASK`, `CHAT`, `CLARIFY`) |
+| **Live Shell Console** | `RuntimeConsole.tsx` & `TaskList.tsx` shell output | Draggable bottom logcat + per-task shell stream |
+| **Execution Pause / Resume / Stop** | `TaskList.tsx` & Top HUD bar | Dedicated `PAUSE`, `RESUME`, and persistent `STOP` triggers |
+| **Manual TTS Playback** | `ResponseBubble.tsx` | Per-message `LISTEN` button with speech synthesis |
+| **Response Retry** | `ResponseBubble.tsx` | Per-message `RETRY` button re-dispatching prompt |
+| **WCAG 2.2 AA Focus Trapping** | `useModalFocusTrap.ts` across all 6 modals | Tab cycling, Escape dismissal, ARIA compliance |

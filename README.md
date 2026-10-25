@@ -75,7 +75,7 @@ opensarthi/
 <td width="50%">
 
 ### 🖥️ <a href="apps/desktop">apps/desktop</a>
-Tauri v2 core hosting borderless HUD overlays. Integrates system trays, WebSocket telemetry streams, snapping layouts, task timeline logs, **Content Panel (4th panel)**, 3D visualizer, and native audio pipeline.
+Tauri v2 core hosting borderless HUD overlays. Integrates system trays, WebSocket telemetry streams, snapping layouts, task timeline logs, **Content Panel (4th panel)**, 3D visualizer, native audio pipeline, and WCAG 2.2 AA accessibility with 10 high-contrast themes.
 <br/>
 → [Desktop README](apps/desktop/README.md)
 

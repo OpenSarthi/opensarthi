@@ -427,9 +427,10 @@ apps/desktop/
 │   │   ├── assistant/
 │   │   │   ├── AssistantOverlay.tsx    # Main HUD (3-panel + controls + STOP button)
 │   │   │   ├── OverlayIdleView.tsx     # Compact overlay strip (280×560)
-│   │   │   ├── ResponseBubble.tsx      # Message rendering: markdown, code, URLs, streaming
-│   │   │   ├── TaskList.tsx            # Multi-tab thread panel + JSON import modal
+│   │   │   ├── ResponseBubble.tsx      # Message rendering: markdown, code, URLs, streaming, RETRY
+│   │   │   ├── TaskList.tsx            # Multi-tab thread panel + JSON import + keyboard nav
 │   │   │   ├── JsonImportModal.tsx     # JSON task import UI
+│   │   │   ├── RuntimeConsole.tsx      # Logcat terminal overlay + copy logs
 │   │   │   ├── ContextModal.tsx        # Context/response modal overlay
 │   │   │   ├── VoiceButton.tsx         # Mic toggle + waveform animation
 │   │   │   ├── Waveform.tsx            # Audio visualizer
@@ -444,8 +445,11 @@ apps/desktop/
 │   │   │   └── InputDialog.tsx         # Agent input request popup
 │   │   └── settings/
 │   │       ├── SettingsView.tsx        # Tabbed settings: AI · Voice · UI · Memory
-│   │       └── HistoryView.tsx         # Thread list + token restore
+│   │       ├── HistoryView.tsx         # Thread list + token restore
+│   │       ├── McpSettingsModal.tsx    # MCP server configuration modal
+│   │       └── IntegrationsPanel.tsx   # OAuth + third-party credentials
 │   ├── hooks/
+│   │   ├── useModalFocusTrap.ts        # WCAG 2.2 AA focus trapping, Tab cycle & Escape key dismissal
 │   │   ├── useWebSocket.ts             # WS connection + all message routing
 │   │   ├── useWindowOverlay.ts         # Smart overlay mode + edge snapping
 │   │   ├── useAudioCues.ts             # Web Audio API synthesized sound cues
@@ -459,7 +463,7 @@ apps/desktop/
 │   │   ├── schemas.ts                  # Zod: Message, Plan, PlanStep, WSMessage types
 │   │   └── constants.ts                # TAURI_EVENTS, etc.
 │   └── styles/
-│       ├── globals.css                 # Base styles, resets, overlay-mode rules
+│       ├── globals.css                 # Base styles, resets, overlay-mode rules, contrast tokens
 │       └── themes.css                  # 10 theme token sets
 │
 ├── src-tauri/
@@ -553,14 +557,40 @@ Version must be kept in sync across three files:
 
 ---
 
-## 🚧 UI Backlog / Unimplemented Features
+## ♿ UI/UX Accessibility & Apple HIG Desktop Standards
 
-Backend runtime capabilities with no frontend UI yet:
+OpenSarthi Desktop adheres to WCAG 2.2 AA accessibility guidelines and Apple Human Interface Guidelines desktop patterns, engineered specifically to preserve the immersive cyberpunk Jarvis/HUD aesthetic:
 
-1. **Intent Classification Indicator** — The backend classifies (`CHAT`, `TASK`, `CLARIFY`) but the UI doesn't display this (no "Thinking (Task)" badge).
-2. **Live Shell Console View** — `ShellTool` streams stdout line-by-line, captured in `shellOutputLines`, but no terminal/console UI exists.
-3. **Pause/Resume Controls** — Backend supports `pause_execution`/`resume_execution`, but no UI buttons expose this.
-4. **Manual TTS Playback** — No "Read Aloud" button on past messages.
+1. **Theme Contrast Compliance (WCAG AA $\ge 4.5:1$):**
+   - Verified `--text-muted` tokens across all 10 themes (Dark Crimson `#ff6b6b`, Dark Nebula `#df80ff`, Dark Ocean `#38bdf8`, Light Sakura `#a61b42`, Light Clean `#595959`, Mono Dark `#9e9e9e`, Multicolor Dark `#a594f9`, Multicolor Light `#555577`).
+   - Dynamic luminance calculation in `App.tsx` sets dark text on light custom accents and light text on dark custom accents.
+2. **Modal Focus Trapping (`useModalFocusTrap`):**
+   - All 6 application modals (`SettingsView`, `HistoryView`, `McpSettingsModal`, `JsonImportModal`, `PermissionDialog`, `InputDialog`, and `OnboardingView` customize mode) feature full keyboard focus trapping, Tab cycling, Escape dismissal, autofocus on open, and focus restoration to the triggering element on unmount.
+   - Proper ARIA semantics (`role="dialog"`, `aria-modal="true"`, explicit labels).
+3. **Apple HIG Touch/Click Targets & Typography:**
+   - Minimum target dimension of $\ge 28\times 28$px on all desktop buttons, tabs, and modal triggers (with $\ge 40\times 40$px on mic and primary action buttons).
+   - Legible 11px font floor replacing illegible 9px/10px micro-labels.
+   - Text transform `uppercase` strictly scoped to HUD badges; natural sentence-case reading flow with Inter on prose.
+   - High-visibility 2px glowing `:focus-visible` ring across all interactive controls.
+   - `@media (prefers-reduced-motion: reduce)` media query disabling continuous decorative loops.
+4. **Execution & Streamline Ergonomics:**
+   - In-place `RETRY` action button in `ResponseBubble` to re-execute previous prompts.
+   - Structured progressive markdown streaming via `react-markdown` + `remark-gfm`.
+   - Text status labels `(NORM)`, `(ELEV ⚠)`, `(CRIT ‼)` for color-blind accessibility on system metrics.
+   - Min/max layout boundary clamping (`minWidth: 220px`, `maxWidth: 30vw` on left panel; `minWidth: 200px`, `maxWidth: 28vw` on right panel; `minWidth: 360px` center) preventing layout collapse.
+
+---
+
+## 🎯 Completed Runtime & UI Capabilities
+
+All desktop runtime features are fully integrated into the UI:
+
+- **Intent Classification Indicator**: Displays real-time intent badge (`TASK`, `CHAT`, `CLARIFY`) in the top HUD status bar and `AssistantOverlay`.
+- **Live Shell Console View**: Bottom slide-up `RuntimeConsole` logcat and per-task streaming shell output in `TaskList`.
+- **Pause/Resume/Stop Controls**: Interactive execution management in `TaskList` and top HUD bar.
+- **Manual TTS Playback**: `LISTEN` button on all assistant responses with Web Speech API playback.
+- **Prompt Retry**: `RETRY` button on responses re-dispatching user prompt directly to the active thread.
+- **Full Keyboard Navigation**: Task card focus & activation (`Enter`/`Space`), tab navigation, and modal focus traps.
 
 ---
 

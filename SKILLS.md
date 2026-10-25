@@ -647,6 +647,15 @@ Single store manages:
 **Convention:** Theme is applied by toggling a class on `document.body`. All CSS rules use `var(--token-name)`.
 **Tauri Rounded Corner Glass Blur Invariant:** To prevent rounded corner rendering glitches, `backdrop-filter: blur(...)` is completely removed. Theme backgrounds must use solid, opaque custom colors (`var(--bg-secondary)`) on rounded layouts.
 
+### WCAG 2.2 AA Accessibility & Apple HIG Desktop Invariants
+
+- **Contrast Token Parity:** All themes must maintain $\ge 4.5:1$ contrast ratio for `--text-muted` against `--bg-primary` and `--bg-secondary`. Custom accent color picker in `App.tsx` must adapt text luminance ($L = 0.299R + 0.587G + 0.114B$) to ensure dark text on light accents and light text on dark accents.
+- **Modal Focus Trapping (`useModalFocusTrap`):** Every dialog/modal component (`SettingsView`, `HistoryView`, `McpSettingsModal`, `JsonImportModal`, `PermissionDialog`, `InputDialog`, `OnboardingView`) must use `useModalFocusTrap` to trap Tab navigation, dismiss on Escape, autofocus on mount, restore focus on unmount, and expose `role="dialog"` + `aria-modal="true"`.
+- **Desktop Target Sizing & Font Floor:** Desktop buttons, triggers, and tab closes must maintain minimum dimensions of $\ge 28\times 28$px. Micro-labels must not drop below an 11px font floor.
+- **Reading Flow & Typography:** Scoped `text-transform: uppercase` strictly to HUD badges (`.hud-panel-title`, `.hud-label`, `.status-badge`). All chat prose, markdown messages, and dialog bodies must use natural sentence case rendered with Inter.
+- **Reduced Motion & Focus Rings:** Decorative animation loops (scanlines, neon cycles) must respect `@media (prefers-reduced-motion: reduce)`. All keyboard-focused interactive elements must display the 2px glowing `:focus-visible` ring.
+- **Color-Blind Status Support:** Metric graphs and status badges must supplement color cues with accessible textual indicators (`(NORM)`, `(ELEV ⚠)`, `(CRIT ‼)`).
+
 ### Overlay HUD Window Snapping Layouts
 
 The desktop app HUD implements a responsive overlay snapping behavior (`useWindowOverlay.ts`):
