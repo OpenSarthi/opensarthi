@@ -5,6 +5,7 @@ pub mod sidecar;
 pub mod tray;
 
 use std::sync::Arc;
+use tauri::Manager;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -61,6 +62,18 @@ pub fn run() {
             ipc::create_desktop_shortcut,
         ])
         .setup(|app| {
+            // WebKitGTK does not reliably paint CSS backgrounds in a
+            // transparent window when compositing is disabled. Give the
+            // webview an opaque native background so Linux never falls back
+            // to an unpainted transparent surface.
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                use tauri::utils::config::Color;
+                if let Err(err) = window.set_background_color(Some(Color(9, 11, 10, 255))) {
+                    tracing::warn!("Could not set opaque Linux webview background: {err}");
+                }
+            }
+
             // Setup System Tray
             tray::setup(app.handle())?;
             
