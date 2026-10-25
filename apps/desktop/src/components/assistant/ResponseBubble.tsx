@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, User, Volume2, Copy, Check, Terminal, Play } from "lucide-react";
+import { Bot, User, Volume2, Copy, Check, XCircle, Terminal, Play, RotateCcw } from "lucide-react";
 import type { Message } from "../../lib/schemas";
 import { wsClient } from "../../lib/ws";
 import ReactMarkdown from "react-markdown";
@@ -49,15 +49,7 @@ function ThinkingBlock({ thinking, isComplete, timestamp }: { thinking: string; 
   }, [isComplete]);
 
   return (
-    <div style={{
-      border: "1px solid var(--border)",
-      background: "rgba(255,255,255,0.01)",
-      borderRadius: "var(--radius-md)",
-      marginBottom: "8px",
-      overflow: "hidden",
-      backdropFilter: "blur(6px)",
-      WebkitBackdropFilter: "blur(6px)"
-    }}>
+    <div className="os-thought-block">
       <style>{`
         @keyframes pulseDot {
           0%, 100% { opacity: 1; transform: scale(1); }
@@ -66,39 +58,27 @@ function ThinkingBlock({ thinking, isComplete, timestamp }: { thinking: string; 
       `}</style>
       <div 
         onClick={() => setIsOpen(!isOpen)}
-        style={{
-          padding: "8px 12px",
-          background: "rgba(0,0,0,0.15)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          cursor: "pointer",
-          fontSize: "11px",
-          color: "var(--text-secondary)",
-          fontWeight: 600,
-          letterSpacing: "0.05em",
-          userSelect: "none"
-        }}
+        className="os-thought-head"
       >
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <div style={{
-            width: "6px",
-            height: "6px",
-            borderRadius: "50%",
-            background: isComplete ? "var(--text-muted)" : "var(--accent)",
-            boxShadow: isComplete ? "none" : "0 0 8px var(--accent)",
-            animation: isComplete ? "none" : "pulseDot 1.5s infinite"
-          }} />
-          <span style={{ opacity: 0.8, display: "flex", alignItems: "center", gap: "4px" }}>
-            {isComplete ? "THINKING PROCESS" : "THINKING..."}
+          <div
+            className="os-task-dot"
+            style={{
+              background: isComplete ? "var(--text-muted)" : "var(--accent)",
+              boxShadow: isComplete ? "none" : "0 0 0 3px var(--accent-glow-lg)",
+              animation: isComplete ? "none" : "pulseDot 1.8s infinite",
+            }}
+          />
+          <span className="os-thought-label">
+            {isComplete ? "Thought process" : "Thinking…"}
             {timestamp && (
-              <span style={{ fontSize: "9px", color: "var(--text-secondary)", fontWeight: "normal", fontFamily: "var(--font-mono)", opacity: 0.8 }}>
-                [{new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}]
+              <span className="os-task-time">
+                {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
               </span>
             )}
           </span>
         </div>
-        <span style={{ fontSize: "9px", opacity: 0.6 }}>{isOpen ? "COLLAPSE ▲" : "EXPAND ▼"}</span>
+        <span className="os-thought-toggle">{isOpen ? "Hide" : "Show"}</span>
       </div>
       <AnimatePresence initial={false}>
         {isOpen && (
@@ -106,18 +86,7 @@ function ThinkingBlock({ thinking, isComplete, timestamp }: { thinking: string; 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 0.8 }}
             exit={{ height: 0, opacity: 0 }}
-            style={{
-              padding: "10px 12px",
-              fontSize: "12px",
-              fontFamily: "var(--font-mono)",
-              color: "var(--text-secondary)",
-              borderTop: "1px solid var(--border)",
-              whiteSpace: "pre-wrap",
-              background: "rgba(0,0,0,0.1)",
-              lineHeight: 1.5,
-              maxHeight: "150px",
-              overflowY: "auto"
-            }}
+            className="os-thought-body"
           >
             {thinking.trim()}
           </motion.div>
@@ -131,28 +100,20 @@ function ReasoningBlock({ text, attempt }: { text: string; attempt?: number }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div style={{
-      border: "1px solid rgba(0, 230, 180, 0.2)",
-      background: "rgba(0, 230, 180, 0.02)",
-      borderRadius: "var(--radius-md)",
-      marginBottom: "8px",
-      overflow: "hidden",
-      backdropFilter: "blur(6px)",
-      WebkitBackdropFilter: "blur(6px)"
-    }}>
+    <div className="os-thought-block">
       <div 
         onClick={() => setIsOpen(!isOpen)}
         style={{
-          padding: "7px 12px",
-          background: "rgba(0, 0, 0, 0.2)",
+          padding: "8px 12px",
+          background: "transparent",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           cursor: "pointer",
-          fontSize: "11px",
-          color: "var(--accent)",
+          fontSize: "var(--text-label)",
+          color: "var(--text-secondary)",
           fontWeight: 600,
-          letterSpacing: "0.05em",
+          letterSpacing: 0,
           userSelect: "none"
         }}
       >
@@ -162,15 +123,13 @@ function ReasoningBlock({ text, attempt }: { text: string; attempt?: number }) {
             height: "6px",
             borderRadius: "50%",
             background: "var(--accent)",
-            boxShadow: "0 0 6px var(--accent)",
+            boxShadow: "0 0 0 3px var(--accent-glow-lg)",
           }} />
-          <span style={{ display: "flex", alignItems: "center", gap: "4px", opacity: 0.9 }}>
-            🧠 AI PLAN REASONING {attempt !== undefined && attempt > 0 ? `(ATTEMPT ${attempt + 1})` : ""}
+          <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            Plan reasoning {attempt !== undefined && attempt > 0 ? `· attempt ${attempt + 1}` : ""}
           </span>
         </div>
-        <span style={{ fontSize: "9px", color: "var(--text-secondary)", opacity: 0.7 }}>
-          {isOpen ? "COLLAPSE ▲" : "EXPAND ▼"}
-        </span>
+        <span className="os-thought-toggle">{isOpen ? "Hide" : "Show"}</span>
       </div>
       <AnimatePresence initial={false}>
         {isOpen && (
@@ -178,16 +137,8 @@ function ReasoningBlock({ text, attempt }: { text: string; attempt?: number }) {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 0.9 }}
             exit={{ height: 0, opacity: 0 }}
-            style={{
-              padding: "10px 12px",
-              fontSize: "12px",
-              lineHeight: 1.5,
-              color: "var(--text-secondary)",
-              borderTop: "1px solid rgba(0, 230, 180, 0.15)",
-              background: "rgba(0, 0, 0, 0.15)",
-              maxHeight: "180px",
-              overflowY: "auto"
-            }}
+            className="os-thought-body"
+            style={{ borderTop: "1px solid var(--line-soft)" }}
           >
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
               {text.trim()}
@@ -208,15 +159,8 @@ function CodeBlock({ lang, codeText }: { lang: string; codeText: string }) {
   };
   return (
     <div
-      style={{
-        background: "rgba(0, 0, 0, 0.25)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius-md)",
-        margin: "8px 0",
-        overflow: "hidden",
-        backdropFilter: "blur(3px)",
-        WebkitBackdropFilter: "blur(3px)",
-      }}
+      className="os-code-block"
+      style={{ margin: "8px 0" }}
     >
       <div
         style={{
@@ -307,7 +251,7 @@ const renderParagraph = ({ children }: any) => {
         padding: "4px 8px", 
         margin: "4px 0" 
       }}>
-        <span>{isHeal ? "🩹" : "✓"}</span>
+        <Check size={13} style={{ flexShrink: 0 }} />
         <span>{modifiedChildren}</span>
       </div>
     );
@@ -337,7 +281,7 @@ const renderParagraph = ({ children }: any) => {
         padding: "4px 8px", 
         margin: "4px 0" 
       }}>
-        <span>❌</span>
+        <XCircle size={13} style={{ flexShrink: 0 }} />
         <span>{modifiedChildren}</span>
       </div>
     );
@@ -350,28 +294,28 @@ const markdownComponents = {
   p: renderParagraph,
   
   h1: ({ children }: any) => (
-    <h1 style={{ fontSize: "1.4em", margin: "12px 0 6px 0", color: "var(--accent)", borderBottom: "1px solid var(--border)", paddingBottom: "4px", fontWeight: "bold" }}>
+    <h1 style={{ fontSize: "1.35em", margin: "14px 0 8px 0", color: "var(--text-primary)", paddingBottom: "6px", borderBottom: "1px solid var(--line-soft)", fontWeight: 600, letterSpacing: "-0.02em" }}>
       {children}
     </h1>
   ),
   h2: ({ children }: any) => (
-    <h2 style={{ fontSize: "1.25em", margin: "10px 0 5px 0", color: "var(--accent)", fontWeight: "bold" }}>
+    <h2 style={{ fontSize: "1.22em", margin: "12px 0 6px 0", color: "var(--text-primary)", fontWeight: 600, letterSpacing: "-0.015em" }}>
       {children}
     </h2>
   ),
   h3: ({ children }: any) => (
-    <h3 style={{ fontSize: "1.1em", margin: "8px 0 4px 0", color: "var(--accent)", fontWeight: "bold" }}>
+    <h3 style={{ fontSize: "1.08em", margin: "10px 0 5px 0", color: "var(--text-primary)", fontWeight: 600 }}>
       {children}
     </h3>
   ),
   h4: ({ children }: any) => (
-    <h4 style={{ fontSize: "1.05em", margin: "6px 0 3px 0", color: "var(--accent)", fontWeight: "bold" }}>
+    <h4 style={{ fontSize: "1em", margin: "8px 0 4px 0", color: "var(--text-secondary)", fontWeight: 600 }}>
       {children}
     </h4>
   ),
   
   li: ({ children }: any) => (
-    <li style={{ marginLeft: "16px", marginBottom: "4px", listStyleType: "square" }}>
+    <li style={{ marginLeft: "18px", marginBottom: "5px", listStyleType: "disc" }}>
       {children}
     </li>
   ),
@@ -652,25 +596,23 @@ function ExecuteBlock({ actionJson }: { actionJson: string }) {
       <div style={{
         margin: "12px 0",
         padding: "12px 14px",
-        background: "rgba(0, 230, 180, 0.02)",
-        border: "1px solid rgba(0, 230, 180, 0.15)",
-        borderLeft: "3px solid var(--accent)",
+        background: "var(--surface-hover)",
+        border: "1px solid var(--line-soft)",
+        borderLeft: "2px solid var(--accent)",
         borderRadius: "var(--radius-md)",
-        fontFamily: "var(--font-mono)",
         fontSize: "12px",
         color: "var(--text-primary)",
-        boxShadow: "0 0 15px rgba(0, 230, 180, 0.05)",
         display: "flex",
         flexDirection: "column",
         gap: "10px"
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: "bold", fontSize: "9px", color: "var(--accent)", letterSpacing: "0.05em" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 600, fontSize: "var(--text-label)", color: "var(--text-secondary)" }}>
             <Terminal size={12} />
-            <span>SYSTEM DIRECTIVE</span>
+            <span>Execution plan</span>
           </div>
-          <span style={{ fontSize: "8px", background: "rgba(0, 230, 180, 0.15)", color: "var(--accent)", padding: "1px 5px", borderRadius: "3px", fontWeight: "bold" }}>
-            READY ({steps.length} {steps.length === 1 ? "STEP" : "STEPS"})
+          <span style={{ fontSize: "var(--text-micro)", background: "var(--accent-glow-lg)", color: "var(--accent)", padding: "2px 7px", borderRadius: "var(--radius-full)", fontWeight: 600 }}>
+            {steps.length} {steps.length === 1 ? "step" : "steps"}
           </span>
         </div>
 
@@ -681,14 +623,14 @@ function ExecuteBlock({ actionJson }: { actionJson: string }) {
               .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
               .join(" | ");
             return (
-              <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "2px", paddingLeft: "6px", borderLeft: "1.5px solid rgba(0, 230, 180, 0.2)" }}>
+              <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "2px", paddingLeft: "8px", borderLeft: "1px solid var(--line-strong)" }}>
                 <div style={{ display: "flex", gap: "6px", alignItems: "baseline" }}>
-                  <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.3)" }}>[{idx + 1}]</span>
-                  <span style={{ fontWeight: "bold", color: "var(--accent)", textTransform: "uppercase", fontSize: "11px" }}>{tool}</span>
+                  <span style={{ fontSize: "var(--text-micro)", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{idx + 1}</span>
+                  <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: "var(--text-meta)" }}>{tool}</span>
                 </div>
                 {detailText && (
-                  <div style={{ display: "flex", gap: "6px", paddingLeft: "15px" }}>
-                    <span style={{ color: "var(--text-secondary)", wordBreak: "break-all", fontSize: "10px", opacity: 0.8 }}>{detailText}</span>
+                  <div style={{ display: "flex", gap: "6px", paddingLeft: "14px" }}>
+                    <span style={{ color: "var(--text-muted)", wordBreak: "break-all", fontSize: "var(--text-label)", fontFamily: "var(--font-mono)" }}>{detailText}</span>
                   </div>
                 )}
               </div>
@@ -700,36 +642,11 @@ function ExecuteBlock({ actionJson }: { actionJson: string }) {
           onClick={() => {
             wsClient.send("run_json_plan", { steps, goal: "Custom task from response" });
           }}
-          style={{
-            marginTop: "4px",
-            padding: "5px 12px",
-            background: "rgba(0, 230, 180, 0.1)",
-            border: "1px solid rgba(0, 230, 180, 0.4)",
-            color: "var(--accent)",
-            borderRadius: "4px",
-            fontFamily: "var(--font-mono)",
-            fontSize: "10px",
-            fontWeight: "bold",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-            alignSelf: "flex-start",
-            transition: "all 0.2s"
-          }}
-          onMouseEnter={e => {
-            const target = e.currentTarget;
-            target.style.background = "rgba(0, 230, 180, 0.2)";
-            target.style.boxShadow = "0 0 8px rgba(0, 230, 180, 0.4)";
-          }}
-          onMouseLeave={e => {
-            const target = e.currentTarget;
-            target.style.background = "rgba(0, 230, 180, 0.1)";
-            target.style.boxShadow = "none";
-          }}
+          className="os-btn os-btn-primary os-btn-xs"
+          style={{ marginTop: "4px", alignSelf: "flex-start" }}
         >
-          <Play size={10} fill="var(--accent)" />
-          RUN TASK
+          <Play size={11} fill="currentColor" />
+          Run task
         </button>
       </div>
     );
@@ -750,12 +667,12 @@ function ExecuteBlock({ actionJson }: { actionJson: string }) {
         gap: "6px"
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: "bold", fontSize: "9px", color: "var(--danger)", letterSpacing: "0.05em" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 600, fontSize: "var(--text-label)", color: "var(--danger)" }}>
             <Terminal size={12} />
-            <span>RAW DIRECTIVE</span>
+            <span>Raw directive</span>
           </div>
-          <span style={{ fontSize: "8px", background: "rgba(255, 60, 60, 0.15)", color: "var(--danger)", padding: "1px 5px", borderRadius: "3px", fontWeight: "bold" }}>
-            PARSED
+          <span style={{ fontSize: "var(--text-micro)", background: "color-mix(in srgb, var(--danger) 14%, transparent)", color: "var(--danger)", padding: "2px 7px", borderRadius: "var(--radius-full)", fontWeight: 600 }}>
+            Unparsed
           </span>
         </div>
         <pre style={{
@@ -782,27 +699,25 @@ function NextActionBlock({ content }: { content: string }) {
     <div style={{
       margin: "12px 0",
       padding: "10px 14px",
-      background: "rgba(255, 170, 0, 0.03)",
-      border: "1px solid rgba(255, 170, 0, 0.15)",
-      borderLeft: "3px solid var(--warning)",
+      background: "color-mix(in srgb, var(--warning) 6%, transparent)",
+      border: "1px solid color-mix(in srgb, var(--warning) 20%, transparent)",
+      borderLeft: "2px solid var(--warning)",
       borderRadius: "var(--radius-md)",
-      fontFamily: "var(--font-mono)",
       fontSize: "12px",
       color: "var(--text-primary)",
-      boxShadow: "0 0 15px rgba(255, 170, 0, 0.05)",
       display: "flex",
       flexDirection: "column",
       gap: "6px"
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: "bold", fontSize: "9px", color: "var(--warning)", letterSpacing: "0.05em" }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "pulseDot 1.5s infinite" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 600, fontSize: "var(--text-label)", color: "var(--warning)" }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
-          <span>NEXT ACTION REQUIRED</span>
+          <span>Awaiting your input</span>
         </div>
-        <span style={{ fontSize: "8px", background: "rgba(255, 170, 0, 0.15)", color: "var(--warning)", padding: "1px 5px", borderRadius: "3px", fontWeight: "bold" }}>
-          AWAITING INPUT
+        <span style={{ fontSize: "var(--text-micro)", background: "color-mix(in srgb, var(--warning) 14%, transparent)", color: "var(--warning)", padding: "2px 7px", borderRadius: "var(--radius-full)", fontWeight: 600 }}>
+          Action needed
         </span>
       </div>
       <div style={{ color: "var(--text-secondary)", lineHeight: "1.5" }}>
@@ -838,12 +753,10 @@ function CustomDetailsBlock({ summary, content }: { summary: string; content: st
   return (
     <div style={{
       border: borderStyle,
-      background: "rgba(0, 0, 0, 0.15)",
+      background: "var(--surface-hover)",
       borderRadius: "var(--radius-md)",
       margin: "8px 0",
       overflow: "hidden",
-      backdropFilter: "blur(4px)",
-      WebkitBackdropFilter: "blur(4px)"
     }}>
       <div 
         onClick={() => setIsOpen(!isOpen)}
@@ -897,6 +810,8 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
   const isUser = message.role === "user";
   const planReasonings = useAssistantStore((s) => s.planReasonings[s.activeThreadId] || EMPTY_REASONINGS);
   const lastStreamedMessageId = useAssistantStore((s) => s.lastStreamedMessageId);
+  const activeThreadId = useAssistantStore((s) => s.activeThreadId);
+  const messages = useAssistantStore((s) => s.messages);
   const [displayedContent, setDisplayedContent] = useState("");
   const [copied, setCopied] = useState(false);
   const hasAnimated = React.useRef(false);
@@ -981,6 +896,19 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
     }
   };
 
+  const handleRetry = () => {
+    const currentMsgIndex = messages.findIndex((m) => m.id === message.id);
+    const precedingUserMsg = messages
+      .slice(0, currentMsgIndex >= 0 ? currentMsgIndex : undefined)
+      .reverse()
+      .find((m) => m.role === "user");
+
+    const promptText = precedingUserMsg?.content || message.content;
+    if (promptText) {
+      wsClient.send("user_message", { text: promptText, source: "text", thread_id: activeThreadId });
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -995,70 +923,14 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
       }}
     >
       {/* Avatar */}
-      <div
-        style={{
-          width: "28px",
-          height: "28px",
-          borderRadius: "var(--radius-full)",
-          background: isUser ? "rgba(var(--accent-rgb, 255, 255, 255), 0.08)" : "var(--accent-glow)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          border: `1px solid ${isUser ? "rgba(255, 255, 255, 0.2)" : "var(--border-accent)"}`,
-          boxShadow: isUser ? "none" : "0 0 8px var(--accent-glow)",
-          color: isUser ? "var(--text-primary)" : "var(--accent)",
-        }}
-      >
+      <div className={`os-avatar ${isUser ? "is-user" : "is-agent"}`}>
         {isUser ? <User size={14} /> : <Bot size={14} />}
       </div>
 
-      {/* Bubble Wrapper with Speech Arrow */}
+      {/* Bubble */}
       <div style={{ position: "relative", maxWidth: "80%", display: "flex", flexDirection: "column" }}>
-        {/* Speech Bubble Arrow */}
         <div
-          style={{
-            position: "absolute",
-            top: "12px",
-            [isUser ? "right" : "left"]: "-4px",
-            width: "8px",
-            height: "8px",
-            background: isUser ? "rgba(255, 255, 255, 0.02)" : "rgba(0, 0, 0, 0.12)",
-            borderLeft: isUser ? "none" : "1px solid var(--border-accent)",
-            borderBottom: isUser ? "none" : "1px solid var(--border-accent)",
-            borderRight: isUser ? "1px solid rgba(255, 255, 255, 0.12)" : "none",
-            borderTop: isUser ? "1px solid rgba(255, 255, 255, 0.12)" : "none",
-            transform: "rotate(45deg)",
-            zIndex: 2,
-            pointerEvents: "none",
-            backdropFilter: "blur(3px)",
-            WebkitBackdropFilter: "blur(3px)",
-          }}
-        />
-
-        {/* Bubble */}
-        <div
-          className="selectable"
-          style={{
-            padding: "10px 14px",
-            borderRadius: isUser
-              ? "var(--radius-lg) var(--radius-sm) var(--radius-lg) var(--radius-lg)"
-              : "var(--radius-sm) var(--radius-lg) var(--radius-lg) var(--radius-lg)",
-            background: isUser ? "rgba(255, 255, 255, 0.02)" : "rgba(0, 0, 0, 0.12)",
-            border: `1px solid ${isUser ? "rgba(255, 255, 255, 0.12)" : "var(--border-accent)"}`,
-            fontSize: "13.5px",
-            lineHeight: 1.6,
-            color: "var(--text-primary)",
-            backdropFilter: "blur(3px)",
-            WebkitBackdropFilter: "blur(3px)",
-            wordBreak: "break-word",
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-            boxShadow: isUser ? "none" : "0 4px 20px rgba(0, 0, 0, 0.2)",
-            position: "relative",
-            zIndex: 1,
-          }}
+          className={`selectable os-bubble ${isUser ? "is-user" : "is-agent"}`}
         >
           {thinking && (
             <ThinkingBlock thinking={thinking} isComplete={isComplete} timestamp={message.timestamp} />
@@ -1105,50 +977,41 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
             </div>
           )}
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: "4px", gap: "10px" }}>
+          <div className="os-bubble-meta">
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "11px", color: "rgba(255, 255, 255, 0.65)", fontFamily: "var(--font-mono)", fontWeight: "bold", letterSpacing: "0.03em" }}>
-                [ {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })} ]
+              <span className="os-bubble-time">
+                {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
               </span>
               {!isUser && message.token_total && message.token_total > 0 ? (
-                <span 
-                  title={`Total Tokens: ${message.token_total.toLocaleString()}\nInput Tokens: ${message.token_request?.toLocaleString()}\nOutput Tokens: ${message.token_response?.toLocaleString()}`}
-                  style={{ 
-                    fontSize: "10px", 
-                    color: "var(--accent)", 
-                    fontFamily: "var(--font-mono)", 
-                    borderLeft: "1px solid rgba(255, 255, 255, 0.15)", 
-                    paddingLeft: "8px",
-                    cursor: "pointer"
-                  }}
+                <span
+                  className="os-bubble-tokens"
+                  title={`Total tokens: ${message.token_total.toLocaleString()}\nInput: ${message.token_request?.toLocaleString()}\nOutput: ${message.token_response?.toLocaleString()}`}
                 >
-                  {message.token_total.toLocaleString()} TOKENS
+                  {message.token_total.toLocaleString()} tokens
                 </span>
               ) : null}
             </div>
-            <div style={{ display: "flex", gap: "6px" }}>
+            <div style={{ display: "flex", gap: "4px" }}>
               {!isUser && response && (
                 <>
                   <button
+                    onClick={handleRetry}
+                    className="os-btn os-btn-ghost os-btn-xs"
+                    title="Regenerate response"
+                    aria-label="Regenerate response"
+                  >
+                    <RotateCcw size={12} />
+                    Retry
+                  </button>
+                  <button
                     onClick={handleCopyResponse}
-                    style={{
-                      background: "rgba(255, 255, 255, 0.05)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "var(--radius-sm)",
-                      color: copied ? "var(--success, #00e6b4)" : "var(--text-secondary)",
-                      padding: "2px 6px",
-                      fontSize: "10px",
-                      fontFamily: "var(--font-mono)",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      transition: "all 0.2s ease",
-                    }}
+                    className="os-btn os-btn-ghost os-btn-xs"
+                    style={{ color: copied ? "var(--success)" : undefined }}
                     title="Copy response text"
+                    aria-label="Copy response text"
                   >
                     {copied ? <Check size={12} /> : <Copy size={12} />}
-                    {copied ? "COPIED!" : "COPY"}
+                    {copied ? "Copied" : "Copy"}
                   </button>
                   <button
                     onClick={() => {
@@ -1163,25 +1026,13 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
                         wsClient.send("speak_text", { text: clean, manual: true });
                       }
                     }}
-                    style={{
-                      background: "rgba(255, 0, 0, 0.1)",
-                      border: "1px solid var(--border-accent)",
-                      borderRadius: "var(--radius-sm)",
-                      color: "var(--accent)",
-                      padding: "2px 6px",
-                      fontSize: "10px",
-                      fontFamily: "var(--font-mono)",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      transition: "all 0.2s ease",
-                    }}
-                    className="hover-glow"
+                    className="os-btn os-btn-ghost os-btn-xs"
+                    style={{ color: "var(--accent)" }}
                     title="Listen to response"
+                    aria-label="Listen to response"
                   >
                     <Volume2 size={12} />
-                    LISTEN
+                    Listen
                   </button>
                 </>
               )}
@@ -1207,9 +1058,6 @@ export function MessageList({ messages, messageRefsMap, onSelectMessage }: Messa
         flexDirection: "column",
         gap: "12px",
         padding: "4px 0",
-        overflowY: "auto",
-        flex: 1,
-        minHeight: 0,
       }}
     >
       <AnimatePresence initial={false}>
