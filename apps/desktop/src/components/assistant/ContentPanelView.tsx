@@ -16,8 +16,8 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
   if (!contentType || !data) {
     return (
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.5 }}>
-        <p style={{ color: "var(--text-secondary)", fontSize: "11px", letterSpacing: "0.05em" }}>
-          // NO ACTIVE CONTENT PANEL
+        <p style={{ color: "var(--text-muted)", fontSize: "var(--text-meta)" }}>
+          Nothing to show here yet.
         </p>
       </div>
     );
@@ -31,11 +31,11 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
     const hasMemories = memories && memories.length > 0;
 
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px", padding: "8px", height: "100%", overflowY: "auto", fontFamily: "var(--font-mono)", fontSize: "11px" }} className="custom-scrollbar">
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px", padding: "8px", height: "100%", overflowY: "auto", fontSize: "var(--text-meta)", lineHeight: 1.5 }} className="custom-scrollbar">
         {/* Weather */}
         {hasWeather && (
-          <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "6px" }}>
-            <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: "4px" }}>☀️ WEATHER REPORT</div>
+          <div style={{ padding: "12px", background: "var(--surface-hover)", border: "1px solid var(--line-soft)", borderRadius: "var(--radius-md)" }}>
+            <div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: "6px" }}>Weather</div>
             <div style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>
               {weather.description ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
@@ -54,8 +54,8 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
 
         {/* Calendar */}
         {hasCalendar && (
-          <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "6px" }}>
-            <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: "6px" }}>📅 UPCOMING SCHEDULE</div>
+          <div style={{ padding: "12px", background: "var(--surface-hover)", border: "1px solid var(--line-soft)", borderRadius: "var(--radius-md)" }}>
+            <div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: "8px" }}>Upcoming schedule</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
               {calendar_events.map((evt: any, i: number) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", borderBottom: "1px dashed rgba(255,255,255,0.03)", paddingBottom: "3px" }}>
@@ -75,8 +75,8 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
 
         {/* News Headlines */}
         {hasNews && (
-          <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "6px" }}>
-            <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: "6px" }}>📰 TOP NEWS HEADLINES</div>
+          <div style={{ padding: "12px", background: "var(--surface-hover)", border: "1px solid var(--line-soft)", borderRadius: "var(--radius-md)" }}>
+            <div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: "8px" }}>Top news</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
               {news_headlines.map((item: any, i: number) => (
                 <div key={i} style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
@@ -96,8 +96,8 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
 
         {/* Memories */}
         {hasMemories && (
-          <div style={{ padding: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "6px" }}>
-            <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: "4px" }}>🧠 RECALLED MEMORIES</div>
+          <div style={{ padding: "12px", background: "var(--surface-hover)", border: "1px solid var(--line-soft)", borderRadius: "var(--radius-md)" }}>
+            <div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: "6px" }}>Recalled memories</div>
             <ul style={{ margin: 0, paddingLeft: "16px", color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: "3px" }}>
               {memories.map((m: any, i: number) => (
                 <li key={i}>
@@ -115,9 +115,9 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
 
   if (contentType === "screen_analysis") {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "8px", height: "100%", overflowY: "auto", fontFamily: "var(--font-mono)", fontSize: "11px" }}>
-        <div style={{ color: "var(--accent)", fontWeight: "bold", borderBottom: "1px solid var(--border)", paddingBottom: "4px" }}>
-          🖥️ SCREEN ANALYSIS
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "8px", height: "100%", overflowY: "auto", fontSize: "var(--text-meta)", lineHeight: 1.5 }}>
+        <div style={{ color: "var(--text-primary)", fontWeight: 600, borderBottom: "1px solid var(--line-soft)", paddingBottom: "8px" }}>
+          Screen analysis
         </div>
         <div style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap", lineHeight: "1.5" }}>
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
@@ -130,8 +130,8 @@ export function ContentPanelView({ contentType, data }: ContentPanelViewProps) {
 
   // Fallback for other content types
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "8px", height: "100%", overflowY: "auto", fontFamily: "var(--font-mono)", fontSize: "11px" }}>
-      <div style={{ color: "var(--accent)", fontWeight: "bold", textTransform: "uppercase" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "8px", height: "100%", overflowY: "auto", fontSize: "var(--text-meta)", lineHeight: 1.5 }}>
+      <div style={{ color: "var(--text-primary)", fontWeight: 600, textTransform: "capitalize" }}>
         {contentType}
       </div>
       <div style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>

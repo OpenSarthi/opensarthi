@@ -170,10 +170,12 @@ export function TaskList({
 
 
       {agenticTasks.length === 0 ? (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.5 }}>
-          <p style={{ color: "var(--text-secondary)", fontSize: "11px", letterSpacing: "0.05em", textAlign: "center" }}>
-            // NO AGENT TASKS YET
-          </p>
+        <div className="os-empty">
+          <span className="os-empty-mark" aria-hidden="true">
+            <CheckCircle2 size={15} />
+          </span>
+          <p className="os-empty-title">No tasks yet</p>
+          <p className="os-empty-hint">Tasks you ask OpenSarthi to run will appear here.</p>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px", overflowY: "auto", flex: 1, minHeight: 0, paddingBottom: "24px" }}>
@@ -189,90 +191,80 @@ export function TaskList({
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: -12 }}
                 transition={{ type: "spring", damping: 26, stiffness: 360 }}
+                role="button"
+                tabIndex={0}
+                aria-selected={task.id === selectedTaskId}
+                aria-label={`Task: ${task.title}, status: ${task.status}`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedTaskId(task.id === selectedTaskId ? null : task.id);
+                    onScrollToMessage?.(task.userMsgId);
+                  }
+                }}
                 onClick={() => {
                   setSelectedTaskId(task.id === selectedTaskId ? null : task.id);
                   onScrollToMessage?.(task.userMsgId);
                 }}
-                style={{
-                  padding: "9px 11px",
-                  borderRadius: "var(--radius-md)",
-                  border: `1px solid ${task.id === selectedTaskId ? "var(--border-accent)" : task.status === "running" ? "var(--border-accent)" : "var(--border)"}`,
-                  background: task.id === selectedTaskId
-                    ? "var(--accent-glow)"
-                    : task.status === "running"
-                    ? "var(--accent-glow)"
-                    : "rgba(0,0,0,0.2)",
-                display: "flex",
-                flexDirection: "column",
-                gap: "5px",
-                cursor: "pointer",
-                boxShadow: task.status === "running" ? "0 0 8px var(--accent-glow)" : "none",
-                transition: "all 0.15s",
-              }}
+                className={`os-task-card${task.id === selectedTaskId ? " is-selected" : ""}${task.status === "running" ? " is-running" : ""}`}
             >
-              {/* Header row: icon + title + timestamp + status */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "7px", fontWeight: "bold", fontSize: "11px", color: "var(--text-primary)" }}>
-                  <span>{task.icon}</span>
-                  <span style={{ letterSpacing: "0.04em" }}>{task.title}</span>
-                  <span style={{ fontSize: "9px", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", fontWeight: "normal", opacity: 0.85 }}>
-                    [{new Date(task.timestamp ?? Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}]
+              {/* Header row: dot + title + timestamp + status */}
+              <div className="os-task-head">
+                <div className="os-task-heading">
+                  <span className={`os-task-dot is-${task.status}`} aria-hidden="true" />
+                  <span className="os-task-title">{task.title}</span>
+                  <span className="os-task-time">
+                    {new Date(task.timestamp ?? Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                   {task.status === "running" && (
-                    <span style={{ fontSize: "9px", color: taskPaused ? "hsl(40, 100%, 60%)" : "var(--accent)", display: "flex", alignItems: "center", gap: "3px", fontWeight: "bold" }}>
+                    <span className="os-task-status" style={{ color: taskPaused ? "var(--warning)" : "var(--accent)" }}>
                       <AnimatePresence mode="wait">
                         {taskPaused ? (
                           <motion.span key="paused" initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }} transition={{ duration: 0.12 }}>
-                            <Pause size={10} />
+                            <Pause size={11} />
                           </motion.span>
                         ) : (
                           <motion.span key="running" initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }} transition={{ duration: 0.12 }}>
-                            <Loader2 size={10} className="animate-spin" />
+                            <Loader2 size={11} className="animate-spin" />
                           </motion.span>
                         )}
                       </AnimatePresence>
-                      {taskPaused ? "PAUSED" : "RUNNING"}
+                      {taskPaused ? "Paused" : "Running"}
                     </span>
                   )}
                   {task.status === "success" && (
-                    <span style={{ fontSize: "9px", color: "var(--success)", display: "flex", alignItems: "center", gap: "3px" }}>
-                      <CheckCircle2 size={10} /> DONE
+                    <span className="os-task-status" style={{ color: "var(--success)" }}>
+                      <CheckCircle2 size={11} /> Done
                     </span>
                   )}
                   {task.status === "error" && (
-                    <span style={{ fontSize: "9px", color: "var(--danger)", display: "flex", alignItems: "center", gap: "3px" }}>
-                      <XCircle size={10} /> FAILED
+                    <span className="os-task-status" style={{ color: "var(--danger)" }}>
+                      <XCircle size={11} /> Failed
                     </span>
                   )}
                   {task.status === "pending" && (
-                    <span style={{ fontSize: "9px", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "3px" }}>
-                      <Clock size={10} /> QUEUED
+                    <span className="os-task-status" style={{ color: "var(--text-muted)" }}>
+                      <Clock size={11} /> Queued
                     </span>
                   )}
                   {task.status === "terminated" && (
-                    <span style={{ fontSize: "9px", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "3px" }}>
-                      <Square size={10} /> STOPPED
+                    <span className="os-task-status" style={{ color: "var(--text-muted)" }}>
+                      <Square size={11} /> Stopped
                     </span>
                   )}
                 </div>
               </div>
 
               {/* Prompt preview */}
-              <div style={{ fontSize: "10px", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", opacity: 0.75, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <div className="os-task-prompt">
                 {task.prompt}
               </div>
 
               {/* Task Controls: Stop / Pause / Resume — only for running tasks */}
               {task.status === "running" && (
-                <div
-                  style={{
-                    display: "flex", gap: "6px", marginTop: "3px",
-                    borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "6px",
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <div className="os-task-controls" onClick={(e) => e.stopPropagation()}>
                   <AnimatePresence mode="wait">
                     {taskPaused ? (
                       <motion.button
@@ -283,16 +275,11 @@ export function TaskList({
                         transition={{ duration: 0.15 }}
                         onClick={() => wsClient.send("resume_execution", { thread_id: activeThreadId })}
                         title="Resume Task"
-                        style={{
-                          display: "flex", alignItems: "center", gap: "4px",
-                          padding: "4px 10px", fontSize: "9px", fontWeight: "bold",
-                          letterSpacing: "0.05em",
-                          background: "rgba(0, 230, 180, 0.12)", color: "var(--success)",
-                          border: "1px solid rgba(0, 230, 180, 0.25)", borderRadius: "var(--radius-sm)",
-                          cursor: "pointer",
-                        }}
+                        aria-label="Resume task execution"
+                        className="os-btn os-btn-ghost os-btn-xs"
+                        style={{ color: "var(--success)" }}
                       >
-                        <Play size={10} /> RESUME
+                        <Play size={11} /> Resume
                       </motion.button>
                     ) : (
                       <motion.button
@@ -303,57 +290,32 @@ export function TaskList({
                         transition={{ duration: 0.15 }}
                         onClick={() => wsClient.send("pause_execution", { thread_id: activeThreadId })}
                         title="Pause Task"
-                        style={{
-                          display: "flex", alignItems: "center", gap: "4px",
-                          padding: "4px 10px", fontSize: "9px", fontWeight: "bold",
-                          letterSpacing: "0.05em",
-                          background: "rgba(255, 180, 0, 0.1)", color: "hsl(40, 100%, 60%)",
-                          border: "1px solid rgba(255, 180, 0, 0.25)", borderRadius: "var(--radius-sm)",
-                          cursor: "pointer",
-                        }}
+                        aria-label="Pause task execution"
+                        className="os-btn os-btn-ghost os-btn-xs"
+                        style={{ color: "var(--warning)" }}
                       >
-                        <Pause size={10} /> PAUSE
+                        <Pause size={11} /> Pause
                       </motion.button>
                     )}
                   </AnimatePresence>
                   <button
                     onClick={() => wsClient.send("cancel_execution", { thread_id: activeThreadId })}
                     title="Stop Task"
-                    style={{
-                      display: "flex", alignItems: "center", gap: "4px",
-                      padding: "4px 10px", fontSize: "9px", fontWeight: "bold",
-                      letterSpacing: "0.05em",
-                      background: "rgba(255, 60, 60, 0.1)", color: "var(--danger)",
-                      border: "1px solid rgba(255, 60, 60, 0.2)", borderRadius: "var(--radius-sm)",
-                      cursor: "pointer",
-                    }}
+                    aria-label="Stop task execution"
+                    className="os-btn os-btn-ghost os-btn-xs"
+                    style={{ color: "var(--danger)" }}
                   >
-                    <Square size={10} /> STOP
+                    <Square size={11} /> Stop
                   </button>
                 </div>
               )}
               {/* Shell output terminal — shown when task is selected/running and shell lines are streaming */}
               {(task.status === "running" || task.id === selectedTaskId) && shellOutputLines.length > 0 && (
-                <div style={{
-                  marginTop: "6px",
-                  borderRadius: "var(--radius-sm)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  background: "rgba(0,0,0,0.45)",
-                  overflow: "hidden",
-                }}>
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: "5px",
-                    padding: "4px 8px", borderBottom: "1px solid rgba(255,255,255,0.07)",
-                    fontSize: "9px", color: "var(--text-secondary)", fontWeight: "bold",
-                  }}>
-                    <Terminal size={9} /> SHELL OUTPUT
+                <div className="os-task-shell">
+                  <div className="os-task-shell-head">
+                    <Terminal size={11} /> Shell output
                   </div>
-                  <div style={{
-                    maxHeight: "120px", overflowY: "auto",
-                    padding: "6px 8px",
-                    fontFamily: "var(--font-mono)", fontSize: "9px",
-                    color: "rgba(180, 255, 180, 0.85)", lineHeight: "1.5",
-                  }}>
+                  <div className="os-task-shell-body">
                     {shellOutputLines.map((line, i) => (
                       <div key={i} style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
                         {line}

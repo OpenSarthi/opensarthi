@@ -142,11 +142,11 @@ export function Waveform({ voiceState, level, ttsLevel }: WaveformProps) {
       else if (isProcessing) baseColor = "#38bdf8";
       else if (isSpeaking) baseColor = "#00ff88";
 
-      // Try reading active CSS variable
+      // Try reading active CSS variable (accept any CSS color format: hex, hsl, rgb, named)
       try {
         const computed = getComputedStyle(container);
         const cssAcc = computed.getPropertyValue(isError ? "--danger" : isSpeaking ? "--success" : "--accent").trim();
-        if (cssAcc && cssAcc.startsWith("#")) baseColor = cssAcc;
+        if (cssAcc) baseColor = cssAcc;
       } catch (_) {}
 
       // 6. Draw on Canvas

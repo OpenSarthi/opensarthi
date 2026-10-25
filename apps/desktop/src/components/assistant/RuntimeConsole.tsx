@@ -34,19 +34,25 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
     <AnimatePresence>
       {isOpen && (
         <motion.div
+          role="region"
+          aria-label="Runtime Console Logcat"
           initial={{ y: "100%", opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: "100%", opacity: 0 }}
           transition={{ type: "spring", damping: 28, stiffness: 240 }}
           style={{
             position: "absolute",
-            bottom: "-12px",
-            left: "-12px",
-            right: "-12px",
+            bottom: 0,
+            left: 8,
+            right: 8,
             height: `${height}px`,
-            background: "#08080a",
-            borderTop: "1.5px solid var(--border-accent)",
-            boxShadow: "0 -10px 30px rgba(0,0,0,0.85)",
+            background:
+              "linear-gradient(180deg, var(--glass-tint) 0%, var(--glass-tint-soft) 40%, transparent 100%), var(--bg-secondary)",
+            border: "1px solid var(--glass-stroke)",
+            borderBottom: "none",
+            borderTopLeftRadius: "var(--radius-xl)",
+            borderTopRightRadius: "var(--radius-xl)",
+            boxShadow: "inset 0 1px 0 var(--glass-sheen), 0 -16px 44px rgba(0,0,0,0.6)",
             zIndex: 900, // Above splitters and scrollbars, below onboarding (9999)
             display: "flex",
             flexDirection: "column",
@@ -55,6 +61,10 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
         >
           {/* Horizontal drag resizer handle */}
           <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize runtime console height"
+            tabIndex={0}
             onMouseDown={onResizeStart}
             style={{
               position: "absolute",
@@ -76,15 +86,15 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            padding: "8px 16px",
-            borderBottom: "1px solid rgba(0, 230, 180, 0.15)",
-            background: "rgba(0,0,0,0.3)",
+            padding: "10px 16px",
+            borderBottom: "1px solid var(--line-soft)",
+            background: "transparent",
             userSelect: "none"
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <Terminal size={12} color="var(--accent)" />
+              <Terminal size={13} color="var(--accent)" />
               <span style={{
-                fontSize: "10px",
+                fontSize: "11px",
                 fontWeight: "bold",
                 color: "var(--accent)",
                 fontFamily: "var(--font-mono)",
@@ -93,30 +103,37 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
                 ⚙️ RUNTIME CONSOLE LOGCAT
               </span>
               <span style={{
-                fontSize: "9px",
+                fontSize: "11px",
                 color: "var(--text-muted)",
                 fontFamily: "var(--font-mono)",
-                background: "rgba(255,255,255,0.04)",
-                padding: "1px 6px",
-                borderRadius: "3px"
+                background: "rgba(255,255,255,0.06)",
+                padding: "2px 6px",
+                borderRadius: "var(--radius-sm)"
               }}>
                 {sidecarLogs.length}/150 LINES
               </span>
             </div>
             
-            <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
               <button
                 onClick={handleCopy}
                 disabled={sidecarLogs.length === 0}
+                aria-label="Copy runtime logs to clipboard"
                 style={{
                   background: "transparent",
                   border: "none",
                   color: copied ? "var(--success, #00e6b4)" : "var(--text-secondary)",
-                  fontSize: "9px",
+                  fontSize: "11px",
                   fontFamily: "var(--font-mono)",
                   cursor: sidecarLogs.length === 0 ? "not-allowed" : "pointer",
                   transition: "color 0.15s",
-                  fontWeight: copied ? "bold" : "normal"
+                  fontWeight: copied ? "bold" : "normal",
+                  minHeight: "28px",
+                  minWidth: "28px",
+                  padding: "4px 8px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center"
                 }}
                 onMouseEnter={(e) => {
                   if (sidecarLogs.length > 0 && !copied) e.currentTarget.style.color = "var(--accent)";
@@ -129,14 +146,21 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
               </button>
               <button
                 onClick={clearSidecarLogs}
+                aria-label="Clear runtime logs"
                 style={{
                   background: "transparent",
                   border: "none",
                   color: "var(--text-secondary)",
-                  fontSize: "9px",
+                  fontSize: "11px",
                   fontFamily: "var(--font-mono)",
                   cursor: "pointer",
                   transition: "color 0.15s",
+                  minHeight: "28px",
+                  minWidth: "28px",
+                  padding: "4px 8px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center"
                 }}
                 onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent)"}
                 onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
@@ -145,14 +169,21 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
               </button>
               <button
                 onClick={onClose}
+                aria-label="Hide runtime console"
                 style={{
                   background: "transparent",
                   border: "none",
                   color: "var(--accent)",
-                  fontSize: "9px",
+                  fontSize: "11px",
                   fontFamily: "var(--font-mono)",
                   fontWeight: "bold",
-                  cursor: "pointer"
+                  cursor: "pointer",
+                  minHeight: "28px",
+                  minWidth: "28px",
+                  padding: "4px 8px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center"
                 }}
               >
                 [ HIDE × ]
@@ -177,7 +208,7 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
             }}
           >
             {sidecarLogs.length === 0 ? (
-              <div style={{ color: "var(--text-muted)", opacity: 0.5 }}>// System runtime console active. Standard output streams will display here.</div>
+              <div style={{ color: "var(--text-muted)", opacity: 0.8 }}>Runtime console ready. Standard output will stream here.</div>
             ) : (
               sidecarLogs.map((log, idx) => {
                 const isErr = log.includes("[ERR]");
@@ -185,7 +216,7 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
                   <div
                     key={idx}
                     style={{
-                      color: isErr ? "var(--danger)" : "rgba(0, 230, 180, 0.85)",
+                      color: isErr ? "var(--danger)" : "var(--accent)",
                       whiteSpace: "pre-wrap",
                       wordBreak: "break-all"
                     }}

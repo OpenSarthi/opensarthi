@@ -26,11 +26,11 @@ function stripMarkdown(text: string): string {
 }
 
 const VOICE_STATE_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
-  idle:       { label: "IDLE",       color: "rgba(255,255,255,0.3)",  dot: "rgba(255,255,255,0.3)" },
-  listening:  { label: "LISTENING",  color: "rgb(60,220,100)",        dot: "rgb(60,220,100)" },
-  processing: { label: "PROCESSING", color: "rgb(255,180,30)",        dot: "rgb(255,180,30)" },
-  speaking:   { label: "SPEAKING",   color: "rgb(100,160,255)",       dot: "rgb(100,160,255)" },
-  error:      { label: "ERROR",      color: "rgb(255,80,80)",         dot: "rgb(255,80,80)" },
+  idle:       { label: "Idle",       color: "var(--text-muted)",    dot: "var(--text-muted)" },
+  listening:  { label: "Listening",  color: "var(--accent)",        dot: "var(--accent)" },
+  processing: { label: "Thinking",   color: "var(--warning)",       dot: "var(--warning)" },
+  speaking:   { label: "Speaking",   color: "var(--info, #64a0ff)", dot: "var(--info, #64a0ff)" },
+  error:      { label: "Error",      color: "var(--danger)",        dot: "var(--danger)" },
 };
 
 export function OverlayIdleView({
@@ -85,14 +85,13 @@ export function OverlayIdleView({
         <div style={{
           width: "7px", height: "7px", borderRadius: "50%",
           background: vsCfg.dot,
-          boxShadow: `0 0 ${isVoiceActive ? "8px" : "4px"} ${vsCfg.dot}`,
+          boxShadow: "none",
           animation: isVoiceActive ? "pulse 1.2s ease-in-out infinite" : "none",
           flexShrink: 0,
         }} />
         <span style={{
-          fontSize: "9px", fontWeight: 700, letterSpacing: "0.12em",
-          color: vsCfg.color, fontFamily: "var(--font-mono)",
-          textTransform: "uppercase",
+          fontSize: "var(--text-micro)", fontWeight: 600, letterSpacing: 0,
+          color: vsCfg.color,
         }}>
           {vsCfg.label}
         </span>
@@ -127,8 +126,8 @@ export function OverlayIdleView({
 
         {!isConnected && (
           <span style={{
-            marginLeft: "auto", fontSize: "9px",
-            color: "rgba(255,80,80,0.7)", fontFamily: "var(--font-mono)",
+            marginLeft: "auto", fontSize: "var(--text-micro)",
+            color: "var(--danger)",
           }}>
             OFFLINE
           </span>
@@ -198,12 +197,12 @@ export function OverlayIdleView({
                     padding: isUser ? "6px 10px" : "7px 10px",
                     borderRadius: isUser ? "12px 12px 3px 12px" : "12px 12px 12px 3px",
                     background: isUser
-                      ? "linear-gradient(135deg, rgba(0,200,120,0.18), rgba(0,200,120,0.1))"
+                      ? "color-mix(in srgb, var(--accent) 16%, transparent)"
                       : isLatestAI
                         ? "rgba(255,255,255,0.07)"
                         : "rgba(255,255,255,0.04)",
                     border: isUser
-                      ? "1px solid rgba(0,200,120,0.3)"
+                      ? "1px solid color-mix(in srgb, var(--accent) 34%, transparent)"
                       : isLatestAI
                         ? "1px solid rgba(255,255,255,0.1)"
                         : "1px solid rgba(255,255,255,0.06)",
@@ -219,13 +218,12 @@ export function OverlayIdleView({
                         onClick={() => setExpandedReply(true)}
                         style={{
                           display: "block", marginTop: "4px",
-                          fontSize: "9px", color: "var(--accent)",
+                          fontSize: "var(--text-micro)", color: "var(--accent)",
                           background: "none", border: "none",
                           cursor: "pointer", padding: 0,
-                          fontFamily: "var(--font-mono)", letterSpacing: "0.06em",
                         }}
                       >
-                        SHOW MORE ↓
+                        Show more
                       </button>
                     )}
                   </div>

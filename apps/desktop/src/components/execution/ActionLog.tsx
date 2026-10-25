@@ -137,40 +137,14 @@ const renderActionDetails = (action: ParsedToolAction) => {
   if (!detailsText) return null;
 
   return (
-    <div style={{
-      marginTop: "4px",
-      padding: "4px 8px",
-      background: "rgba(0, 255, 120, 0.03)",
-      borderLeft: "2px solid var(--accent)",
-      fontSize: "9px",
-      fontFamily: "var(--font-mono)",
-      color: "var(--accent)",
-      display: "flex",
-      flexDirection: "column",
-      gap: "2px",
-      borderRadius: "0 var(--radius-sm) var(--radius-sm) 0",
-      letterSpacing: "0.03em"
-    }}>
-      <div style={{ textTransform: "uppercase", fontSize: "8px", opacity: 0.5, fontWeight: "bold" }}>
-        {isCommandLine ? "EXECUTE COMMAND" : `${toolName} params`}
+    <div className="os-action-details">
+      <div className="os-action-details-label">
+        {isCommandLine ? "Command" : `${toolName} params`}
       </div>
       {isCommandLine ? (
-        <div style={{ 
-          background: "rgba(0,0,0,0.3)", 
-          padding: "4px 6px", 
-          borderRadius: "3px", 
-          border: "1px solid rgba(0, 255, 120, 0.15)",
-          color: "#00ff88", 
-          whiteSpace: "pre-wrap", 
-          wordBreak: "break-all",
-          marginTop: "2px"
-        }}>
-          $ {detailsText}
-        </div>
+        <div className="os-action-cmd">$ {detailsText}</div>
       ) : (
-        <div style={{ color: "rgba(0, 255, 120, 0.9)" }}>
-          {detailsText}
-        </div>
+        <div className="os-action-details-value">{detailsText}</div>
       )}
     </div>
   );
@@ -503,10 +477,9 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
 
   if (reversedActions.length === 0) {
     return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.5, minHeight: "120px" }}>
-        <p style={{ color: "var(--text-secondary)", fontSize: "11px", letterSpacing: "0.05em", textAlign: "center" }}>
-          // NO ACTIVE ACTIVITY LOGS
-        </p>
+      <div className="os-empty" style={{ minHeight: 140 }}>
+        <p className="os-empty-title">No activity yet</p>
+        <p className="os-empty-hint">Tool calls and results will stream in here.</p>
       </div>
     );
   }
@@ -533,22 +506,11 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
                   margin: "2px 0",
                 }}
               >
-                <div style={{ flex: 1, height: "1px", background: "linear-gradient(to right, transparent, rgba(0,255,120,0.3), transparent)" }} />
-                <span style={{
-                  fontSize: "8px",
-                  fontFamily: "var(--font-mono)",
-                  color: "rgba(0,255,120,0.6)",
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  whiteSpace: "nowrap",
-                  padding: "2px 6px",
-                  border: "1px solid rgba(0,255,120,0.2)",
-                  borderRadius: "var(--radius-sm)",
-                  background: "rgba(0,255,120,0.04)",
-                }}>
-                  ↺ {action.description}
+                <div className="os-action-divider-line" />
+                <span className="os-action-divider-label">
+                  {action.description}
                 </span>
-                <div style={{ flex: 1, height: "1px", background: "linear-gradient(to left, transparent, rgba(0,255,120,0.3), transparent)" }} />
+                <div className="os-action-divider-line" />
               </motion.div>
             );
           }
@@ -561,46 +523,23 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
           const args = getArgsFromAction(action);
           
           let statusColor = "var(--text-muted)";
-          let statusText = "QUEUED";
-          let cardBg = "rgba(0, 0, 0, 0.25)";
-          let cardBorder = "1px solid var(--border)";
-          let glow = "none";
-          
+          let statusText = "Queued";
+
           if (isHeal) {
             statusColor = isRunning ? "var(--warning)" : isSuccess ? "var(--success)" : "var(--danger)";
-            statusText = isRunning ? "DIAGNOSING..." : isSuccess ? "HEALED" : "HEAL FAILED";
-            cardBg = isRunning 
-              ? "rgba(255, 170, 0, 0.08)" 
-              : isSuccess 
-              ? "rgba(0, 230, 180, 0.06)" 
-              : "rgba(255, 60, 60, 0.06)";
-            cardBorder = isRunning 
-              ? "1px dashed var(--warning)" 
-              : isSuccess 
-              ? "1px dashed var(--success)" 
-              : "1px dashed var(--danger)";
-            glow = isRunning ? "0 0 10px rgba(255, 170, 0, 0.2)" : "none";
+            statusText = isRunning ? "Diagnosing…" : isSuccess ? "Healed" : "Heal failed";
           } else if (isRunning) {
             statusColor = "var(--accent)";
-            statusText = "RUNNING";
-            cardBg = "rgba(255, 0, 0, 0.15)";
-            cardBorder = "1px solid var(--accent)";
-            glow = "0 0 10px var(--accent-glow)";
+            statusText = "Running";
           } else if (isSuccess) {
             statusColor = "var(--success)";
-            statusText = "SUCCESS";
-            cardBg = "rgba(0, 230, 180, 0.04)";
-            cardBorder = "1px solid rgba(0, 230, 180, 0.15)";
+            statusText = "Success";
           } else if (isError) {
             statusColor = "var(--danger)";
-            statusText = "FAILED";
-            cardBg = "rgba(255, 60, 60, 0.04)";
-            cardBorder = "1px solid rgba(255, 60, 60, 0.15)";
+            statusText = "Failed";
           } else if (isTerminated) {
             statusColor = "var(--text-muted)";
-            statusText = "TERMINATED";
-            cardBg = "rgba(255, 255, 255, 0.02)";
-            cardBorder = "1px solid rgba(255, 255, 255, 0.08)";
+            statusText = "Stopped";
           }
 
           const hasResult = !!action.result;
@@ -618,45 +557,33 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
               onClick={() => {
                 setExpandedIndex(expandedIndex === idx ? null : idx);
               }}
-              style={{
-                padding: "10px 12px",
-                borderRadius: "var(--radius-md)",
-                background: cardBg,
-                border: cardBorder,
-                boxShadow: glow,
-                display: "flex",
-                flexDirection: "column",
-                gap: "6px",
-                cursor: "pointer",
+              role="button"
+              tabIndex={0}
+              aria-expanded={isExpanded}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setExpandedIndex(expandedIndex === idx ? null : idx);
+                }
               }}
+              className={`os-action-card${isHeal ? " is-heal" : ""}${isRunning ? " is-running" : ""}${isSuccess ? " is-success" : ""}${isError ? " is-error" : ""}${isTerminated ? " is-terminated" : ""}`}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-                <div style={{ 
-                  fontSize: "10px", 
-                  fontWeight: "bold", 
-                  fontFamily: "var(--font-mono)", 
-                  color: isHeal ? "var(--warning)" : "var(--accent)", 
-                  textTransform: "none",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "2px",
-                  minWidth: 0,
-                  flex: 1
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>
-                    {isHeal ? "🩹 " : ""}{getActionTitle(action)}
+              <div className="os-action-head">
+                <div className="os-action-title-wrap">
+                  <div className="os-action-title">
+                    {getActionTitle(action)}
                   </div>
-                  <span style={{ fontSize: "8px", opacity: 0.5, fontWeight: "normal" }}>
-                    {isExpanded ? "▼ Click to collapse" : "▶ Click to expand details"}
+                  <span className="os-action-toggle">
+                    {isExpanded ? "Hide details" : "Show details"}
                   </span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-                  <span style={{ fontSize: "9px", color: statusColor, fontWeight: "bold", letterSpacing: "0.05em" }}>
+                <div className="os-action-meta">
+                  <span className="os-action-status" style={{ color: statusColor }}>
                     {statusText}
                   </span>
                   {action.timestamp && (
-                    <span style={{ fontSize: "9px", color: "var(--text-secondary)", fontFamily: "var(--font-mono)", opacity: 0.8 }}>
-                      [{new Date(action.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}]
+                    <span className="os-action-time">
+                      {new Date(action.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                     </span>
                   )}
                 </div>
@@ -664,7 +591,7 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
               
               {isExpanded && (
                 <>
-                  <div style={{ fontSize: "11px", color: "var(--text-secondary)", lineHeight: "1.4", fontFamily: "var(--font-mono)", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "6px", marginTop: "2px" }}>
+                  <div className="os-action-desc">
                     {action.description}
                   </div>
                   {renderActionDetails(action)}
@@ -673,29 +600,10 @@ export function ActionLog({ plan, selectedTaskId, messages }: ActionLogProps) {
 
               {/* Streaming Output for Running Shell OR Collapsible Result for Finished Tool */}
               {((isRunning && isShell && shellOutputLines.length > 0) || (hasResult && isExpanded)) && (
-                <div style={{
-                  marginTop: "6px",
-                  borderRadius: "var(--radius-sm)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  background: "rgba(0,0,0,0.45)",
-                  padding: "6px 8px",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "9px",
-                  color: "rgba(180, 255, 180, 0.85)",
-                  lineHeight: "1.5",
-                  maxHeight: "150px",
-                  overflowY: "auto",
-                }}>
+                <div className="os-action-output">
                   {isShell && args?.command && (
-                    <div style={{ 
-                      color: "#00ff66", 
-                      opacity: 0.75, 
-                      marginBottom: "6px", 
-                      borderBottom: "1px solid rgba(0, 255, 100, 0.15)", 
-                      paddingBottom: "4px",
-                      fontWeight: "bold"
-                    }}>
-                      sarthi-shell ~ $ {args.command}
+                    <div className="os-action-output-cmd">
+                      $ {args.command}
                     </div>
                   )}
                   {isRunning ? (

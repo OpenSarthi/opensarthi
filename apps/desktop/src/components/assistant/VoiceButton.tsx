@@ -21,8 +21,8 @@ export function VoiceButton({ voiceState, onClick, disabled }: VoiceButtonProps)
     : "var(--bg-tertiary)";
 
   const icon =
-    isError      ? <MicOff size={20} />
-    : isSpeaking ? <Volume2 size={20} />
+    isError      ? <MicOff size={18} />
+    : isSpeaking ? <Volume2 size={18} />
     : isProcessing
       ? (
         // Spinning rings loader instead of Loader2
@@ -45,7 +45,7 @@ export function VoiceButton({ voiceState, onClick, disabled }: VoiceButtonProps)
           />
         </svg>
       )
-    : <Mic size={20} />;
+    : <Mic size={18} />;
 
   return (
     <div style={{ position: "relative", flexShrink: 0 }}>
@@ -83,26 +83,26 @@ export function VoiceButton({ voiceState, onClick, disabled }: VoiceButtonProps)
           : isError    ? "Retry"
           : "Start listening"
         }
-        whileHover={!disabled && !isProcessing ? { scale: 1.08 } : {}}
-        whileTap={!disabled && !isProcessing  ? { scale: 0.92 } : {}}
+        whileHover={!disabled && !isProcessing ? { scale: 1.05 } : {}}
+        whileTap={!disabled && !isProcessing  ? { scale: 0.94 } : {}}
         style={{
-          width: "52px",
-          height: "52px",
+          width: "44px",
+          height: "44px",
           borderRadius: "50%",
           background: accentColor,
-          color: isListening || isSpeaking ? "#000" : "var(--text-primary)",
+          color: isError ? "#ffffff" : isListening || isSpeaking ? "#06140a" : "var(--text-primary)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          border: `1.5px solid ${isListening || isSpeaking ? accentColor : "var(--border)"}`,
+          border: `1px solid ${isListening || isSpeaking || isError ? accentColor : "var(--line-strong)"}`,
           flexShrink: 0,
           cursor: disabled || isProcessing ? "not-allowed" : "pointer",
           opacity: disabled ? 0.45 : 1,
-          transition: "background 0.25s, border-color 0.25s, color 0.25s",
+          transition: "background 0.25s, border-color 0.25s, color 0.25s, box-shadow 0.25s",
           position: "relative",
           boxShadow: isListening || isSpeaking
-            ? `0 0 18px ${accentColor}55, 0 0 40px ${accentColor}22`
-            : "none",
+            ? "0 8px 24px var(--accent-glow)"
+            : "0 4px 14px rgba(0, 0, 0, 0.22)",
         }}
       >
         <AnimatePresence mode="wait">
