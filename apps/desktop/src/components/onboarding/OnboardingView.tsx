@@ -1,5 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 import {
   Check,
   ChevronRight,
@@ -24,8 +25,8 @@ import {
 } from "../../lib/models";
 
 const SKILLS = [
-  { id: "general",           icon: "🤖", label: "General Assistant",    desc: "Balanced chat & everyday help", color: "#00FF66" },
-  { id: "desktop_automation",icon: "🖥️", label: "Desktop Automation",   desc: "Control apps, click, type on screen", color: "#00D9FF" },
+  { id: "general",           icon: "🤖", label: "General Assistant",    desc: "Balanced chat & everyday help", color: "#32d74b" },
+  { id: "desktop_automation",icon: "🖥️", label: "Desktop Automation",   desc: "Control apps, click, type on screen", color: "#0a84ff" },
   { id: "developer",         icon: "💻", label: "Developer & Coding",   desc: "Code, debug, terminal & Git", color: "#7B2FFE" },
   { id: "system_admin",      icon: "🔧", label: "System Admin",         desc: "System management & shell commands", color: "#FF5722" },
   { id: "media",             icon: "🎵", label: "Media & Music",        desc: "Spotify, YouTube & media controls", color: "#FFEB3B" },
@@ -49,35 +50,32 @@ const hexToRgba = (hex: string, alpha: number) => {
 
 const selectStyle: React.CSSProperties = {
   width: "100%",
-  padding: "12px 36px 12px 16px",
-  background: "rgba(10, 10, 18, 0.75)",
-  border: "1px solid rgba(255, 255, 255, 0.12)",
-  borderRadius: 10,
-  color: "white",
-  fontSize: 13,
-  outline: "none",
+  padding: "11px 36px 11px 14px",
+  background: "var(--surface-hover)",
+  border: "1px solid var(--line-strong)",
+  borderRadius: "var(--radius-sm)",
+  color: "var(--text-primary)",
+  fontSize: "var(--text-meta)",
   boxSizing: "border-box",
   fontFamily: "inherit",
   WebkitAppearance: "none",
   MozAppearance: "none",
   appearance: "none",
-  backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+  backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
   backgroundRepeat: "no-repeat",
   backgroundPosition: "right 14px center",
   backgroundSize: "16px",
-  colorScheme: "dark",
   cursor: "pointer",
 };
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  padding: "12px 16px",
-  background: "rgba(255, 255, 255, 0.05)",
-  border: "1px solid rgba(255, 255, 255, 0.12)",
-  borderRadius: 10,
-  color: "white",
-  fontSize: 13,
-  outline: "none",
+  padding: "11px 14px",
+  background: "var(--surface-hover)",
+  border: "1px solid var(--line-strong)",
+  borderRadius: "var(--radius-sm)",
+  color: "var(--text-primary)",
+  fontSize: "var(--text-meta)",
   boxSizing: "border-box",
   fontFamily: "inherit",
   transition: "border-color 0.2s",
@@ -113,6 +111,8 @@ interface OnboardingViewProps {
 }
 
 export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePort }: OnboardingViewProps) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const modalRef = useModalFocusTrap<HTMLDivElement>({ onClose, initialFocusRef: closeButtonRef, enabled: isEdit });
   const storeUserName = useAssistantStore(s => s.userName);
   const storeUserSkills = useAssistantStore(s => s.userSkills);
   const storeCustomPrompt = useAssistantStore(s => s.customPrompt);
@@ -166,7 +166,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
   const providerInfo = PROVIDER_LABELS[provider] || {
     label: provider,
     icon: "✨",
-    apiKeyLabel: "API KEY",
+    apiKeyLabel: "API key",
     apiKeyPlaceholder: "Paste your API key...",
     docsUrl: "",
     supportsModelFetch: false,
@@ -424,11 +424,11 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.15 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-customise-title"
+        className="os-scrim"
         style={{
-          position: "fixed",
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: "rgba(0, 0, 0, 0.05)",
-          display: "flex",
           justifyContent: "flex-end",
           alignItems: "flex-start",
           padding: "54px 12px 12px 12px",
@@ -438,7 +438,8 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
         onClick={onClose}
       >
         <motion.div
-          className="hud-panel"
+          ref={modalRef}
+          className="hud-panel os-dialog"
           initial={{ x: 250, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: 250, opacity: 0 }}
@@ -447,29 +448,34 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
           style={{
             width: "min(720px, calc(100vw - 24px))",
             maxHeight: "calc(100vh - 66px)",
-            background: "rgba(10, 10, 10, 0.98)",
-            border: "1px solid var(--border)",
-            boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)",
             padding: 24,
             display: "flex", flexDirection: "column", gap: 16,
             overflowY: "auto",
           }}
         >
           {/* Header */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--line-soft)", paddingBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <Wrench size={16} color="var(--accent)" />
-              <span style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)", letterSpacing: "0.03em" }}>Customise Persona & Skills</span>
+              <h2 id="onboarding-customise-title" style={{ fontSize: "var(--text-title)", fontWeight: 600, color: "var(--text-primary)", letterSpacing: "-0.02em", margin: 0 }}>
+                Persona & skills
+              </h2>
             </div>
             <button
+              ref={closeButtonRef}
               onClick={onClose}
+              aria-label="Close customization"
               style={{
-                background: "none", border: "none", color: "var(--text-secondary)",
-                cursor: "pointer", padding: 4, display: "flex", alignItems: "center",
-                transition: "color 0.2s"
+                background: "none",
+                border: "none",
+                color: "var(--text-secondary)",
+                cursor: "pointer",
+                minWidth: 28,
+                minHeight: 28,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
-              onMouseOver={e => e.currentTarget.style.color = "var(--accent)"}
-              onMouseOut={e => e.currentTarget.style.color = "var(--text-secondary)"}
             >
               <X size={18} />
             </button>
@@ -480,10 +486,10 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
             
             {/* Persona Setup Section */}
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", letterSpacing: "0.05em" }}>1. PROFILE & INSTRUCTIONS</div>
+              <div style={{ fontSize: "var(--text-meta)", fontWeight: 600, color: "var(--text-secondary)", letterSpacing: "-0.01em" }}>Profile & instructions</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 16 }}>
                 <div>
-                  <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "var(--text-secondary)", letterSpacing: "0.06em", marginBottom: 6 }}>USER NAME</label>
+                  <label style={{ display: "block", fontSize: "var(--text-micro)", fontWeight: 500, color: "var(--text-secondary)", letterSpacing: 0, marginBottom: 6 }}>Name</label>
                   <input
                     type="text"
                     value={userName}
@@ -493,29 +499,19 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                     }}
                     placeholder="What should I call you?"
                     maxLength={40}
-                    style={{
-                      width: "100%", padding: "9px 12px", background: "rgba(0,0,0,0.5)",
-                      border: "1px solid var(--border)", borderRadius: 6,
-                      color: "var(--text-primary)", fontSize: 12, outline: "none", boxSizing: "border-box",
-                      fontFamily: "var(--font-mono)",
-                    }}
+                    style={inputStyle}
                   />
                   {nameError && <p style={{ fontSize: 10, color: "var(--danger)", margin: "4px 0 0" }}>{nameError}</p>}
                 </div>
                 <div>
-                  <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: "var(--text-secondary)", letterSpacing: "0.06em", marginBottom: 6 }}>CUSTOM INSTRUCTIONS</label>
+                  <label style={{ display: "block", fontSize: "var(--text-micro)", fontWeight: 500, color: "var(--text-secondary)", letterSpacing: 0, marginBottom: 6 }}>Custom instructions</label>
                   <textarea
                     value={customPrompt}
                     onChange={e => setCustomPrompt(e.target.value.slice(0, 500))}
                     placeholder="Short description of your preferences..."
                     rows={3}
                     maxLength={500}
-                    style={{
-                      width: "100%", padding: "9px 12px", background: "rgba(0,0,0,0.5)",
-                      border: "1px solid var(--border)", borderRadius: 6,
-                      color: "var(--text-primary)", fontSize: 11, outline: "none", boxSizing: "border-box",
-                      fontFamily: "var(--font-mono)", resize: "none", lineHeight: 1.5
-                    }}
+                    style={{ ...inputStyle, resize: "none", lineHeight: 1.5 }}
                   />
                   <div style={{ textAlign: "right", fontSize: 9, color: "var(--text-muted)", marginTop: 2 }}>
                     {customPrompt.length}/500
@@ -527,18 +523,18 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
             {/* Skills selection section */}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)", letterSpacing: "0.05em" }}>2. AGENT CAPABILITIES</div>
+                <div style={{ fontSize: "var(--text-meta)", fontWeight: 600, color: "var(--text-secondary)", letterSpacing: "-0.01em" }}>Capabilities</div>
                 <button
                   onClick={() => setSelected(allSelected ? new Set(["general"]) : new Set(ALL_SKILL_IDS))}
                   style={{
-                    fontSize: 9, fontWeight: 600, letterSpacing: "0.05em",
+                    fontSize: "var(--text-micro)", fontWeight: 500, letterSpacing: "0",
                     color: allSelected ? "var(--accent)" : "var(--text-secondary)",
                     background: allSelected ? "var(--accent-glow)" : "transparent",
                     border: `1px solid ${allSelected ? "var(--accent)" : "var(--border)"}`,
                     borderRadius: 6, padding: "3px 8px", cursor: "pointer",
                   }}
                 >
-                  {allSelected ? "✓ ALL SELECTED" : "SELECT ALL"}
+                  {allSelected ? "Deselect all" : "Select all"}
                 </button>
               </div>
 
@@ -558,18 +554,18 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                       onClick={() => toggle(skill.id)}
                       style={{
                         display: "flex", alignItems: "center", gap: 10,
-                        padding: "8px 12px", borderRadius: 6, cursor: "pointer",
+                        padding: "9px 12px", borderRadius: "var(--radius-md)", cursor: "pointer",
                         background: isOn
                           ? "var(--accent-glow)"
-                          : "rgba(255,255,255,0.02)",
-                        border: `1px solid ${isOn ? "var(--accent)" : "var(--border)"}`,
+                          : "var(--surface-hover)",
+                        border: `1px solid ${isOn ? "var(--accent)" : "var(--line-soft)"}`,
                         transition: "all 0.15s ease",
                         textAlign: "left",
                       }}
                     >
                       <span style={{ fontSize: 18, flexShrink: 0 }}>{skill.icon}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: isOn ? "white" : "var(--text-secondary)" }}>
+                        <div style={{ fontSize: "var(--text-meta)", fontWeight: 500, color: isOn ? "var(--text-primary)" : "var(--text-secondary)" }}>
                           {skill.label}
                         </div>
                       </div>
@@ -583,29 +579,14 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
           </div>
 
           {/* Footer Actions */}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, borderTop: "1px solid var(--border)", paddingTop: 14, marginTop: 4 }}>
-            <button
-              onClick={onClose}
-              style={{
-                padding: "8px 16px", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em",
-                background: "transparent", border: "1px solid var(--border)",
-                borderRadius: 6, color: "var(--text-secondary)", cursor: "pointer",
-                transition: "all 0.2s"
-              }}
-              onMouseOver={e => { e.currentTarget.style.borderColor = "var(--text-primary)"; e.currentTarget.style.color = "var(--text-primary)"; }}
-              onMouseOut={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-secondary)"; }}
-            >CANCEL</button>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, borderTop: "1px solid var(--line-soft)", paddingTop: 14, marginTop: 4 }}>
+            <button onClick={onClose} className="os-btn">Cancel</button>
             <motion.button
-              whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
               onClick={handleFinish}
-              style={{
-                padding: "8px 20px", fontSize: 11, fontWeight: 700, letterSpacing: "0.05em",
-                background: "var(--accent)",
-                border: "none", borderRadius: 6, color: "#000", cursor: "pointer",
-                boxShadow: "0 4px 16px var(--accent-glow)",
-              }}
+              className="os-btn os-btn-primary"
             >
-              SAVE CHANGES
+              Save changes
             </motion.button>
           </div>
         </motion.div>
@@ -620,7 +601,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
       exit={{ opacity: 0 }}
       style={{
         position: "fixed", inset: 0, zIndex: 9999,
-        background: "radial-gradient(ellipse at 50% 50%, #06180f 0%, #04090c 60%, #020202 100%)",
+        background: "radial-gradient(ellipse 80% 60% at 50% 28%, rgba(50, 215, 75, 0.10) 0%, transparent 58%), #070908",
         display: "flex", flexDirection: "column",
         fontFamily: "var(--font-sans, 'Inter', sans-serif)",
         overflowY: "auto",
@@ -631,8 +612,8 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
     >
       {/* Background glow orbs */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
-        <div style={{ position: "absolute", top: "10%", left: "15%", width: 600, height: 600, borderRadius: "50%", background: "radial-gradient(circle, rgba(0,255,102,0.06) 0%, transparent 70%)", filter: "blur(60px)" }} />
-        <div style={{ position: "absolute", bottom: "10%", right: "15%", width: 500, height: 500, borderRadius: "50%", background: "radial-gradient(circle, rgba(0,217,255,0.05) 0%, transparent 70%)", filter: "blur(60px)" }} />
+        <div style={{ position: "absolute", top: "8%", left: "12%", width: 620, height: 620, borderRadius: "50%", background: "radial-gradient(circle, rgba(50,215,75,0.07) 0%, transparent 70%)" }} />
+        <div style={{ position: "absolute", bottom: "8%", right: "12%", width: 520, height: 520, borderRadius: "50%", background: "radial-gradient(circle, rgba(10,132,255,0.06) 0%, transparent 70%)" }} />
       </div>
 
       <div style={{
@@ -650,9 +631,9 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
           >
             <div style={{
               width: 44, height: 44, borderRadius: "50%",
-              background: "linear-gradient(135deg, #00FF66, #00D9FF)",
+              background: "linear-gradient(135deg, #32d74b, #0a84ff)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 0 24px rgba(0, 217, 255, 0.4)",
+              boxShadow: "0 10px 30px rgba(50, 215, 75, 0.22)",
             }}>
               <svg width="24" height="24" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <circle cx="24" cy="24" r="20" stroke="#08080c" strokeWidth="4" strokeDasharray="6 3" />
@@ -702,8 +683,8 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
           {["skills", "persona", "agent"].map((s) => (
             <div key={s} style={{
               width: step === s ? 28 : 8, height: 8, borderRadius: 4,
-              background: step === s ? "#00FF66" : "rgba(255,255,255,0.15)",
-              boxShadow: step === s ? "0 0 8px #00FF66" : "none",
+              background: step === s ? "#32d74b" : "rgba(255,255,255,0.15)",
+              boxShadow: "none",
               transition: "width 0.3s ease, background 0.3s ease, box-shadow 0.3s ease",
             }} />
           ))}
@@ -717,15 +698,15 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                 <button
                   onClick={() => setSelected(allSelected ? new Set(["general"]) : new Set(ALL_SKILL_IDS))}
                   style={{
-                    fontSize: 11, fontWeight: 600, letterSpacing: "0.05em",
-                    color: allSelected ? "#00FF66" : "rgba(255,255,255,0.5)",
-                    background: allSelected ? "rgba(0, 255, 102, 0.12)" : "transparent",
-                    border: `1px solid ${allSelected ? "rgba(0, 255, 102, 0.3)" : "rgba(255,255,255,0.1)"}`,
-                    borderRadius: 6, padding: "5px 12px", cursor: "pointer",
+                    fontSize: "var(--text-micro)", fontWeight: 500, letterSpacing: 0,
+                    color: allSelected ? "#32d74b" : "rgba(255,255,255,0.5)",
+                    background: allSelected ? "rgba(50, 215, 75, 0.12)" : "transparent",
+                    border: `1px solid ${allSelected ? "rgba(50, 215, 75, 0.3)" : "rgba(255,255,255,0.1)"}`,
+                    borderRadius: "var(--radius-full)", padding: "5px 12px", cursor: "pointer",
                     transition: "all 0.2s",
                   }}
                 >
-                  {allSelected ? "✓ ALL SELECTED" : "SELECT ALL"}
+                  {allSelected ? "Deselect all" : "Select all"}
                 </button>
               </div>
 
@@ -737,7 +718,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
               }}>
                 {SKILLS.map((skill, idx) => {
                   const isOn = selected.has(skill.id);
-                  const skillColor = (skill as any).color || "#00FF66";
+                  const skillColor = (skill as any).color || "#32d74b";
                   return (
                     <motion.button
                       key={skill.id}
@@ -747,12 +728,12 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                       onClick={() => toggle(skill.id)}
                       style={{
                         display: "flex", alignItems: "flex-start", gap: 12,
-                        padding: "12px 14px", borderRadius: 12, cursor: "pointer",
+                        padding: "12px 14px", borderRadius: "var(--radius-md)", cursor: "pointer",
                         background: isOn
-                          ? `linear-gradient(135deg, ${hexToRgba(skillColor, 0.15)}, ${hexToRgba(skillColor, 0.04)})`
+                          ? `linear-gradient(135deg, ${hexToRgba(skillColor, 0.16)}, ${hexToRgba(skillColor, 0.05)})`
                           : "rgba(255,255,255,0.04)",
-                        border: `1px solid ${isOn ? skillColor : "rgba(255,255,255,0.08)"}`,
-                        boxShadow: isOn ? `0 0 16px ${hexToRgba(skillColor, 0.12)}, inset 0 0 20px ${hexToRgba(skillColor, 0.05)}` : "none",
+                        border: `1px solid ${isOn ? hexToRgba(skillColor, 0.55) : "rgba(255,255,255,0.1)"}`,
+                        boxShadow: "none",
                         transition: "all 0.18s ease",
                         textAlign: "left",
                         position: "relative",
@@ -760,7 +741,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                     >
                       <span style={{ fontSize: 22, flexShrink: 0, marginTop: 1 }}>{skill.icon}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: isOn ? "white" : "rgba(255,255,255,0.7)", marginBottom: 2 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: isOn ? "white" : "rgba(255,255,255,0.72)", marginBottom: 2 }}>
                           {skill.label}
                         </div>
                         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", lineHeight: 1.4 }}>
@@ -776,7 +757,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                               width: 18, height: 18, borderRadius: "50%",
                               background: skillColor,
                               display: "flex", alignItems: "center", justifyContent: "center",
-                              boxShadow: `0 0 8px ${skillColor}`,
+                              boxShadow: "none",
                             }}
                           >
                             <Check size={11} color="white" />
@@ -793,8 +774,8 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
               <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 520, margin: "0 auto" }}>
                 {/* Name field */}
                 <div>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: "0.06em", marginBottom: 8 }}>
-                    <User size={13} /> WHAT SHOULD I CALL YOU?
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--text-meta)", fontWeight: 500, color: "rgba(255,255,255,0.55)", letterSpacing: 0, marginBottom: 8 }}>
+                    <User size={13} /> What should I call you?
                   </label>
                   <input
                     type="text"
@@ -814,7 +795,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                       fontFamily: "inherit",
                       transition: "border-color 0.2s",
                     }}
-                    onFocus={e => (e.target.style.borderColor = "#00D9FF")}
+                    onFocus={e => (e.target.style.borderColor = "#0a84ff")}
                     onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                   />
                   {nameError && <p style={{ fontSize: 11, color: "hsl(0,80%,60%)", margin: "4px 0 0" }}>{nameError}</p>}
@@ -822,8 +803,8 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
 
                 {/* Custom prompt */}
                 <div>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: "0.06em", marginBottom: 8 }}>
-                    <MessageSquare size={13} /> CUSTOM INSTRUCTIONS <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "rgba(255,255,255,0.3)" }}> (optional)</span>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--text-meta)", fontWeight: 500, color: "rgba(255,255,255,0.55)", letterSpacing: 0, marginBottom: 8 }}>
+                    <MessageSquare size={13} /> Custom instructions <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "rgba(255,255,255,0.3)" }}> (optional)</span>
                   </label>
                   <textarea
                     value={customPrompt}
@@ -840,7 +821,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                       fontFamily: "inherit", lineHeight: 1.6,
                       transition: "border-color 0.2s",
                     }}
-                    onFocus={e => (e.target.style.borderColor = "#00FF66")}
+                    onFocus={e => (e.target.style.borderColor = "#32d74b")}
                     onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                   />
                   <div style={{ textAlign: "right", fontSize: 10, color: "rgba(255,255,255,0.25)", marginTop: 4 }}>
@@ -861,8 +842,8 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                 
                 {/* 1. Provider Grid */}
                 <div>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: "0.06em", marginBottom: 10 }}>
-                    1. AI ENGINE PROVIDER
+                  <label style={{ display: "block", fontSize: "var(--text-meta)", fontWeight: 500, color: "rgba(255,255,255,0.55)", letterSpacing: 0, marginBottom: 10 }}>
+                    AI engine
                   </label>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
                     {PROVIDER_OPTIONS.map((p) => {
@@ -881,13 +862,13 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                             justifyContent: "center",
                             gap: "4px",
                             padding: "12px 8px",
-                            borderRadius: "10px",
+                            borderRadius: "var(--radius-md)",
                             cursor: "pointer",
                             background: isSelected
-                              ? "linear-gradient(135deg, rgba(0, 255, 102, 0.15), rgba(0, 217, 255, 0.05))"
+                              ? "linear-gradient(135deg, rgba(50, 215, 75, 0.15), rgba(10, 132, 255, 0.05))"
                               : "rgba(255,255,255,0.03)",
-                            border: `1px solid ${isSelected ? "#00FF66" : "rgba(255,255,255,0.08)"}`,
-                            boxShadow: isSelected ? "0 4px 16px rgba(0, 255, 102, 0.15)" : "none",
+                            border: `1px solid ${isSelected ? "#32d74b" : "rgba(255,255,255,0.08)"}`,
+                            boxShadow: "none",
                             transition: "all 0.2s",
                             textAlign: "center",
                           }}
@@ -913,16 +894,16 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                   transition={{ duration: 0.15 }}
                   style={{ display: "flex", flexDirection: "column", gap: 8 }}
                 >
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: "0.06em" }}>
-                    2. {isLocal ? "LOCAL SERVER ENDPOINT" : isCustomOpenai ? "API ENDPOINT & CREDENTIALS" : "API CREDENTIALS"}
+                  <label style={{ display: "block", fontSize: "var(--text-meta)", fontWeight: 500, color: "rgba(255,255,255,0.55)", letterSpacing: 0 }}>
+                    {isLocal ? "Local server endpoint" : isCustomOpenai ? "Endpoint & credentials" : "Credentials"}
                   </label>
 
                   {/* Custom OpenAI Base URL */}
                   {isCustomOpenai && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       <label style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: 6 }}>
-                        <Globe size={12} style={{ color: "#00D9FF" }} />
-                        API ENDPOINT / BASE URL (required)
+                        <Globe size={12} style={{ color: "#0a84ff" }} />
+                        Endpoint / base URL
                       </label>
                       <input
                         type="text"
@@ -934,7 +915,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                         }}
                         placeholder="e.g. http://localhost:20128/v1 or http://127.0.0.1:8000/v1"
                         style={inputStyle}
-                        onFocus={e => (e.target.style.borderColor = "#00D9FF")}
+                        onFocus={e => (e.target.style.borderColor = "#0a84ff")}
                         onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                       />
                     </div>
@@ -944,8 +925,8 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                   {isCustomOpenai && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       <label style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: 6 }}>
-                        <Tag size={12} style={{ color: "#00D9FF" }} />
-                        PROVIDER DISPLAY NAME (optional)
+                        <Tag size={12} style={{ color: "#0a84ff" }} />
+                        Display name (optional)
                       </label>
                       <input
                         type="text"
@@ -953,7 +934,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                         onChange={(e) => setCustomOpenaiProviderName(e.target.value)}
                         placeholder="e.g. OmniRoute, vLLM, LM Studio, LocalAI"
                         style={inputStyle}
-                        onFocus={e => (e.target.style.borderColor = "#00D9FF")}
+                        onFocus={e => (e.target.style.borderColor = "#0a84ff")}
                         onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                       />
                     </div>
@@ -963,8 +944,8 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                   {isLocal && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       <label style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: 6 }}>
-                        <Globe size={12} style={{ color: "#00D9FF" }} />
-                        OLLAMA SERVER URL
+                        <Globe size={12} style={{ color: "#0a84ff" }} />
+                        Ollama server URL
                       </label>
                       <input
                         type="text"
@@ -976,7 +957,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                         }}
                         placeholder="http://127.0.0.1:11434"
                         style={inputStyle}
-                        onFocus={e => (e.target.style.borderColor = "#00D9FF")}
+                        onFocus={e => (e.target.style.borderColor = "#0a84ff")}
                         onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                       />
                     </div>
@@ -986,9 +967,9 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                   {!isLocal && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       <label style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span>{isCustomOpenai ? "API KEY (optional / required by server)" : (providerInfo.apiKeyLabel || "API KEY")}</span>
+                        <span>{isCustomOpenai ? "API key (optional)" : (providerInfo.apiKeyLabel || "API key")}</span>
                         {apiKeys[provider] && (
-                          <span style={{ color: "#00FF66", fontSize: 10, display: "flex", alignItems: "center", gap: 4 }}>
+                          <span style={{ color: "#32d74b", fontSize: 10, display: "flex", alignItems: "center", gap: 4 }}>
                             <CheckCircle2 size={11} /> READY
                           </span>
                         )}
@@ -1004,7 +985,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                         }}
                         placeholder={isCustomOpenai ? "sk-... (leave blank if not required)" : (providerInfo.apiKeyPlaceholder || "Paste your secret API key...")}
                         style={inputStyle}
-                        onFocus={e => (e.target.style.borderColor = "#00FF66")}
+                        onFocus={e => (e.target.style.borderColor = "#32d74b")}
                         onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                       />
                     </div>
@@ -1019,13 +1000,13 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                       disabled={testKeyState === "checking" || (!apiKeys[provider] && !isCustomOpenai && !isLocal)}
                       style={{
                         padding: "7px 14px",
-                        background: testKeyState === "valid" ? "rgba(0, 255, 102, 0.15)" : testKeyState === "invalid" ? "rgba(255, 50, 50, 0.15)" : "rgba(255, 255, 255, 0.08)",
-                        border: `1px solid ${testKeyState === "valid" ? "#00FF66" : testKeyState === "invalid" ? "#ff4d4d" : "rgba(255, 255, 255, 0.15)"}`,
-                        color: testKeyState === "valid" ? "#00FF66" : testKeyState === "invalid" ? "#ff4d4d" : "rgba(255, 255, 255, 0.8)",
+                        background: testKeyState === "valid" ? "rgba(50, 215, 75, 0.15)" : testKeyState === "invalid" ? "rgba(255, 50, 50, 0.15)" : "rgba(255, 255, 255, 0.08)",
+                        border: `1px solid ${testKeyState === "valid" ? "#32d74b" : testKeyState === "invalid" ? "#ff4d4d" : "rgba(255, 255, 255, 0.15)"}`,
+                        color: testKeyState === "valid" ? "#32d74b" : testKeyState === "invalid" ? "#ff4d4d" : "rgba(255, 255, 255, 0.8)",
                         borderRadius: "8px",
                         fontSize: "11px",
                         fontWeight: 600,
-                        letterSpacing: "0.04em",
+                        letterSpacing: 0,
                         cursor: testKeyState === "checking" ? "wait" : "pointer",
                         display: "flex",
                         alignItems: "center",
@@ -1035,20 +1016,20 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                       }}
                     >
                       {testKeyState === "checking" ? (
-                        <><RefreshCw size={11} style={{ animation: "spin 1s linear infinite" }} /> TESTING...</>
+                        <><RefreshCw size={11} style={{ animation: "spin 1s linear infinite" }} /> Testing…</>
                       ) : testKeyState === "valid" ? (
-                        <><CheckCircle2 size={11} /> VALID</>
+                        <><CheckCircle2 size={11} /> Valid</>
                       ) : testKeyState === "invalid" ? (
-                        <><X size={11} /> FAILED</>
+                        <><X size={11} /> Failed</>
                       ) : (
-                        <>{isLocal || isCustomOpenai ? "TEST CONNECTION" : "TEST KEY"}</>
+                        <>{isLocal || isCustomOpenai ? "Test connection" : "Test key"}</>
                       )}
                     </button>
 
                     {testKeyMessage && (
                       <span style={{
                         fontSize: "11px",
-                        color: testKeyState === "valid" ? "#00FF66" : testKeyState === "invalid" ? "#ff4d4d" : "rgba(255,255,255,0.7)",
+                        color: testKeyState === "valid" ? "#32d74b" : testKeyState === "invalid" ? "#ff4d4d" : "rgba(255,255,255,0.7)",
                         opacity: 0.9,
                       }}>
                         {testKeyMessage}
@@ -1058,7 +1039,7 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
 
                   {providerInfo.docsUrl && (
                     <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.4)", marginTop: 2 }}>
-                      Get your API key at: <span style={{ color: "#00D9FF", fontFamily: "var(--font-mono, monospace)" }}>{providerInfo.docsUrl}</span>
+                      Get your API key at: <span style={{ color: "#0a84ff", fontFamily: "var(--font-mono, monospace)" }}>{providerInfo.docsUrl}</span>
                     </span>
                   )}
                   <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)" }}>
@@ -1075,8 +1056,8 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                   style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", letterSpacing: "0.06em" }}>
-                      3. ACTIVE MODEL SELECT
+                    <label style={{ display: "block", fontSize: "var(--text-meta)", fontWeight: 500, color: "rgba(255,255,255,0.55)", letterSpacing: 0 }}>
+                      Model
                     </label>
                     {PROVIDER_LABELS[provider]?.supportsModelFetch && (
                       <button
@@ -1090,22 +1071,22 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                           borderRadius: 6,
                           padding: "4px 10px",
                           cursor: "pointer",
-                          color: modelFetchState === "live" ? "#00FF66" : "rgba(255, 255, 255, 0.7)",
+                          color: modelFetchState === "live" ? "#32d74b" : "rgba(255, 255, 255, 0.7)",
                           display: "flex",
                           alignItems: "center",
                           gap: 5,
                           fontSize: 10,
                           fontWeight: 600,
-                          letterSpacing: "0.04em",
+                          letterSpacing: 0,
                           transition: "all 0.2s",
                         }}
                       >
                         <RefreshCw size={10} style={{ animation: modelFetchState === "loading" ? "spin 1s linear infinite" : "none" }} />
                         {modelFetchState === "live"
-                          ? `LIVE (${dynamicModels.length})`
+                          ? `Live (${dynamicModels.length})`
                           : modelFetchState === "loading"
                           ? "FETCHING…"
-                          : "FETCH LIVE"}
+                          : "Fetch live"}
                       </button>
                     )}
                   </div>
@@ -1135,20 +1116,20 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                               {formatModelLabel(m)}
                             </option>
                           ))}
-                          <option value="__custom__" style={{ background: "#0a0a12", color: "rgba(255,255,255,0.5)" }}>── Custom (type below) ──</option>
+                          <option value="__custom__" style={{ background: "#0a0a12", color: "rgba(255,255,255,0.5)" }}>Custom (type below)</option>
                         </select>
                       )}
                       <input
-                        placeholder="CUSTOM MODEL (e.g. llama3.1:8b, qwen2.5-coder:7b)"
+                        placeholder="Custom model (e.g. llama3.1:8b, qwen2.5-coder:7b)"
                         value={localModel}
                         onChange={(e) => setLocalModel(e.target.value)}
                         style={inputStyle}
-                        onFocus={e => (e.target.style.borderColor = "#00FF66")}
+                        onFocus={e => (e.target.style.borderColor = "#32d74b")}
                         onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                       />
                       {dynamicModels.length > 0 && (
-                        <span style={{ fontSize: 10, color: "#00FF66", opacity: 0.8 }}>
-                          ✓ Live models loaded from local Ollama ({dynamicModels.length} models)
+                        <span style={{ fontSize: 10, color: "#32d74b", opacity: 0.8 }}>
+                          Live models loaded from local Ollama ({dynamicModels.length})
                         </span>
                       )}
                     </div>
@@ -1178,11 +1159,11 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                         }}
                         placeholder="Model ID: e.g. auto/fast, cw/claude-sonnet-4-6, gpt-4o"
                         style={inputStyle}
-                        onFocus={e => (e.target.style.borderColor = "#00D9FF")}
+                        onFocus={e => (e.target.style.borderColor = "#0a84ff")}
                         onBlur={e => (e.target.style.borderColor = "rgba(255,255,255,0.12)")}
                       />
                       {dynamicModels.length > 0 ? (
-                        <span style={{ fontSize: 10, color: "#00D9FF", opacity: 0.8 }}>
+                        <span style={{ fontSize: 10, color: "#0a84ff", opacity: 0.8 }}>
                           ✓ Live model catalog from endpoint ({dynamicModels.length} models)
                         </span>
                       ) : (
@@ -1208,8 +1189,8 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
                         ))}
                       </select>
                       {dynamicModels.length > 0 && (
-                        <span style={{ fontSize: 10, color: "#00FF66", opacity: 0.8 }}>
-                          ✓ Live model list from {PROVIDER_LABELS[provider]?.label || provider} ({dynamicModels.length} models)
+                        <span style={{ fontSize: 10, color: "#32d74b", opacity: 0.8 }}>
+                          Live model list from {PROVIDER_LABELS[provider]?.label || provider} ({dynamicModels.length})
                         </span>
                       )}
                     </div>
@@ -1232,27 +1213,27 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
             onMouseOver={e => (e.currentTarget.style.color = "rgba(255,255,255,0.6)")}
             onMouseOut={e => (e.currentTarget.style.color = "rgba(255,255,255,0.35)")}
           >
-            {step === "skills" ? "Skip setup → use defaults" : "← Back"}
+            {step === "skills" ? "Skip for now" : "Back"}
           </button>
 
           <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
             onClick={step === "skills" ? handleSkillsContinue : step === "persona" ? handlePersonaContinue : handleFinish}
             style={{
               display: "flex", alignItems: "center", gap: 8,
-              padding: "11px 28px", borderRadius: 10, cursor: "pointer",
-              background: "linear-gradient(135deg, #00FF66, #00D9FF)",
-              border: "none", color: "#08080c",
-              fontSize: 13, fontWeight: 700, letterSpacing: "0.04em",
-              boxShadow: "0 4px 20px rgba(0, 217, 255, 0.4)",
+              padding: "11px 22px", borderRadius: "var(--radius-full)", cursor: "pointer",
+              background: "#32d74b",
+              border: "none", color: "#06140a",
+              fontSize: "var(--text-meta)", fontWeight: 600, letterSpacing: "-0.01em",
+              boxShadow: "0 8px 24px rgba(50, 215, 75, 0.2)",
               fontFamily: "inherit",
             }}
           >
             {step === "skills" || step === "persona" ? (
-              <><span>CONTINUE</span><ChevronRight size={16} /></>
+              <><span>Continue</span><ChevronRight size={15} /></>
             ) : (
-              <><Sparkles size={14} /><span>START WITH OPENSARTHI</span></>
+              <><Sparkles size={14} /><span>Start with OpenSarthi</span></>
             )}
           </motion.button>
         </div>
