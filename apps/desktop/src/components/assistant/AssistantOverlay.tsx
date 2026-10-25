@@ -63,9 +63,9 @@ function metricColor(pct: number): string {
 
 /** Returns a text badge label for color-blind accessibility based on percentage. */
 function metricStatusLabel(pct: number): string {
-  if (pct < 60) return "NORM";
-  if (pct < 85) return "ELEV ⚠";
-  return "CRIT ‼";
+  if (pct < 60) return "";
+  if (pct < 85) return "⚠";
+  return "‼";
 }
 
 export function ActivityLogPanel({ logs }: { logs: { id: string; text: string; timestamp: number }[] }) {
@@ -1656,7 +1656,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             <div className="hud-panel" style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", overflow: "hidden" }}>
               {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div className="hud-panel-title">System</div>
+                <div className="hud-panel-title">Systems</div>
                 <div style={{ display: "flex", flexDirection: "column", padding: "12px", gap: "8px", overflowY: "auto" }} className="custom-scrollbar">
 
                   {/* Top Part: System Monitor */}
@@ -1668,7 +1668,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>CPU:</span>
                         <span style={{ color: metricColor(systemMetrics.cpu), fontFamily: "var(--font-mono)" }}>
-                          {systemMetrics.cpu}% <span style={{ fontSize: "9px", opacity: 0.85 }}>({metricStatusLabel(systemMetrics.cpu)})</span>
+                          {systemMetrics.cpu}%{metricStatusLabel(systemMetrics.cpu) ? ` ${metricStatusLabel(systemMetrics.cpu)}` : ""}
                         </span>
                       </div>
                       <div style={{ height: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "2px", overflow: "hidden" }}>
@@ -1681,7 +1681,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>RAM:</span>
                         <span style={{ color: metricColor(systemMetrics.mem), fontFamily: "var(--font-mono)" }}>
-                          {systemMetrics.mem}% <span style={{ fontSize: "9px", opacity: 0.85 }}>({metricStatusLabel(systemMetrics.mem)})</span>
+                          {systemMetrics.mem}%{metricStatusLabel(systemMetrics.mem) ? ` ${metricStatusLabel(systemMetrics.mem)}` : ""}
                         </span>
                       </div>
                       <div style={{ height: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "2px", overflow: "hidden" }}>
@@ -1694,7 +1694,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>GPU:</span>
                         <span style={{ color: typeof systemMetrics.gpu === "number" ? metricColor(systemMetrics.gpu) : "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-                          {typeof systemMetrics.gpu === "number" ? `${systemMetrics.gpu}% (${metricStatusLabel(systemMetrics.gpu)})` : systemMetrics.gpu}
+                          {typeof systemMetrics.gpu === "number" ? `${systemMetrics.gpu}%${metricStatusLabel(systemMetrics.gpu) ? ` ${metricStatusLabel(systemMetrics.gpu)}` : ""}` : systemMetrics.gpu}
                         </span>
                       </div>
                       {typeof systemMetrics.gpu === "number" && (
@@ -1709,7 +1709,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>CORE TEMP:</span>
                         <span style={{ color: typeof systemMetrics.temp === "number" ? metricColor((systemMetrics.temp / 95) * 100) : "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-                          {typeof systemMetrics.temp === "number" ? `${systemMetrics.temp}°C (${metricStatusLabel((systemMetrics.temp / 95) * 100)})` : systemMetrics.temp}
+                          {typeof systemMetrics.temp === "number" ? `${systemMetrics.temp}°C${metricStatusLabel((systemMetrics.temp / 95) * 100) ? ` ${metricStatusLabel((systemMetrics.temp / 95) * 100)}` : ""}` : systemMetrics.temp}
                         </span>
                       </div>
                       {typeof systemMetrics.temp === "number" && (
