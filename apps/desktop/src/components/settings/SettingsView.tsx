@@ -608,7 +608,7 @@ export function SettingsView({
         justifyContent: "flex-end",
         alignItems: "flex-start",
         padding: "54px 12px 12px 12px",
-        zIndex: 50,
+        zIndex: 9999,
       }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >

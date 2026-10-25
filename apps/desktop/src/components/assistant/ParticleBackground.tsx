@@ -52,18 +52,24 @@ function safeRadialGlow(
 }
 
 /* ─── Accent color parser ──────────────────────────────────────────────────── */
-let cachedRGB: [number, number, number] = [255, 26, 26];
+let cachedRGB: [number, number, number] = [0, 230, 180];
+let lastAccentCheck = 0;
+
 function parseAccent(): [number, number, number] {
-  try {
-    const el = document.createElement("div");
-    el.style.cssText = "color:var(--accent);position:absolute;visibility:hidden";
-    document.body.appendChild(el);
-    const m = getComputedStyle(el).color.match(/\d+/g);
-    document.body.removeChild(el);
-    if (m && m.length >= 3) {
-      cachedRGB = [+m[0], +m[1], +m[2]];
-    }
-  } catch { /* ignore */ }
+  const now = performance.now();
+  if (now - lastAccentCheck > 1000) {
+    lastAccentCheck = now;
+    try {
+      const el = document.createElement("div");
+      el.style.cssText = "color:var(--accent);position:absolute;visibility:hidden;pointer-events:none;";
+      document.body.appendChild(el);
+      const m = getComputedStyle(el).color.match(/\d+/g);
+      document.body.removeChild(el);
+      if (m && m.length >= 3) {
+        cachedRGB = [+m[0], +m[1], +m[2]];
+      }
+    } catch { /* ignore */ }
+  }
   return cachedRGB;
 }
 
@@ -172,8 +178,22 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
     let time = 0;
     let globalRotY = 0;
     let sweepAngle = 0;
-    let intensity = 0;
-    let targetIntensity = 0;
+    let intensity = 0.28;
+    let targetIntensity = 0.28;
+
+    // Mark-L particle burst system (bursts outward when speaking/processing)
+    interface BurstParticle {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      alpha: number;
+      size: number;
+    }
+    let burstParticles: BurstParticle[] = [];
+
+    // Mark-L concentric pulse rings radiating outward from Arc Reactor
+    let pulseRings: number[] = [0, 80];
 
     // PRE-COMPUTE per-particle scatter offsets & sizes so they don't re-random every frame
     // (calling Math.random() in draw() causes particles to flutter incoherently)
@@ -195,16 +215,16 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
       time += 0.012;
       globalRotY += 0.006;  // ~1 full Y drift per ~17s — clearly visible rotation
 
-      // Intensity target by state
-      targetIntensity = vs === "idle" ? 0.0
-        : vs === "listening" ? 0.55
-          : vs === "processing" ? 1.0
-            : vs === "speaking" ? 0.75
-              : /* error */                   0.3;
-      intensity += (targetIntensity - intensity) * 0.03;
+      // Intensity target by state — active idle keeps Avengers Jarvis HUD alive
+      targetIntensity = vs === "idle" ? 0.28
+        : vs === "listening" ? 0.70
+        : vs === "processing" ? 1.0
+        : vs === "speaking" ? 0.85
+        : /* error */ 0.40;
+      intensity += (targetIntensity - intensity) * 0.035;
 
       // Base rendering density / visual brightness scaling
-      const visualIntensity = 0.35 + intensity * 0.65;
+      const visualIntensity = 0.48 + intensity * 0.52;
 
       // Sweep: gentle idle, picks up moderately when agent is active
       const sweepSpeed = 0.014 + intensity * 0.025;
@@ -375,27 +395,27 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
         safeArc(ctx, px, py, Math.max(0.1, n.sz * sc), 0, Math.PI * 2, `rgba(${r},${g},${b},${a})`);
       }
 
-      /* ─── Crosshair targeting reticle (active state) ─────────────────────── */
-      if (intensity > 0.2) {
-        const crossA = (intensity - 0.2) * 0.08;
-        const crossR = BASE_R * 0.14 * (1 + Math.sin(time * 2.5) * 0.05);
+      /* ─── Crosshair targeting reticle (Jarvis HUD style) ─────────────────── */
+      if (intensity > 0.15) {
+        const crossA = 0.05 + (intensity - 0.15) * 0.14;
+        const crossR = BASE_R * 0.16 * (1 + Math.sin(time * 2.5) * 0.05);
         const crossColor = `rgba(${r},${g},${b},${crossA})`;
         
         // Four arc corners in 3D
         for (let i = 0; i < 4; i++) {
           const ca = (Math.PI / 2) * i;
           const segments = [{ start: ca + 0.2, end: ca + Math.PI / 2 - 0.2 }];
-          draw3DCircle(crossR, crossColor, 0.7, segments);
+          draw3DCircle(crossR, crossColor, 0.8, segments);
         }
         
         // Crosshair lines in 3D
-        const pLeft: Vec3 = { x: -crossR * 0.35, y: 0, z: 0 };
-        const pRight: Vec3 = { x: crossR * 0.35, y: 0, z: 0 };
-        const pTop: Vec3 = { x: 0, y: -crossR * 0.35, z: 0 };
-        const pBottom: Vec3 = { x: 0, y: crossR * 0.35, z: 0 };
+        const pLeft: Vec3 = { x: -crossR * 0.40, y: 0, z: 0 };
+        const pRight: Vec3 = { x: crossR * 0.40, y: 0, z: 0 };
+        const pTop: Vec3 = { x: 0, y: -crossR * 0.40, z: 0 };
+        const pBottom: Vec3 = { x: 0, y: crossR * 0.40, z: 0 };
         
-        draw3DLine(pLeft, pRight, crossColor, 0.7);
-        draw3DLine(pTop, pBottom, crossColor, 0.7);
+        draw3DLine(pLeft, pRight, crossColor, 0.8);
+        draw3DLine(pTop, pBottom, crossColor, 0.8);
       }
 
       /* ─── central core glow ──────────────────────────────────────────────── */
@@ -591,41 +611,84 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
         ctx.stroke();
       }
 
-      /* ─── scanning beam (when active) ──────────────────────────────────────── */
-      if (intensity > 0.1) {
-        const beamLen = BASE_R * (1.0 + intensity * 0.5);
-        const bx = cx + Math.cos(sweepAngle) * beamLen;
-        const by = cy + Math.sin(sweepAngle) * beamLen;
-        const beam = ctx.createLinearGradient(cx, cy, bx, by);
-        beam.addColorStop(0, `rgba(${r},${g},${b},${0.35 * intensity})`);
-        beam.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      /* ─── scanning beam (continuous Jarvis radar sweep) ──────────────────── */
+      const beamLen = BASE_R * (1.0 + intensity * 0.4);
+      const bx = cx + Math.cos(sweepAngle) * beamLen;
+      const by = cy + Math.sin(sweepAngle) * beamLen;
+      const beam = ctx.createLinearGradient(cx, cy, bx, by);
+      const beamAlpha = 0.08 + 0.28 * intensity;
+      beam.addColorStop(0, `rgba(${r},${g},${b},${beamAlpha})`);
+      beam.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(bx, by);
+      ctx.strokeStyle = beam;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // Trailing fan (radar sweep wake)
+      for (let t = 1; t <= 5; t++) {
+        const ta = sweepAngle - t * 0.08;
+        const tbx = cx + Math.cos(ta) * beamLen * 0.95;
+        const tby = cy + Math.sin(ta) * beamLen * 0.95;
+        const ta2 = (0.04 + intensity * 0.08) * (1 - t * 0.18);
+        if (ta2 <= 0) continue;
         ctx.beginPath();
         ctx.moveTo(cx, cy);
-        ctx.lineTo(bx, by);
-        ctx.strokeStyle = beam;
-        ctx.lineWidth = 1.5;
+        ctx.lineTo(tbx, tby);
+        ctx.strokeStyle = `rgba(${r},${g},${b},${ta2})`;
+        ctx.lineWidth = 1.0;
         ctx.stroke();
-
-        // Trailing fan (looks like a radar sweep)
-        for (let t = 1; t <= 5; t++) {
-          const ta = sweepAngle - t * 0.10;
-          const tbx = cx + Math.cos(ta) * beamLen * 0.95;
-          const tby = cy + Math.sin(ta) * beamLen * 0.95;
-          const ta2 = intensity * (0.14 - t * 0.025);
-          if (ta2 <= 0) continue;
-          ctx.beginPath();
-          ctx.moveTo(cx, cy);
-          ctx.lineTo(tbx, tby);
-          ctx.strokeStyle = `rgba(${r},${g},${b},${ta2})`;
-          ctx.lineWidth = 1.0;
-          ctx.stroke();
-        }
       }
 
-      /* ─── HUD brackets (four corners, processing only) ─────────────────────── */
-      if (intensity > 0.45) {
+      /* ─── Mark-L expanding pulse rings radiating from Arc Reactor ─────────── */
+      const pulseLimit = BASE_R * 1.6;
+      const pulseSpeed = 1.2 + intensity * 2.0;
+      pulseRings = pulseRings
+        .map(pr => pr + pulseSpeed)
+        .filter(pr => pr < pulseLimit);
+
+      if (pulseRings.length < 3 && Math.random() < (intensity > 0.5 ? 0.04 : 0.016)) {
+        pulseRings.push(0);
+      }
+
+      for (const pr of pulseRings) {
+        const prAlpha = Math.max(0, (1 - pr / pulseLimit) * (0.10 + intensity * 0.20));
+        safeArc(ctx, cx, cy, pr, 0, Math.PI * 2, `rgba(${r},${g},${b},${prAlpha})`, 1.2);
+      }
+
+      /* ─── Mark-L dynamic radial spark bursts (when speaking/processing) ────── */
+      if ((vs === "speaking" || vs === "processing") && Math.random() < 0.35) {
+        const ang = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 2.8 + 1.2;
+        burstParticles.push({
+          x: cx,
+          y: cy,
+          vx: Math.cos(ang) * speed,
+          vy: Math.sin(ang) * speed,
+          alpha: 1.0,
+          size: Math.random() * 2.5 + 1.2,
+        });
+      }
+      burstParticles = burstParticles
+        .map(p => ({
+          ...p,
+          x: p.x + p.vx,
+          y: p.y + p.vy,
+          vx: p.vx * 0.96,
+          vy: p.vy * 0.96,
+          alpha: p.alpha - 0.026,
+        }))
+        .filter(p => p.alpha > 0);
+
+      for (const p of burstParticles) {
+        safeArc(ctx, p.x, p.y, p.size, 0, Math.PI * 2, `rgba(${r},${g},${b},${p.alpha})`);
+      }
+
+      /* ─── HUD brackets (four corners) ─────────────────────────────────────── */
+      if (intensity > 0.25) {
         const bSize = BASE_R * 0.9;
-        const bA = 0.1 + (intensity - 0.45) * 0.25;
+        const bA = 0.08 + (intensity - 0.25) * 0.25;
         const arm = bSize * 0.18;
         ctx.strokeStyle = `rgba(${r},${g},${b},${bA})`;
         ctx.lineWidth = 1;
