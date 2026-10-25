@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Check, Minimize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop, Paperclip, Eye, Link2 } from "lucide-react";
+import { Send, Settings, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Check, Minimize2, Maximize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop, Paperclip, Eye, Link2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
-// import { MatrixRainBackground } from "./MatrixRainBackground";
+import { ParticleBackground } from "./ParticleBackground";
 import { MessageList } from "./ResponseBubble";
 import { ActionLog } from "../execution/ActionLog";
 import { TaskList } from "./TaskList";
@@ -111,12 +111,89 @@ export function ActivityLogPanel({ logs }: { logs: { id: string; text: string; t
   );
 }
 
+export function HudCorners() {
+  return (
+    <>
+      <span className="hud-corner hud-corner-tl" aria-hidden="true" />
+      <span className="hud-corner hud-corner-tr" aria-hidden="true" />
+      <span className="hud-corner hud-corner-bl" aria-hidden="true" />
+      <span className="hud-corner hud-corner-br" aria-hidden="true" />
+    </>
+  );
+}
+
+export const STATUS_LINES = [
+  "What should we work on?",
+  "I can run tasks right on your desktop.",
+  "Ask me to find, open, or automate anything.",
+  "Voice and text both work.",
+  "Ready when you are.",
+  "Your files and context stay on this machine.",
+  "Try “Summarise my notes.”",
+  "Try “Open my calendar.”",
+  "Try “Find that file from yesterday.”",
+  "Listening whenever you are.",
+] as const;
+
+export function StatusLineTypewriter({ isConnected, lines = STATUS_LINES }: { isConnected: boolean; lines?: readonly string[] }) {
+  const [lineIdx, setLineIdx] = useState(0);
+  const [displayText, setDisplayText] = useState("");
+  const [isDone, setIsDone] = useState(false);
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+
+  useEffect(() => {
+    if (!isConnected) {
+      setDisplayText("Connecting to the local runtime…");
+      setIsDone(true);
+      return;
+    }
+
+    const allLines = linesRef.current;
+    if (!allLines || allLines.length === 0) return;
+
+    const currentLine = allLines[lineIdx % allLines.length];
+    setDisplayText("");
+    setIsDone(false);
+
+    let charIdx = 0;
+    let pauseTimer: ReturnType<typeof setTimeout> | null = null;
+    const typingInterval = setInterval(() => {
+      charIdx+=3;
+      setDisplayText(currentLine.slice(0, charIdx));
+      if (charIdx >= currentLine.length) {
+        clearInterval(typingInterval);
+        setIsDone(true);
+        // Wait exactly 1 second after typing completes, then advance to next line
+        pauseTimer = setTimeout(() => {
+          setLineIdx((prev) => (prev + 1) % allLines.length);
+        }, 1000);
+      }
+    }, 15);
+
+    return () => {
+      clearInterval(typingInterval);
+      if (pauseTimer) clearTimeout(pauseTimer);
+    };
+  }, [lineIdx, isConnected]);
+
+  return (
+    <p className="os-empty-hint os-typewriter-line" aria-live="polite">
+      <span className="os-typewriter-text">{displayText}</span>
+      <span
+        className={`os-typewriter-cursor${isDone ? " is-blinking" : ""}`}
+        aria-hidden="true"
+      >|</span>
+    </p>
+  );
+}
+
 export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomizer, onOpenMcpSettings, onOpenJsonImport, onOpenContext, onNewChat }: AssistantOverlayProps) {
   const [textInput, setTextInput] = useState("");
-  const [statusIdx, setStatusIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showLogsPanel, setShowLogsPanel] = useState(false);
   const [showSettingsDropdown, setShowSettingsDropdown] = useState(false);
+  const [showThemeSubmenu, setShowThemeSubmenu] = useState(false);
   const [showRemotePopover, setShowRemotePopover] = useState(false);
   const [showContentDrawer, setShowContentDrawer] = useState(false);
 
@@ -141,6 +218,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     const handleOutsideClick = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowSettingsDropdown(false);
+        setShowThemeSubmenu(false);
       }
       if (remoteRef.current && !remoteRef.current.contains(e.target as Node)) {
         setShowRemotePopover(false);
@@ -165,7 +243,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     continuousListening,
     setVoiceState, addMessage, setTranscript,
     tabs, activeThreadId, addTab, removeTab, setActiveThreadId,
-    userOverrodeMinimize, setUserOverrodeMinimize,
+    setUserOverrodeMinimize,
     streamingResponse,
     onboardingCompleted,
     activeTheme, setActiveTheme,
@@ -794,25 +872,6 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     }
   }, [isTaskRunning]);
 
-  const STATUS_LINES = [
-    "What should we work on?",
-    "I can run tasks right on your desktop.",
-    "Ask me to find, open, or automate anything.",
-    "Voice and text both work.",
-    "Ready when you are.",
-    "Your files and context stay on this machine.",
-    "Try “Summarise my notes.”",
-    "Try “Open my calendar.”",
-    "Try “Find that file from yesterday.”",
-    "Listening whenever you are.",
-  ];
-
-  useEffect(() => {
-    if (messages.length > 0 || !isConnected) return;
-    const t = setInterval(() => setStatusIdx((i) => (i + 1) % STATUS_LINES.length), 2200);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length, isConnected]);
 
   // ── Corner-radius logic: per snap position ────────────────────────────────
   // Right edge: free side (left) is curved, wall side (right) is 0
@@ -844,23 +903,6 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const overlayProgress = overlayTotalCount > 0 ? (overlayDoneCount / overlayTotalCount) * 100 : 0;
   const overlayRunningStep = overlaySteps.find(s => s.status === "running");
 
-  const presence = !isConnected
-    ? { label: "Offline", cls: "is-offline" }
-    : voiceState === "listening"
-      ? { label: "Listening", cls: "is-listening" }
-      : voiceState === "speaking"
-        ? { label: "Speaking", cls: "is-speaking" }
-        : isTaskRunning || voiceState === "processing"
-          ? {
-              label: isTaskRunning
-                ? taskPaused
-                  ? "Paused"
-                  : `Working${overlayTotalCount ? ` · ${overlayDoneCount}/${overlayTotalCount}` : ""}`
-                : "Thinking",
-              cls: "is-working",
-            }
-          : { label: "Ready", cls: "is-ready" };
-
   if (isOverlayMode) {
     return (
       <div
@@ -878,10 +920,12 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           padding: "0",
           gap: "0",
           overflow: "hidden",
+          position: "relative",
           ...overlayRadius,
           ...overlayBorder,
         }}
       >
+        <HudCorners />
         {/* ─── Drag-handle Top Bar ─────────────────────────────────────── */}
         <div
           style={{
@@ -890,10 +934,11 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             justifyContent: "space-between",
             flexShrink: 0,
             cursor: "grab",
-            padding: "10px 12px 8px",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            padding: "8px 12px",
+            borderBottom: "1px solid var(--line-soft)",
             userSelect: "none",
-            background: "rgba(255,255,255,0.02)",
+            background: "linear-gradient(180deg, var(--glass-tint) 0%, transparent 100%), var(--bg-secondary)",
+            zIndex: 1,
           }}
           onMouseDown={async () => {
             try {
@@ -904,28 +949,34 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             }
           }}
         >
-          {/* Left: logo + status */}
+          {/* Left: OpenSarthi logo + status */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {/* Drag dots */}
-            <div style={{ display: "grid", gridTemplateColumns: "3px 3px", gap: "2px", opacity: 0.35 }}>
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} style={{ width: "3px", height: "3px", borderRadius: "50%", background: "var(--text-secondary)" }} />
-              ))}
+            <div style={{
+              width: "20px", height: "20px", borderRadius: "5px",
+              overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
+              background: "var(--accent-glow-lg)", border: "1px solid var(--border)",
+              boxShadow: "0 0 8px var(--accent-glow)",
+              flexShrink: 0,
+            }}>
+              <img
+                src="/opensarthi-icon.png"
+                alt="OpenSarthi"
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              {/* Pulsing status dot */}
+              <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.04em", color: "var(--text-primary)", fontFamily: "var(--font-sans)" }}>
+                OpenSarthi
+              </span>
               <div style={{
-                width: "7px", height: "7px", borderRadius: "50%",
-                background: isConnected ? "var(--accent)" : "rgba(255,80,80,0.7)",
+                width: "6px", height: "6px", borderRadius: "50%",
+                background: isConnected ? "var(--accent)" : "var(--danger)",
                 boxShadow: isConnected ? "0 0 6px var(--accent)" : "none",
                 animation: isConnected && isTaskRunning ? "pulse 1.4s ease-in-out infinite" : "none",
               }} />
-              <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
-                SARTHI
-              </span>
               {isTaskRunning && (
-                <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.4)", letterSpacing: "0.08em", fontFamily: "var(--font-mono)" }}>
+                <span style={{ fontSize: "9px", color: "var(--accent)", letterSpacing: "0.08em", fontFamily: "var(--font-mono)" }}>
                   {taskPaused ? "PAUSED" : "RUNNING"}
                 </span>
               )}
@@ -942,25 +993,12 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               onClick={() => {
                 setOverlayMode(false);
                 setUserOverrodeMinimize(true);
-                console.log("[Overlay] User manual expand, override active:", userOverrodeMinimize);
               }}
               title="Expand to Full View"
-              style={{
-                width: "26px", height: "26px",
-                borderRadius: "6px",
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: "var(--text-secondary)",
-                cursor: "pointer",
-                transition: "all 0.15s",
-              }}
-              onMouseEnter={e => { (e.target as HTMLButtonElement).style.background = "rgba(255,255,255,0.12)"; (e.target as HTMLButtonElement).style.color = "var(--accent)"; }}
-              onMouseLeave={e => { (e.target as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)"; (e.target as HTMLButtonElement).style.color = "var(--text-secondary)"; }}
+              className="os-icon-btn"
+              style={{ width: "26px", height: "26px" }}
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-              </svg>
+              <Maximize2 size={13} />
             </button>
           </div>
         </div>
@@ -1164,23 +1202,26 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         display: "flex", flexDirection: "column",
         background:
           "radial-gradient(ellipse 85% 55% at 50% -10%, var(--accent-glow-lg) 0%, transparent 62%), var(--bg-primary)",
-        padding: "14px",
-        gap: "12px",
+        padding: "8px 10px",
+        gap: "8px",
         position: "relative",
         overflow: "hidden",
       }}
     >
+      {/* ─── Avengers/Jarvis Holographic Particle & Arc Reactor Canvas ─── */}
+      <ParticleBackground voiceState={voiceState} />
+
       {isDragOver && (
         <div style={{
           position: "absolute",
-          inset: "12px",
+          inset: "10px",
           zIndex: 1000,
           border: "2px dashed var(--accent)",
           borderRadius: "var(--radius-lg)",
           background: "rgba(6, 10, 8, 0.9)",
           display: "flex",
           flexDirection: "column",
-          gap: "12px",
+          gap: "10px",
           alignItems: "center",
           justifyContent: "center",
           pointerEvents: "none",
@@ -1196,32 +1237,41 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         </div>
       )}
       {/* ─── Top Bar ─── */}
-      <div className="os-topbar">
+      <div className="os-topbar" style={{ position: "relative", zIndex: 100 }}>
+        <HudCorners />
         <div className="os-brand">
-          <div className="os-brand-mark" aria-hidden="true">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3.2 4.4 12l7.6 8.8L19.6 12 12 3.2Z" />
-              <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" />
-            </svg>
+          <div className="os-brand-mark" aria-hidden="true" style={{ padding: "2px", overflow: "hidden" }}>
+            <img
+              src="/opensarthi-icon.png"
+              alt="OpenSarthi"
+              style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }}
+            />
           </div>
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
             <span className="os-brand-name">OpenSarthi</span>
             <span className="os-brand-sub">Desktop Agent</span>
           </div>
-          <span
-            className={`os-presence ${presence.cls}`}
-            title={
-              isTaskRunning && overlayRunningStep
-                ? `Running ${overlayRunningStep.tool}`
-                : `Agent status: ${presence.label}`
-            }
-            role="status"
-            aria-live="polite"
-          >
-            <span className="os-presence-dot" aria-hidden="true" />
-            {presence.label}
-          </span>
         </div>
+
+        {/* Center: State-aware AI Eyes Animation (Jarvis HUD) */}
+        <div className="os-topbar-center" style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", pointerEvents: "none" }}>
+          <div
+            className={`os-listen-ear ${
+              voiceState === "listening"
+                ? "is-listening"
+                : voiceState === "processing"
+                ? "is-processing"
+                : voiceState === "speaking"
+                ? "is-speaking"
+                : voiceState === "error"
+                ? "is-error"
+                : ""
+            }`}
+            title={`Agent: ${voiceState || "idle"}`}
+            aria-label={`Agent status: ${voiceState || "idle"}`}
+          />
+        </div>
+
         <div className="os-topbar-actions">
           {/* New Thread Button */}
           <motion.button
@@ -1266,7 +1316,12 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           {/* Settings Button Container (relative for dropdown anchor) */}
           <div ref={dropdownRef} style={{ position: "relative" }}>
             <motion.button
-              onClick={() => setShowSettingsDropdown(!showSettingsDropdown)}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowSettingsDropdown((prev) => !prev);
+                setShowThemeSubmenu(false);
+              }}
               title="Settings"
               aria-label="Open settings menu"
               aria-expanded={showSettingsDropdown}
@@ -1375,42 +1430,58 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
                   <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
 
-                  <div className="dropdown-submenu-trigger">
+                  <div
+                    className="dropdown-submenu-trigger"
+                    onMouseEnter={() => setShowThemeSubmenu(true)}
+                    onMouseLeave={() => {
+                      if (!showColorPicker) {
+                        setShowThemeSubmenu(false);
+                      }
+                    }}
+                  >
                     <Palette size={13} style={{ color: "var(--accent)" }} />
                     <span>Themes</span>
                     <ChevronRight size={10} style={{ marginLeft: "auto" }} />
 
-                    <div className="dropdown-submenu">
-                      {THEMES.map(t => (
+                    <AnimatePresence>
+                      {showThemeSubmenu && (
+                        <motion.div
+                          initial={{ opacity: 0, x: 8, scale: 0.96 }}
+                          animate={{ opacity: 1, x: 0, scale: 1 }}
+                          exit={{ opacity: 0, x: 8, scale: 0.96 }}
+                          transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                          className="dropdown-submenu"
+                        >
+                        {THEMES.map(t => (
+                          <button
+                            key={t.value}
+                            onClick={() => {
+                              setActiveTheme(t.value);
+                              setCustomAccent(null);
+                            }}
+                            className="dropdown-item"
+                            style={{ color: (activeTheme === t.value && !customAccent) ? "var(--accent)" : "var(--text-secondary)" }}
+                          >
+                            <span className="os-theme-swatch" style={{ background: t.swatch }} aria-hidden="true" />
+                            <span>{t.label}</span>
+                            {(activeTheme === t.value && !customAccent) && <Check size={13} style={{ marginLeft: "auto" }} />}
+                          </button>
+                        ))}
+
+                        <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
+
                         <button
-                          key={t.value}
-                          onClick={() => {
-                            setActiveTheme(t.value);
-                            setCustomAccent(null);
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenColorPicker();
                           }}
                           className="dropdown-item"
-                          style={{ color: (activeTheme === t.value && !customAccent) ? "var(--accent)" : "var(--text-secondary)" }}
+                          style={{ color: customAccent ? "var(--accent)" : "var(--text-secondary)" }}
                         >
-                          <span className="os-theme-swatch" style={{ background: t.swatch }} aria-hidden="true" />
-                          <span>{t.label}</span>
-                          {(activeTheme === t.value && !customAccent) && <Check size={13} style={{ marginLeft: "auto" }} />}
+                          <span>Custom accent color</span>
                         </button>
-                      ))}
 
-                      <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenColorPicker();
-                        }}
-                        className="dropdown-item"
-                        style={{ color: customAccent ? "var(--accent)" : "var(--text-secondary)" }}
-                      >
-                        <span>Custom accent color</span>
-                      </button>
-
-                      {showColorPicker && (
+                        {showColorPicker && (
                         <div
                           style={{
                             position: "absolute",
@@ -1582,8 +1653,10 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                           </div>
                         </div>
                       )}
-                    </div>
-                  </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                </div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1613,8 +1686,9 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         style={{ display: "flex", gap: "0px", overflow: "visible", flex: 1, position: "relative", minHeight: 0 }}
       >
           {/* LEFT PANEL */}
-          <div data-panel="left" style={{ width: `${leftWidth}px`, maxWidth: "30vw", minWidth: "220px", flexShrink: 1, display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div data-panel="left" style={{ width: `${leftWidth}px`, maxWidth: "30vw", minWidth: "220px", flexShrink: 1, display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+              <HudCorners />
               {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1653,7 +1727,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             </div>
 
             {/* AGENT STATUS & SYSTEMS */}
-            <div className="hud-panel" style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div className="hud-panel" style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+              <HudCorners />
               {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div className="hud-panel-title">Systems</div>
@@ -1771,7 +1846,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           <div
             onMouseDown={startResizeLeft}
             style={{
-              width: "12px",
+              width: "8px",
               cursor: "col-resize",
               display: "flex",
               alignItems: "center",
@@ -1795,7 +1870,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           </div>
 
           {/* CENTER PANEL */}
-          <div className="hud-panel" style={{ flex: "1 1 0%", minWidth: "360px", display: "flex", flexDirection: "column" }}>
+          <div className="hud-panel" style={{ flex: "1 1 0%", minWidth: "360px", display: "flex", flexDirection: "column", position: "relative" }}>
+            <HudCorners />
             <div className="os-tabbar">
               <div
                 className="os-tabstrip"
@@ -1868,21 +1944,18 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 <div className="os-empty-state">
                   <div className="os-empty-orb" aria-hidden="true">
                     <div className="os-empty-orb-ring" />
-                    <div className="os-empty-orb-core">
-                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 3.2 4.4 12l7.6 8.8L19.6 12 12 3.2Z" />
-                        <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
-                      </svg>
+                    <div className="os-empty-orb-core" style={{ padding: "3px", overflow: "hidden" }}>
+                      <img
+                        src="/opensarthi-icon.png"
+                        alt="OpenSarthi"
+                        style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }}
+                      />
                     </div>
                   </div>
 
                   <div className="os-empty-copy">
                     <h2 className="os-empty-title">How can I help?</h2>
-                    <p key={statusIdx} className="os-empty-hint os-fade-in">
-                      {isConnected
-                        ? STATUS_LINES[statusIdx]
-                        : "Connecting to the local runtime…"}
-                    </p>
+                    <StatusLineTypewriter isConnected={isConnected} />
                   </div>
 
                   <div className="os-empty-shortcuts">
@@ -2261,7 +2334,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           <div
             onMouseDown={startResizeRight}
             style={{
-              width: "12px",
+              width: "8px",
               cursor: "col-resize",
               display: "flex",
               alignItems: "center",
@@ -2285,10 +2358,11 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           </div>
 
           {/* RIGHT PANEL */}
-          <div data-panel="right" style={{ width: `${rightWidth}px`, maxWidth: "28vw", minWidth: "200px", flexShrink: 1, display: "flex", flexDirection: "column", gap: "12px", position: "relative" }}>
+          <div data-panel="right" style={{ width: `${rightWidth}px`, maxWidth: "28vw", minWidth: "200px", flexShrink: 1, display: "flex", flexDirection: "column", gap: "8px", position: "relative" }}>
 
             {/* ACTIVITY LOG */}
-            <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div className="hud-panel" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+              <HudCorners />
               {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
                 <div className="hud-panel-title">Activity</div>
@@ -2298,6 +2372,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
 
             {/* ACTIVE TASK PLAN */}
             <div className="hud-panel" style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <HudCorners />
               {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
@@ -2345,7 +2420,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             </div>
 
 
-            <div className="hud-panel os-status-card">
+            <div className="hud-panel os-status-card" style={{ position: "relative" }}>
+              <HudCorners />
               <div className="os-status-head">
                 <span className={`os-status-dot ${isConnected ? "is-online" : "is-offline"}`} aria-hidden="true" />
                 <span className="os-status-state">{isConnected ? "Connected" : "Offline"}</span>
