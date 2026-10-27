@@ -47,6 +47,18 @@ class DesktopSnapshot:
         return "\n".join(lines)
 
 
+_shared_observer_pipeline = None
+
+def _get_shared_observer_pipeline():
+    global _shared_observer_pipeline
+    if _shared_observer_pipeline is None:
+        from observer.pipeline import ObserverPipeline
+        # Default use_ocr=False to keep the fast path lightweight.
+        # OCR is only invoked on-demand if accessibility trees are unavailable.
+        _shared_observer_pipeline = ObserverPipeline(use_ocr=False, use_vision=False)
+    return _shared_observer_pipeline
+
+
 class DesktopObserver:
     """
     Collects desktop state snapshots. Uses:
@@ -56,9 +68,8 @@ class DesktopObserver:
     """
 
     def __init__(self):
-        from observer.pipeline import ObserverPipeline
         self._a11y = AccessibilityProvider()
-        self._pipeline = ObserverPipeline(use_ocr=True, use_vision=False)
+        self._pipeline = _get_shared_observer_pipeline()
 
     def invalidate_cache(self):
         """Invalidate the observer cache — call after a tool mutates screen state."""
@@ -165,7 +176,26 @@ class DesktopObserver:
             except Exception:
                 pass
 
-        # 3. Screen text summary (OCR)
-        snap.screen_text_summary = obs_res.ocr_text
+        # 3. Screen text summary:
+        # If AT-SPI or Android accessibility tree provided UI structure, use that summary
+        # to avoid running heavy CPU-intensive Tesseract OCR.
+        # Only fall back to OCR if accessibility is unavailable or returned an empty tree.
+        has_a11y_data = bool(
+            snap.accessibility_tree
+            and snap.accessibility_tree.get("summary")
+            and snap.accessibility_tree.get("summary") != "(no labeled UI elements)"
+        )
+
+        if has_a11y_data:
+            snap.screen_text_summary = snap.accessibility_tree["summary"][:1500]
+        elif obs_res.ocr_text:
+            snap.screen_text_summary = obs_res.ocr_text
+        elif obs_res.screenshot_bytes:
+            # Fallback to lightweight OCR only when no accessibility tree exists (e.g. uninstrumented game/canvas)
+            try:
+                from observer.ocr import extract_text
+                snap.screen_text_summary = await extract_text(obs_res.screenshot_bytes)
+            except Exception:
+                pass
 
         return snap

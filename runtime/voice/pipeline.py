@@ -403,29 +403,29 @@ class VoicePipeline:
                     if playback_id != self.current_playback_id:
                         return "interrupted"
 
-                    # Play mp3
+                    # Play mp3 asynchronously so p.wait() does not block the main event loop
                     played = False
                     if shutil.which("mpv"):
-                        self._execute_subprocess(f"mpv {mp3_paths[idx]} >/dev/null 2>&1")
+                        await asyncio.to_thread(self._execute_subprocess, f"mpv {mp3_paths[idx]} >/dev/null 2>&1")
                         played = True
                     elif shutil.which("mpg123"):
-                        self._execute_subprocess(f"mpg123 {mp3_paths[idx]} >/dev/null 2>&1")
+                        await asyncio.to_thread(self._execute_subprocess, f"mpg123 {mp3_paths[idx]} >/dev/null 2>&1")
                         played = True
                     elif shutil.which("paplay"):
                         wav_path = mp3_paths[idx].replace(".mp3", ".wav")
                         if shutil.which("ffmpeg"):
-                            self._execute_subprocess(f"ffmpeg -y -i {mp3_paths[idx]} {wav_path} >/dev/null 2>&1")
-                            self._execute_subprocess(f"paplay {wav_path} >/dev/null 2>&1")
+                            await asyncio.to_thread(self._execute_subprocess, f"ffmpeg -y -i {mp3_paths[idx]} {wav_path} >/dev/null 2>&1")
+                            await asyncio.to_thread(self._execute_subprocess, f"paplay {wav_path} >/dev/null 2>&1")
                             played = True
                     if not played:
                         for player in ["mpg321", "play", "cvlc"]:
                             if shutil.which(player):
                                 if player == "cvlc":
-                                    self._execute_subprocess(f"cvlc --play-and-exit {mp3_paths[idx]} >/dev/null 2>&1")
+                                    await asyncio.to_thread(self._execute_subprocess, f"cvlc --play-and-exit {mp3_paths[idx]} >/dev/null 2>&1")
                                 elif player == "play":
-                                    self._execute_subprocess(f"play {mp3_paths[idx]} >/dev/null 2>&1")
+                                    await asyncio.to_thread(self._execute_subprocess, f"play {mp3_paths[idx]} >/dev/null 2>&1")
                                 else:
-                                    self._execute_subprocess(f"{player} {mp3_paths[idx]} >/dev/null 2>&1")
+                                    await asyncio.to_thread(self._execute_subprocess, f"{player} {mp3_paths[idx]} >/dev/null 2>&1")
                                 played = True
                                 break
 

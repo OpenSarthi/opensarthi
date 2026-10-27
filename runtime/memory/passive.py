@@ -35,10 +35,14 @@ async def extract_and_store_facts(
         return
 
     try:
-        from pydantic_ai import Agent as PydanticAgent
+        from datetime import datetime
+        now = datetime.now()
+        time_str = now.strftime("%A, %B %d, %Y %I:%M %p")
+        tz_name = now.astimezone().tzname() or "Local Time"
 
         extractor = PydanticAgent(model=model)
         prompt = f"""You are a fact extractor for a personal AI assistant.
+CURRENT DATE & TIME: {time_str} ({tz_name})
 
 Analyze this exchange and extract ONLY concrete, specific facts about the USER (not the assistant).
 Focus on: name, location, preferences, habits, rules, important facts they stated.
