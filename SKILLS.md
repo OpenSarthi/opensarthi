@@ -466,7 +466,7 @@ IDLE → PLANNING → EXECUTING → COMPLETE → IDLE
 
 ## 10. Skill-Aware Dynamic Prompt System
 
-The system prompt is **not static**. It is built at runtime by `planner/agent.py::build_system_prompt()` based on the user's selected skills.
+The system prompt is **not static**. It is built at runtime by `planner/agent.py::build_system_prompt()` based on the user's selected skills. It also dynamically prepends the **real-time current date, time, weekday, year, and timezone** on every invocation to ensure accurate temporal grounding without training cutoff bias.
 
 ### Skill → Prompt Effect Matrix
 

@@ -11,9 +11,22 @@ interface RuntimeConsoleProps {
 }
 
 export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: RuntimeConsoleProps) {
-  const { sidecarLogs, clearSidecarLogs } = useAssistantStore();
+  const { sidecarLogs, clearSidecarLogs, activeTheme } = useAssistantStore();
   const consoleScrollRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
+
+  const isLightTheme = activeTheme.includes("light")
+    || activeTheme.includes("white")
+    || (typeof document !== "undefined" && (
+      document.body.classList.contains("theme-light-emerald")
+      || document.body.classList.contains("theme-light-cobalt")
+      || document.body.classList.contains("theme-light-crimson")
+      || document.body.classList.contains("theme-light-clean")
+      || document.body.classList.contains("theme-light-slate")
+      || document.body.classList.contains("theme-light-sakura")
+      || document.body.className.includes("white")
+      || document.body.className.includes("light")
+    ));
 
   // Auto scroll to bottom when new logs arrive
   useEffect(() => {
@@ -36,6 +49,7 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
         <motion.div
           role="region"
           aria-label="Runtime Console Logcat"
+          className="runtime-console-drawer hud-panel"
           initial={{ y: "100%", opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: "100%", opacity: 0 }}
@@ -46,19 +60,26 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
             left: 8,
             right: 8,
             height: `${height}px`,
-            background:
-              "linear-gradient(180deg, var(--glass-tint) 0%, var(--glass-tint-soft) 40%, transparent 100%), var(--bg-secondary)",
-            border: "1px solid var(--glass-stroke)",
+            background: isLightTheme ? "rgba(255, 255, 255, 0.98)" : "rgba(14, 18, 16, 0.97)",
+            backdropFilter: "blur(28px)",
+            WebkitBackdropFilter: "blur(28px)",
+            border: `1.5px solid var(--border-focus, ${isLightTheme ? "rgba(0, 0, 0, 0.18)" : "rgba(255, 255, 255, 0.14)"})`,
             borderBottom: "none",
             borderTopLeftRadius: "var(--radius-xl)",
             borderTopRightRadius: "var(--radius-xl)",
-            boxShadow: "inset 0 1px 0 var(--glass-sheen), 0 -16px 44px rgba(0,0,0,0.6)",
+            boxShadow: isLightTheme
+              ? "0 2px 6px rgba(0, 0, 0, 0.06), 0 -12px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 1)"
+              : "0 0 1px 1px rgba(255, 255, 255, 0.12), 0 2px 8px rgba(255, 255, 255, 0.04), 0 -16px 44px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255, 255, 255, 0.22)",
             zIndex: 900, // Above splitters and scrollbars, below onboarding (9999)
             display: "flex",
             flexDirection: "column",
-            boxSizing: "border-box"
+            boxSizing: "border-box",
+            overflow: "hidden",
           }}
         >
+          {/* Tactical curved corner brackets on top-left and top-right */}
+          <div className="hud-corner hud-corner-tl" style={{ borderTopLeftRadius: "var(--radius-xl)" }} />
+          <div className="hud-corner hud-corner-tr" style={{ borderTopRightRadius: "var(--radius-xl)" }} />
           {/* Horizontal drag resizer handle */}
           <div
             role="separator"
@@ -87,8 +108,8 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
             justifyContent: "space-between",
             alignItems: "center",
             padding: "10px 16px",
-            borderBottom: "1px solid var(--line-soft)",
-            background: "transparent",
+            borderBottom: isLightTheme ? "1px solid rgba(0, 0, 0, 0.08)" : "1px solid var(--line-soft)",
+            background: isLightTheme ? "rgba(0, 0, 0, 0.02)" : "transparent",
             userSelect: "none"
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -106,7 +127,7 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
                 fontSize: "11px",
                 color: "var(--text-muted)",
                 fontFamily: "var(--font-mono)",
-                background: "rgba(255,255,255,0.06)",
+                background: isLightTheme ? "rgba(0, 0, 0, 0.06)" : "rgba(255, 255, 255, 0.06)",
                 padding: "2px 6px",
                 borderRadius: "var(--radius-sm)"
               }}>
@@ -212,11 +233,16 @@ export function RuntimeConsole({ isOpen, onClose, height, onResizeStart }: Runti
             ) : (
               sidecarLogs.map((log, idx) => {
                 const isErr = log.includes("[ERR]");
+                const isWarn = log.includes("[WARN") || log.toLowerCase().includes("warning");
                 return (
                   <div
                     key={idx}
                     style={{
-                      color: isErr ? "var(--danger)" : "var(--accent)",
+                      color: isErr
+                        ? "var(--danger, #dc2626)"
+                        : isWarn
+                          ? (isLightTheme ? "#b45309" : "#f59e0b")
+                          : (isLightTheme ? "var(--text-primary, #0f172a)" : "var(--accent)"),
                       whiteSpace: "pre-wrap",
                       wordBreak: "break-all"
                     }}

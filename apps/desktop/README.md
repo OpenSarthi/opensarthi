@@ -30,7 +30,7 @@ App.tsx  (Root — owns modal state + tab management)
 │   ├── ParticleBackground   (animated canvas layer, state-aware)
 │   ├── TaskList             (left panel — multi-tab threads + JSON import)
 │   ├── MessageList          (centre — chat bubbles, markdown, streaming)
-│   │   └── ResponseBubble   (per-message: markdown, code blocks, tables, URLs, typing animation)
+│   │   └── ResponseBubble   (per-message: instant markdown rendering, code blocks, tables, URLs, copy/retry/listen)
 │   ├── ActionLog            (right panel — live tool log + cumulative plan + token stats)
 │   ├── VoiceButton          (mic toggle with waveform animation)
 │   ├── TranscriptView       (live STT overlay)
@@ -397,22 +397,22 @@ Auto-connects to the Python runtime on the dynamically negotiated port. Routes a
 
 ## 🎨 Theme System
 
-8 themes defined in `styles/themes.css` (applied to `document.body.className`):
+The app provides 6 signature themes (3 black-base and 3 white-base) defined in `styles/themes.css` and `styles/globals.css`:
 
-| Theme ID | Palette |
-|---------|---------|
-| `theme-green-black` | Matrix Green accent, dark glass (default) |
-| `theme-red-black` | Red accent, dark glass |
-| `theme-purple-black` | Purple accent, dark glass |
-| `theme-mono-dark` | Gray/white accent, flat black |
-| `theme-blue-black` | Blue/cyan accent, dark glass |
-| `theme-light-sakura` | Pink accent, light mode |
-| `theme-light-slate` | Slate accent, light mode |
-| `theme-light-clean` | Clean white, light mode |
-| `theme-multicolor-dark` | Animated rainbow gradient, dark |
-| `theme-multicolor-light` | Animated rainbow gradient, light |
+| Theme ID | Mode | Palette |
+|---------|------|---------|
+| `theme-green-black` | Black | Emerald Black (`#00ff9d` accent on dark glass, default) |
+| `theme-red-black` | Black | Crimson Black (`#ff3355` accent on dark glass) |
+| `theme-blue-black` | Black | Cobalt Black (`#00c8ff` accent on dark glass) |
+| `theme-light-emerald` | White | Emerald White (`#059669` accent on clean white glass) |
+| `theme-light-cobalt` | White | Cobalt White (`#0284c7` accent on clean white glass) |
+| `theme-light-crimson` | White | Crimson White (`#e11d48` accent on clean white glass) |
 
-Themes set can also be changed by voice: *"Change my theme to cyberpunk"* → triggers `update_settings` tool call.
+- **Custom Accent & Universal Background Mode**: Full interactive color wheel allowing custom accent colors across any base. Users can toggle the base background between **Black** and **White** directly inside the custom accent color picker popup without resetting their custom accent.
+- **Dynamic Accent Borders & Corner Brackets**: All HUD panels, modals (`SettingsView`, `HistoryView`, `ContextModal`, `McpSettingsModal`, `JsonImportModal`), the Terminal/Runtime Console, and the Results drawer feature borders dynamically reflecting the active accent color (`color-mix` with `--accent`), paired with tactical curved corner brackets (`<HudCorners />`) and 3D specular shadows.
+- **Adaptive Terminal / Runtime Console**: The bottom Runtime Console logcat drawer automatically synchronizes with the active theme mode—rendering in crisp white glass with high-contrast log output (`#0f172a`, amber warnings, and clear red errors) in White Mode, and obsidian dark glass with tactical accent styling in Black Mode.
+
+Themes can also be changed by voice: *"Change my theme to emerald"* → triggers `update_settings` tool call.
 
 ---
 
@@ -591,6 +591,15 @@ All desktop runtime features are fully integrated into the UI:
 - **Manual TTS Playback**: `LISTEN` button on all assistant responses with Web Speech API playback.
 - **Prompt Retry**: `RETRY` button on responses re-dispatching user prompt directly to the active thread.
 - **Full Keyboard Navigation**: Task card focus & activation (`Enter`/`Space`), tab navigation, and modal focus traps.
+- **Instant Response Rendering**: Eliminated artificial post-completion typewriter loops in `ResponseBubble.tsx` to stop repeated ReactMarkdown AST parsing churn.
+- **Direct DOM 60fps Status Line Typewriter**: Driven by `requestAnimationFrame` and direct DOM `textContent` mutations, completely bypassing React reconciliation during cycling text.
+- **Lightweight Particle Canvas**: Ring particles reduced to ~225 and nebula to 50 with pre-allocated buffer structures and no per-frame GC allocations, rendering behind translucent smoked panels (`rgba(12, 16, 14, 0.65)`).
+- **Centered Header Brand Eye Animation**: Anchored with absolute coordinate centering (`position: absolute; left: 50%`) directly below the OpenSarthi title bar rather than remaining header space.
+- **HUD Tactical Corner Brackets & Edge Borders**: Glowing curved bracket borders (`<HudCorners />` with `border-*-radius`) and crisp focused borders (`1.2px` - `1.5px`) standard across all HUD panels and popup dialogs (`Remote Access`, `SettingsView`, `HistoryView`, `ContextModal`, `McpSettingsModal`, `JsonImportModal`, `PermissionDialog`, `InputDialog`, `OnboardingView`).
+- **Curved-Corner Multiline Chat Input (WhatsApp Style)**: Auto-expanding chat composer with slightly curved edges (`border-radius: 8px`), expanding vertically up to 3 lines on newlines/Shift+Enter before becoming scrollable, with action buttons aligned to the baseline.
+- **Dynamic Avatars (bot.png Mask & User Initial)**: Agent bubble and awaiting indicator avatar powered by `public/bot.png` dynamically rendered in the active theme accent color (`var(--accent)`), and user bubble displaying the first uppercase character of the user's name (falling back to the standard profile icon when unset).
+- **Low Popup Transparency & Ambient Scrim**: Dialog cards feature solid readability (`rgba(14, 18, 16, 0.97)` with `backdrop-filter: blur(28px)`) preventing text bleed-through, while modal backdrops (`.os-scrim`) use lightweight smoked blur (`rgba(4, 6, 5, 0.45); blur(4px)`) to preserve visual context of surrounding HUD panels.
+- **HUD Panel Prefix Accent**: `//` prefix styled with `var(--accent)` highlighting section headers (`// Tasks`, `// Systems`, `// Activity`, `// Plan`).
 
 ---
 
