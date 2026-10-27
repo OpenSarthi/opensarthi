@@ -214,7 +214,13 @@ class MultiAgentSupervisor:
                 system_prompt=self._build_classifier_prompt(),
             )
 
-        result = await self._classifier_agent.run(goal[:1000])
+        from datetime import datetime
+        now = datetime.now()
+        time_str = now.strftime("%A, %B %d, %Y %I:%M %p")
+        tz_name = now.astimezone().tzname() or "Local Time"
+
+        user_prompt = f"CURRENT DATE & TIME: {time_str} ({tz_name})\nUSER REQUEST: {goal[:1000]}"
+        result = await self._classifier_agent.run(user_prompt)
         raw = result.output.strip()
 
         # Expect JSON: {"domains": [...], "confidence": 0.x, "reason": "..."}

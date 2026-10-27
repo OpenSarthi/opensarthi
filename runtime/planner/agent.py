@@ -45,7 +45,6 @@ class AgentDependencies(BaseModel):
 
 
 # ─── Overhauled System Prompt ──────────────────────────────────────────────
-# ─── Overhauled System Prompt ──────────────────────────────────────────────
 def build_system_prompt(
     skills: list,
     user_name: str,
@@ -65,6 +64,18 @@ def build_system_prompt(
     has_research = "research" in skills
     has_web      = "web" in skills and not chat_only
     has_privacy  = "privacy" in skills
+
+    from datetime import datetime
+    now = datetime.now()
+    current_time_str = now.strftime("%A, %B %d, %Y at %I:%M:%S %p")
+    tz_name = now.astimezone().tzname() or "Local Time"
+    time_clause = (
+        f"\n\nCURRENT REAL-TIME TEMPORAL CONTEXT:\n"
+        f"• Current Date & Time: {current_time_str} ({tz_name})\n"
+        f"• Day of the Week: {now.strftime('%A')}\n"
+        f"• Current Year: {now.year}\n"
+        f"Always use this real-time temporal context when answering queries about the current time, today's date, or scheduling."
+    )
 
     name_clause = f"The user's name is {user_name}. Address them by name occasionally when it feels natural." if user_name else ""
     custom_clause = f"\n\nUSER CUSTOM INSTRUCTIONS (follow these precisely):\n{custom_prompt}" if custom_prompt else ""
@@ -105,7 +116,7 @@ def build_system_prompt(
             memories_clause = "\n\n━━━ RELEVANT USER EXPERIENCE & PREFERENCES ━━━\n" + "\n".join([f"• {m}" for m in memories])
 
         return f"""You are OpenSarthi, a helpful, precise, and reliable AI {device_type} assistant for {platform_name}.
-{name_clause}{custom_clause}{context_clause}{memories_clause}
+{name_clause}{time_clause}{custom_clause}{context_clause}{memories_clause}
 
 ━━━ CHAT MODE ━━━
 Respond conversationally using clean, beautifully formatted GitHub-flavored markdown.
@@ -114,7 +125,7 @@ Keep your answers direct, accurate, and concise. Do not output planning schemas,
 
     # Otherwise, it's TASK mode
     base = f"""You are OpenSarthi, a precise and reliable AI {device_type} assistant for {platform_name}.
-{name_clause}{custom_clause}
+{name_clause}{time_clause}{custom_clause}
 
 ━━━ THINKING PROTOCOL ━━━
 Before every response, think inside <think>...</think> tags.

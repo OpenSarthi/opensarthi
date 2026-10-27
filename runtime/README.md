@@ -325,6 +325,7 @@ Providers configured in `config.py` (reads `~/.config/opensarthi/.env`):
 | **Ollama** | `qwen2.5-coder:3b` (local) | no key needed |
 
 The system prompt is built **dynamically at runtime** by `build_system_prompt()`:
+- **Temporal context injected on every request** — real-time current date, time, weekday, year, and timezone are dynamically prepended to prevent training cutoff hallucinations
 - If `desktop_automation` skill **not** selected → tool-call JSON format omitted entirely
 - If `developer` skill selected → adds code/shell context hints
 - `user_name` and `custom_prompt` prepended to the base identity
@@ -345,6 +346,8 @@ Three autonomous sub-agents run fire-and-forget — they never block user respon
 - Each step allowed a maximum of **2 healing attempts** tracked in `heal_attempts: dict[int, int]`
 - On the 3rd failure → full `replan_node` rewrites the plan
 - Prevents infinite heal loops on fundamentally broken steps
+
+**Temporal Grounding:** All autonomous sub-agents (`Classifier`, `Orchestrator`, `Supervisor`, `HealerAgent`, `ReviewerAgent`, `BehavioralObserver`, `PassiveMemory`, and review `Formatter`) dynamically receive real-time timestamp, weekday, and timezone context in their prompts.
 
 **Memory Auto-Inject:** Before every LLM context build:
 1. Top-8 semantically relevant memories (cosine search against the goal)
@@ -556,6 +559,9 @@ SQLite at `~/.config/opensarthi/opensarthi.db`:
 - **Screenshots** via `mss` → downscaled to 1280px wide PNG, base64-encoded and stored in `DesktopSnapshot.screenshot_base64`. The downscaled PNG is also saved to a temp file for local inspection.
 - **Active window** via AT-SPI (Wayland-compatible) or `xdotool`/`ydotool`
 - **Window list** — all open windows with titles and geometry
+- **Shared Pipeline Caching (2.0s TTL)** — prevents duplicate screen captures and process churn during rapid graph node transitions.
+- **CPU-Gated Observation** — on Linux, AT-SPI accessibility tree provides complete semantic UI context directly (0% OCR overhead). Heavy Tesseract OCR is gated and only invoked as a fallback when accessibility trees are missing, using bilinear downscaling (≤1000px) and single-channel grayscale to eliminate 100% CPU lockups.
+- **Non-blocking Voice Playback** — audio player subprocesses (`mpv`, `mpg123`, `paplay`) in `voice/pipeline.py` run via thread pools to avoid freezing the main `asyncio` event loop.
 
 **Multimodal Screenshots to LLM:** When `send_screenshots_to_llm` is true and the model supports vision (see `model_supports_vision()` in `llm/factory.py`), the planner injects the base64 screenshot as an `ImageUrl` content part alongside the text context. Ollama is never treated as vision-capable; cloud providers are detected by class name.
 

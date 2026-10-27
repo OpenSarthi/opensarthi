@@ -1011,9 +1011,15 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
         else:
             # Let the LLM format the final response based on observations
             from pydantic_ai import Agent as PydanticAgent
+            from datetime import datetime
+            now = datetime.now()
+            time_str = now.strftime("%A, %B %d, %Y %I:%M %p")
+            tz_name = now.astimezone().tzname() or "Local Time"
+
             formatter = PydanticAgent(
                 model=model,
                 system_prompt=(
+                    f"CURRENT REAL-TIME TEMPORAL CONTEXT: {time_str} ({tz_name})\n"
                     "You are OpenSarthi review agent. Your task is to generate a helpful, user-friendly, and well-formatted final response "
                     "to the user based on the execution log. The user asked for a goal, and we executed several tools (e.g. terminal shell commands, web searches, etc.).\n"
                     "RULES:\n"

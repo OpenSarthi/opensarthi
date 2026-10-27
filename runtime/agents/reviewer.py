@@ -75,7 +75,13 @@ class ReviewerAgent:
                     entry += f" — RESULT: {str(obs)[:80]}"
                 log_summary.append(entry)
 
+            from datetime import datetime
+            now = datetime.now()
+            time_str = now.strftime("%A, %B %d, %Y %I:%M %p")
+            tz_name = now.astimezone().tzname() or "Local Time"
+
             prompt = f"""You are a self-improvement module for an AI desktop agent.
+CURRENT DATE & TIME: {time_str} ({tz_name})
 Analyse this completed task and extract 1–3 reusable lessons for future tasks.
 
 TASK GOAL: {goal[:200]}

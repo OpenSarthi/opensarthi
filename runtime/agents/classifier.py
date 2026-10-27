@@ -25,10 +25,16 @@ async def classify_intent_with_usage(model, text: str) -> tuple[Classification, 
     - CLARIFY: If the request is highly ambiguous or lacks clarity.
     """
     try:
+        from datetime import datetime
+        now = datetime.now()
+        current_time_str = now.strftime("%A, %B %d, %Y %I:%M %p")
+        tz_name = now.astimezone().tzname() or "Local Time"
+
         system_prompt = (
+            f"CURRENT REAL-TIME TEMPORAL CONTEXT: {current_time_str} ({tz_name})\n"
             "You are a master routing classifier for OpenSarthi (an AI desktop assistant).\n"
             "Your sole job is to classify the user's request into exactly one of three categories:\n"
-            "1. 'CHAT': Conversational replies, general questions, explanations, writing essays, or code generation where the user is NOT asking you to perform any desktop actions, open apps, browse the web, or edit local files.\n"
+            "1. 'CHAT': Conversational replies, general questions, explanations, asking for the current time/date/day, writing essays, or code generation where the user is NOT asking you to perform any desktop actions, open apps, browse the web, or edit local files.\n"
             "2. 'TASK': Any command, instruction, or query that requires the agent to interact with the desktop, window manager, file system, browser, applications, or modify/change assistant settings (e.g., 'open firefox', 'type hello', 'click the button', 'search on chrome', 'write this essay in the Kate editor', 'search local files', 'change theme to green', 'update my API key', 'disable wake word', 'set local model to llama').\n"
             "3. 'CLARIFY': An ambiguous query that needs clarification.\n\n"
             "Respond with ONLY one word: 'CHAT', 'TASK', or 'CLARIFY'. Do not include punctuation, explanations, or formatting."

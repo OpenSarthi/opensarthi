@@ -110,21 +110,22 @@ class MorningBriefing:
     async def _run_phase2(self):
         """Gather all briefing data in parallel and send Phase 2."""
         try:
-            # Gather data in parallel
-            tasks = {
-                "calendar": self._get_calendar_events(),
-                "weather": self._get_weather(),
-                "news": self._get_news_headlines(),
-                "memories": self._get_relevant_memories(),
-            }
-
+            # Gather data in parallel using asyncio.gather
+            keys = ["calendar", "weather", "news", "memories"]
+            coros = [
+                self._get_calendar_events(),
+                self._get_weather(),
+                self._get_news_headlines(),
+                self._get_relevant_memories(),
+            ]
+            raw_results = await asyncio.gather(*coros, return_exceptions=True)
             results = {}
-            for key, task in tasks.items():
-                try:
-                    results[key] = await task
-                except Exception as e:
-                    logger.warning(f"Briefing data fetch failed: {key}", error=str(e))
+            for key, val in zip(keys, raw_results):
+                if isinstance(val, Exception):
+                    logger.warning(f"Briefing data fetch failed: {key}", error=str(val))
                     results[key] = None
+                else:
+                    results[key] = val
 
             # Build content panel data
             content_data = self._build_content_data(results)
@@ -350,10 +351,14 @@ class MorningBriefing:
 
             active_model = build_model(provider, model_name, api_key)
             
+            now = datetime.now()
+            time_str = now.strftime("%A, %B %d, %Y %I:%M %p")
+
             prompt = (
                 "You are OpenSarthi morning briefing assistant.\n"
                 "Please generate a short, friendly, and natural morning/afternoon/evening briefing summary for the user.\n"
                 "Address them by name if provided, and describe their upcoming calendar events, current weather, and top news headlines.\n\n"
+                f"Current Date and Time: {time_str}\n"
                 f"User Name: {getattr(self.settings, 'user_name', '')}\n"
                 f"Weather Data: {_json.dumps(results.get('weather') or {})}\n"
                 f"Calendar Events: {_json.dumps(results.get('calendar') or [])}\n"

@@ -49,9 +49,15 @@ class BehavioralObserver:
 
         try:
             from pydantic_ai import Agent as PydanticAgent
+            from datetime import datetime
+            now = datetime.now()
+            time_str = now.strftime("%A, %B %d, %Y %I:%M %p")
+            tz_name = now.astimezone().tzname() or "Local Time"
+
             observer = PydanticAgent(model=self.model)
 
             prompt = f"""You are a preference-detection module for an AI desktop agent.
+CURRENT DATE & TIME: {time_str} ({tz_name})
 Analyse this conversation excerpt and detect any implicit user preferences.
 
 CONVERSATION:

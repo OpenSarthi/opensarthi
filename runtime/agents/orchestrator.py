@@ -63,10 +63,16 @@ class OrchestratorAgent:
 
         try:
             from pydantic_ai import Agent as PydanticAgent
+            from datetime import datetime
+            now = datetime.now()
+            time_str = now.strftime("%A, %B %d, %Y %I:%M %p")
+            tz_name = now.astimezone().tzname() or "Local Time"
+
             summarizer = PydanticAgent(model=self.model) 
 
-            prompt = f"""Compress the following conversation history into a single dense paragraph (max 150 words).
-Preserve: key facts, completed actions, user preferences, current task state.
+            prompt = f"""Current Date & Time: {time_str} ({tz_name})
+Compress the following conversation history into a single dense paragraph (max 150 words).
+Preserve: key facts, completed actions, user preferences, timeline, current task state.
 Discard: pleasantries, repetition, verbose tool outputs.
 Current goal: {current_goal[:100]}
 

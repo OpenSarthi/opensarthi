@@ -89,7 +89,13 @@ class HealerAgent:
                 allowed_set = set(allowed_tools)
                 tool_names = [t.name for t in all_tools() if t.name in allowed_set]
 
+            from datetime import datetime
+            now = datetime.now()
+            time_str = now.strftime("%A, %B %d, %Y %I:%M %p")
+            tz_name = now.astimezone().tzname() or "Local Time"
+
             prompt = f"""You are a desktop-automation self-healing module.
+CURRENT DATE & TIME: {time_str} ({tz_name})
 A step in an automation task failed. Your job is to propose a corrected version of that step.
 
 FAILED STEP:
