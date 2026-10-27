@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, User, Volume2, Copy, Check, XCircle, Terminal, Play, RotateCcw } from "lucide-react";
+import { User, Volume2, Copy, Check, XCircle, Terminal, Play, RotateCcw } from "lucide-react";
 import type { Message } from "../../lib/schemas";
 import { wsClient } from "../../lib/ws";
 import ReactMarkdown from "react-markdown";
@@ -808,8 +808,9 @@ const EMPTY_REASONINGS: any[] = [];
 
 export function ResponseBubble({ message }: ResponseBubbleProps) {
   const isUser = message.role === "user";
+  const userName = useAssistantStore((s) => s.userName);
+  const userInitial = userName?.trim() ? userName.trim().charAt(0).toUpperCase() : null;
   const planReasonings = useAssistantStore((s) => s.planReasonings[s.activeThreadId] || EMPTY_REASONINGS);
-  const lastStreamedMessageId = useAssistantStore((s) => s.lastStreamedMessageId);
   const activeThreadId = useAssistantStore((s) => s.activeThreadId);
   const messages = useAssistantStore((s) => s.messages);
   const [displayedContent, setDisplayedContent] = useState("");
@@ -817,72 +818,9 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
   const hasAnimated = React.useRef(false);
 
   useEffect(() => {
-    if (isUser) {
-      setDisplayedContent(message.content);
-      hasAnimated.current = true;
-      return;
-    }
-
-    if (hasAnimated.current) {
-      setDisplayedContent(message.content);
-      return;
-    }
-
-    // If this message was just received from a streaming session, the user
-    // already watched it appear token-by-token in the streaming bubble.
-    // Skip the typewriter entirely and show the final formatted content now.
-    if (message.id === lastStreamedMessageId) {
-      setDisplayedContent(message.content);
-      hasAnimated.current = true;
-      return;
-    }
-
-    const ageMs = Date.now() - message.timestamp;
-    if (ageMs > 5000) {
-      setDisplayedContent(message.content);
-      hasAnimated.current = true;
-      return;
-    }
-
-    const tokens = message.content.split(/(\s+)/).filter(t => t !== "");
-    const totalTokens = tokens.length;
-    if (totalTokens === 0) {
-      setDisplayedContent("");
-      return;
-    }
-
-    // Target: complete in at most 5 seconds (5000ms)
-    const intervalMs = 40;
-    const maxTicks = Math.floor(5000 / intervalMs); // 125 ticks
-    
-    let currentIdx = 0;
-    let tick = 0;
-
-    const timer = setInterval(() => {
-      if (currentIdx >= totalTokens) {
-        clearInterval(timer);
-        setDisplayedContent(message.content);
-        hasAnimated.current = true;
-      } else {
-        const remainingTokens = totalTokens - currentIdx;
-        const remainingTicks = Math.max(1, maxTicks - tick);
-        const targetChunk = Math.ceil(remainingTokens / remainingTicks);
-        
-        let chunkLen = targetChunk;
-        if (tick < 15) {
-          // Slow start: do 2 tokens at first (approx 1 word + whitespace) and progressively grow
-          chunkLen = Math.min(2 + Math.floor(tick / 2) * 2, targetChunk);
-        }
-        chunkLen = Math.max(1, chunkLen);
-        
-        currentIdx += chunkLen;
-        setDisplayedContent(tokens.slice(0, currentIdx).join(""));
-        tick++;
-      }
-    }, intervalMs);
-
-    return () => clearInterval(timer);
-  }, [message.content, message.timestamp, isUser, message.id, lastStreamedMessageId]);
+    setDisplayedContent(message.content);
+    hasAnimated.current = true;
+  }, [message.content]);
 
 
 
@@ -924,7 +862,26 @@ export function ResponseBubble({ message }: ResponseBubbleProps) {
     >
       {/* Avatar */}
       <div className={`os-avatar ${isUser ? "is-user" : "is-agent"}`}>
-        {isUser ? <User size={14} /> : <Bot size={14} />}
+        {isUser ? (
+          userInitial ? (
+            <span
+              style={{
+                fontSize: "12px",
+                fontWeight: 700,
+                color: "var(--text-primary)",
+                lineHeight: 1,
+                fontFamily: "var(--font-sans)",
+                textTransform: "uppercase",
+              }}
+            >
+              {userInitial}
+            </span>
+          ) : (
+            <User size={14} />
+          )
+        ) : (
+          <span className="os-bot-icon" aria-hidden="true" />
+        )}
       </div>
 
       {/* Bubble */}
