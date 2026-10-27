@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useAssistantStore } from "../../stores/assistantStore";
 import { wsClient } from "../../lib/ws";
 import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
+import { HudCorners } from "../assistant/HudCorners";
 
 interface HistoryViewProps {
   onClose: () => void;
@@ -52,7 +53,7 @@ export function HistoryView({ onClose }: HistoryViewProps) {
     >
       <motion.div
         ref={modalRef}
-        className="hud-panel"
+        className="hud-panel os-dialog"
         initial={{ scale: 0.93, y: 15, opacity: 0 }}
         animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={{ scale: 0.93, y: 15, opacity: 0 }}
@@ -64,10 +65,10 @@ export function HistoryView({ onClose }: HistoryViewProps) {
           display: "flex",
           flexDirection: "column",
           gap: "20px",
-          background: "var(--bg-secondary)",
-          boxShadow: "0 10px 40px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(255,255,255,0.02)"
+          position: "relative",
         }}
       >
+        <HudCorners />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2 id="history-dialog-title" style={{ fontSize: "16px", color: "var(--accent)", letterSpacing: "0.1em", fontWeight: "bold", margin: 0 }}>
             // PAST THREADS

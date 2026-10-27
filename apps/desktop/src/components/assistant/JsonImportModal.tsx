@@ -4,6 +4,7 @@ import { X, Play, AlertCircle, ChevronDown, ChevronUp, Book } from "lucide-react
 import { wsClient } from "../../lib/ws";
 import { useAssistantStore } from "../../stores/assistantStore";
 import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
+import { HudCorners } from "./HudCorners";
 
 const KNOWN_TOOLS = [
   { name: "click",           args: "x, y" },
@@ -119,6 +120,7 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
         >
           <motion.div
             ref={modalRef}
+            className="hud-panel os-dialog"
             initial={{ x: -250, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -250, opacity: 0 }}
@@ -126,15 +128,14 @@ export function JsonImportModal({ isOpen, onClose }: JsonImportModalProps) {
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "560px",
-              background: "var(--bg-secondary)",
-              border: "1px solid var(--border)",
-              boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)",
               display: "flex",
               flexDirection: "column",
               gap: 16,
               padding: 24,
+              position: "relative",
             }}
           >
+            <HudCorners />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h2 id="json-import-title" style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "0.03em", margin: 0 }}>
                 Import JSON Task Plan

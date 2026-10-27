@@ -6,6 +6,7 @@ import { useAssistantStore } from "../../stores/assistantStore";
 import { IntegrationsPanel } from "./IntegrationsPanel";
 import { wsClient } from "../../lib/ws";
 import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
+import { HudCorners } from "../assistant/HudCorners";
 import {
   PROVIDER_MODELS,
   PROVIDER_LABELS,
@@ -626,8 +627,10 @@ export function SettingsView({
           flexDirection: "column",
           gap: "0",
           overflow: "hidden",
+          position: "relative",
         }}
       >
+        <HudCorners />
         {/* Header */}
         <div className="os-dialog-header">
           <div>

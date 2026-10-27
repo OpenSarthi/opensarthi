@@ -8,6 +8,7 @@ import {
 import { useAssistantStore } from "../../stores/assistantStore";
 import { wsClient } from "../../lib/ws";
 import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
+import { HudCorners } from "./HudCorners";
 
 interface ContextModalProps {
   isOpen: boolean;
@@ -281,8 +282,10 @@ Thread: ${activeThreadId?.slice(0, 8)}...`;
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
+              position: "relative",
             }}
           >
+            <HudCorners />
             {/* ── Header ── */}
             <div style={{
               display: "flex",
