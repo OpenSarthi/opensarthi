@@ -5,6 +5,7 @@ import { usePermission } from "../../hooks/usePermission";
 import { RISK_COLORS } from "../../lib/constants";
 import type { RiskLevel } from "../../lib/schemas";
 import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
+import { HudCorners } from "../assistant/HudCorners";
 
 const RISK_ICONS: Record<RiskLevel, React.ReactNode> = {
   safe:      <Shield size={18} />,
@@ -81,8 +82,10 @@ export function PermissionDialog() {
               flexDirection: "column",
               gap: "16px",
               overflow: "hidden",
+              position: "relative",
             }}
           >
+            <HudCorners />
             {/* Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>

@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
+import { HudCorners } from "../assistant/HudCorners";
 import {
   Check,
   ChevronRight,
@@ -451,8 +452,10 @@ export function OnboardingView({ onComplete, isEdit = false, onClose, runtimePor
             padding: 24,
             display: "flex", flexDirection: "column", gap: 16,
             overflowY: "auto",
+            position: "relative",
           }}
         >
+          <HudCorners />
           {/* Header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--line-soft)", paddingBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

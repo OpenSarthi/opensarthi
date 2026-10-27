@@ -57,16 +57,16 @@ let lastAccentCheck = 0;
 
 function parseAccent(): [number, number, number] {
   const now = performance.now();
-  if (now - lastAccentCheck > 1000) {
+  if (now - lastAccentCheck > 2000) {
     lastAccentCheck = now;
     try {
-      const el = document.createElement("div");
-      el.style.cssText = "color:var(--accent);position:absolute;visibility:hidden;pointer-events:none;";
-      document.body.appendChild(el);
-      const m = getComputedStyle(el).color.match(/\d+/g);
-      document.body.removeChild(el);
-      if (m && m.length >= 3) {
-        cachedRGB = [+m[0], +m[1], +m[2]];
+      const c = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+      if (c.startsWith("#")) {
+        const num = parseInt(c.slice(1), 16);
+        cachedRGB = [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+      } else {
+        const m = c.match(/\d+/g);
+        if (m && m.length >= 3) cachedRGB = [+m[0], +m[1], +m[2]];
       }
     } catch { /* ignore */ }
   }
@@ -100,11 +100,11 @@ interface Ring {
 }
 
 const RINGS: Ring[] = [
-  { radius: 1.00, tiltX: 0.55, tiltZ: 0.0,  phase: 0,   speed: 1.00, particleCount: 450, thickness: 0.14, brightness: 1.0  },
-  { radius: 0.75, tiltX: 1.15, tiltZ: 0.8,  phase: 1.2, speed: 1.60, particleCount: 320, thickness: 0.11, brightness: 0.85 },
-  { radius: 1.25, tiltX: 0.25, tiltZ: -0.5, phase: 2.5, speed: 0.65, particleCount: 350, thickness: 0.10, brightness: 0.70 },
-  { radius: 0.50, tiltX: 2.00, tiltZ: 1.3,  phase: 0.7, speed: 2.40, particleCount: 210, thickness: 0.09, brightness: 0.60 },
-  { radius: 1.55, tiltX: -0.4, tiltZ: 0.3,  phase: 3.8, speed: 0.40, particleCount: 290, thickness: 0.08, brightness: 0.45 },
+  { radius: 1.00, tiltX: 0.55, tiltZ: 0.0,  phase: 0,   speed: 1.00, particleCount: 70, thickness: 0.12, brightness: 1.0  },
+  { radius: 0.75, tiltX: 1.15, tiltZ: 0.8,  phase: 1.2, speed: 1.50, particleCount: 50, thickness: 0.10, brightness: 0.90 },
+  { radius: 1.25, tiltX: 0.25, tiltZ: -0.5, phase: 2.5, speed: 0.65, particleCount: 55, thickness: 0.10, brightness: 0.80 },
+  { radius: 0.50, tiltX: 2.00, tiltZ: 1.3,  phase: 0.7, speed: 2.20, particleCount: 35, thickness: 0.08, brightness: 0.75 },
+  { radius: 1.55, tiltX: -0.4, tiltZ: 0.3,  phase: 3.8, speed: 0.40, particleCount: 45, thickness: 0.08, brightness: 0.65 },
 ];
 
 /* ─── HUD data stream particles (diagonal streaks across screen) ───────────── */
@@ -160,17 +160,17 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
     let BASE_R = Math.pow(Math.min(W, H), 0.76) * 1.5;
 
     // Nebula particles
-    let nebula = buildNebulaCloud(400, BASE_R * 1.6);
+    let nebula = buildNebulaCloud(50, BASE_R * 1.6);
 
     // Data streams (Jarvis-style falling particles)
-    let streams = buildDataStreams(35, W, H);
+    let streams = buildDataStreams(14, W, H);
 
     const ro = new ResizeObserver(() => {
       W = canvas.width = parent?.clientWidth ?? W;
       H = canvas.height = parent?.clientHeight ?? H;
       BASE_R = Math.pow(Math.min(W, H), 0.76) * 1.5;
-      nebula = buildNebulaCloud(400, BASE_R * 1.6);
-      streams = buildDataStreams(35, W, H);
+      nebula = buildNebulaCloud(50, BASE_R * 1.6);
+      streams = buildDataStreams(14, W, H);
     });
     if (parent) ro.observe(parent);
 
@@ -338,31 +338,7 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
       /* ─── clear ─────────────────────────────────────────────────────────── */
       ctx.clearRect(0, 0, W, H);
 
-      /* ─── Jarvis-style sparse hex grid (very dim) ─────────────────────── */
       ctx.globalCompositeOperation = "screen";
-      const hexSize = Math.max(W, H) * 0.07;
-      const hexAlpha = 0.012 + intensity * 0.014;
-      if (hexAlpha > 0.005) {
-        const cols = Math.ceil(W / (hexSize * 1.7)) + 2;
-        const rows = Math.ceil(H / (hexSize * 1.5)) + 2;
-        ctx.strokeStyle = `rgba(${r},${g},${b},${hexAlpha})`;
-        ctx.lineWidth = 0.5;
-        for (let row = -1; row < rows; row++) {
-          for (let col = -1; col < cols; col++) {
-            const hx = col * hexSize * 1.732 + (row % 2) * hexSize * 0.866;
-            const hy = row * hexSize * 1.5;
-            ctx.beginPath();
-            for (let i = 0; i < 6; i++) {
-              const a = (Math.PI / 3) * i - Math.PI / 6;
-              const px = hx + hexSize * 0.92 * Math.cos(a);
-              const py = hy + hexSize * 0.92 * Math.sin(a);
-              if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-            }
-            ctx.closePath();
-            ctx.stroke();
-          }
-        }
-      }
 
       /* ─── Data streams (Jarvis falling code rain style) ──────────────────── */
       const streamAlpha = 0.06 + intensity * 0.08;
@@ -525,10 +501,6 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
 
         const worldR = BASE_R * ring.radius;
 
-        // Build sorted projected particles for this ring
-        type P = { px: number; py: number; pz: number; alpha: number; size: number; isBright: boolean };
-        const pts: P[] = [];
-
         for (let i = 0; i < ring.particleCount; i++) {
           const t = (i / ring.particleCount) * Math.PI * 2;
           const sp = ringParticles[ri][i];   // pre-computed scatter params
@@ -561,28 +533,11 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
           const angleDiff = Math.abs(((t - sweepAngle) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
           const sweepBoost = intensity > 0.15 ? Math.max(0, 1 - angleDiff / 0.45) : 0;
 
-          const baseAlpha = ring.brightness * depthA * (0.20 + visualIntensity * 0.16);
-          const alpha = Math.min(0.90, baseAlpha + sweepBoost * 0.55);
-          const size = Math.max(0.15, sp.size * Math.min(1.4, psc));
+          const baseAlpha = ring.brightness * depthA * (0.32 + visualIntensity * 0.24);
+          const alpha = Math.min(0.95, baseAlpha + sweepBoost * 0.55);
+          const size = Math.max(0.8, sp.size * 1.5 * Math.min(1.4, psc));
 
-          pts.push({ px: ppx, py: ppy, pz: v.z, alpha, size, isBright: sp.bright });
-        }
-
-        // Sort by depth
-        pts.sort((a, c) => c.pz - a.pz);
-
-        for (const p of pts) {
-          // Core dot — screen blending already makes nearby particles self-illuminate,
-          // so no per-particle gradient allocation needed (was the #1 lag source)
-          safeArc(ctx, p.px, p.py, p.size, 0, Math.PI * 2, `rgba(${r},${g},${b},${p.alpha})`);
-          // Bright stars only get a cheap shadowBlur halo instead of a new gradient
-          if (p.isBright) {
-            ctx.shadowColor = `rgba(${r},${g},${b},${(p.alpha * 0.5).toFixed(4)})`;
-            ctx.shadowBlur = p.size * 4;
-            safeArc(ctx, p.px, p.py, p.size, 0, Math.PI * 2, `rgba(${r},${g},${b},${p.alpha})`);
-            ctx.shadowBlur = 0;
-            ctx.shadowColor = "transparent";
-          }
+          safeArc(ctx, ppx, ppy, size, 0, Math.PI * 2, `rgba(${r},${g},${b},${alpha})`);
         }
 
         /* ── Draw the ring arc outline (visible light color ring structure) — uses dynamic tilts ── */

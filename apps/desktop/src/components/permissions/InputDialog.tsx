@@ -4,6 +4,7 @@ import { KeyRound, ShieldQuestion, Send, X } from "lucide-react";
 import { usePermissionStore } from "../../stores/permissionStore";
 import { wsClient } from "../../lib/ws";
 import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
+import { HudCorners } from "../assistant/HudCorners";
 
 export function InputDialog() {
   const { pendingInputRequest, setPendingInputRequest } = usePermissionStore();
@@ -51,8 +52,10 @@ export function InputDialog() {
               width: "min(440px, 94vw)",
               borderColor: "color-mix(in srgb, var(--accent) 35%, transparent)",
               padding: "24px",
+              position: "relative",
             }}
           >
+            <HudCorners />
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
               <div style={{
