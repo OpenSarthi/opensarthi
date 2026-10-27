@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Settings, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Check, Minimize2, Maximize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop, Paperclip, Eye, Link2 } from "lucide-react";
+import { Send, Settings, History, MessageSquarePlus, Wrench, Cpu, Plus, X, Check, Minimize2, Maximize2, Square, Bot, Terminal, ChevronRight, Volume2, Palette, Smartphone, Laptop, Paperclip, Eye, Link2, Pipette } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { VoiceButton } from "./VoiceButton";
 import { Waveform } from "./Waveform";
@@ -42,14 +42,12 @@ interface AssistantOverlayProps {
 }
 
 const THEMES = [
-  { value: "theme-green-black", label: "Graphite Green", swatch: "#32d74b" },
-  { value: "theme-red-black", label: "Crimson", swatch: "#ff453a" },
-  { value: "theme-purple-black", label: "Nebula", swatch: "#bf5af2" },
-  { value: "theme-blue-black", label: "Ocean", swatch: "#0a84ff" },
-  { value: "theme-light-sakura", label: "Sakura", swatch: "#ff8fab" },
-  { value: "theme-light-slate", label: "Slate", swatch: "#64748b" },
-  { value: "theme-multicolor-dark", label: "Spectrum", swatch: "linear-gradient(135deg,#32d74b,#0a84ff,#bf5af2,#ff453a)" },
-  { value: "theme-multicolor-light", label: "Spectrum Light", swatch: "linear-gradient(135deg,#22c55e,#06b6d4,#8b5cf6,#ec4899)" },
+  { value: "theme-green-black", label: "Emerald Black", swatch: "#00ff9d" },
+  { value: "theme-red-black", label: "Crimson Black", swatch: "#ff3355" },
+  { value: "theme-blue-black", label: "Cobalt Black", swatch: "#00c8ff" },
+  { value: "theme-light-emerald", label: "Emerald White", swatch: "#059669" },
+  { value: "theme-light-cobalt", label: "Cobalt White", swatch: "#0284c7" },
+  { value: "theme-light-crimson", label: "Crimson White", swatch: "#e11d48" },
 ];
 
 /** Returns a traffic-light color based on percentage (0-100). */
@@ -89,16 +87,16 @@ export function ActivityLogPanel({ logs }: { logs: { id: string; text: string; t
         gap: "6px",
         fontFamily: "var(--font-mono)",
         fontSize: "10px",
-        background: "rgba(0, 0, 0, 0.25)",
+        background: "var(--activity-bg, rgba(0, 0, 0, 0.25))",
         borderRadius: "var(--radius-md)",
-        border: "1px solid rgba(255, 255, 255, 0.05)",
+        border: "1px solid var(--activity-border, rgba(255, 255, 255, 0.05))",
       }}
       className="custom-scrollbar"
     >
       {logs.map((log) => {
         let color = "var(--text-secondary)";
-        if (log.text.startsWith("SYS:")) color = "#00f0ff";
-        else if (log.text.startsWith("SARTHI:")) color = "#00ff66";
+        if (log.text.startsWith("SYS:")) color = "var(--activity-sys, #38bdf8)";
+        else if (log.text.startsWith("SARTHI:")) color = "var(--activity-sarthi, #4ade80)";
         else if (log.text.startsWith("USER:")) color = "var(--accent)";
 
         return (
@@ -111,16 +109,8 @@ export function ActivityLogPanel({ logs }: { logs: { id: string; text: string; t
   );
 }
 
-export function HudCorners() {
-  return (
-    <>
-      <span className="hud-corner hud-corner-tl" aria-hidden="true" />
-      <span className="hud-corner hud-corner-tr" aria-hidden="true" />
-      <span className="hud-corner hud-corner-bl" aria-hidden="true" />
-      <span className="hud-corner hud-corner-br" aria-hidden="true" />
-    </>
-  );
-}
+import { HudCorners } from "./HudCorners";
+export { HudCorners };
 
 export const STATUS_LINES = [
   "What should we work on?",
@@ -137,14 +127,14 @@ export const STATUS_LINES = [
 
 export function StatusLineTypewriter({ isConnected, lines = STATUS_LINES }: { isConnected: boolean; lines?: readonly string[] }) {
   const [lineIdx, setLineIdx] = useState(0);
-  const [displayText, setDisplayText] = useState("");
   const [isDone, setIsDone] = useState(false);
+  const textRef = useRef<HTMLSpanElement>(null);
   const linesRef = useRef(lines);
   linesRef.current = lines;
 
   useEffect(() => {
     if (!isConnected) {
-      setDisplayText("Connecting to the local runtime…");
+      if (textRef.current) textRef.current.textContent = "Connecting to the local runtime…";
       setIsDone(true);
       return;
     }
@@ -153,33 +143,47 @@ export function StatusLineTypewriter({ isConnected, lines = STATUS_LINES }: { is
     if (!allLines || allLines.length === 0) return;
 
     const currentLine = allLines[lineIdx % allLines.length];
-    setDisplayText("");
+    if (textRef.current) textRef.current.textContent = "";
     setIsDone(false);
 
     let charIdx = 0;
+    let lastTime = performance.now();
+    let animId: number;
     let pauseTimer: ReturnType<typeof setTimeout> | null = null;
-    const typingInterval = setInterval(() => {
-      charIdx+=3;
-      setDisplayText(currentLine.slice(0, charIdx));
-      if (charIdx >= currentLine.length) {
-        clearInterval(typingInterval);
-        setIsDone(true);
-        // Wait exactly 1 second after typing completes, then advance to next line
-        pauseTimer = setTimeout(() => {
-          setLineIdx((prev) => (prev + 1) % allLines.length);
-        }, 1000);
+    const charDelay = 26; // ms per character — fast, fluid, natural cadence
+
+    const step = (now: number) => {
+      const elapsed = now - lastTime;
+      if (elapsed >= charDelay) {
+        const charsToAdd = Math.max(1, Math.floor(elapsed / charDelay));
+        charIdx = Math.min(currentLine.length, charIdx + charsToAdd);
+        if (textRef.current) {
+          textRef.current.textContent = currentLine.slice(0, charIdx);
+        }
+        lastTime = now;
+
+        if (charIdx >= currentLine.length) {
+          setIsDone(true);
+          pauseTimer = setTimeout(() => {
+            setLineIdx((prev) => (prev + 1) % allLines.length);
+          }, 1000);
+          return;
+        }
       }
-    }, 15);
+      animId = requestAnimationFrame(step);
+    };
+
+    animId = requestAnimationFrame(step);
 
     return () => {
-      clearInterval(typingInterval);
+      cancelAnimationFrame(animId);
       if (pauseTimer) clearTimeout(pauseTimer);
     };
   }, [lineIdx, isConnected]);
 
   return (
     <p className="os-empty-hint os-typewriter-line" aria-live="polite">
-      <span className="os-typewriter-text">{displayText}</span>
+      <span ref={textRef} className="os-typewriter-text" />
       <span
         className={`os-typewriter-cursor${isDone ? " is-blinking" : ""}`}
         aria-hidden="true"
@@ -212,7 +216,18 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
   const remoteRef = useRef<HTMLDivElement | null>(null);
   const wheelRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const dragCounter = useRef(0);
+
+  // Auto-resize chat input up to 3 lines (max ~84px), then scrollable
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      const scrollH = textareaRef.current.scrollHeight;
+      const clamped = Math.min(scrollH, 84);
+      textareaRef.current.style.height = `${Math.max(clamped, 38)}px`;
+    }
+  }, [textInput]);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -370,19 +385,32 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
     };
   }, [isDragging]);
 
+  const isLightTheme = activeTheme.includes("light")
+    || activeTheme.includes("white")
+    || (typeof document !== "undefined" && (
+      document.body.classList.contains("theme-light-emerald")
+      || document.body.classList.contains("theme-light-cobalt")
+      || document.body.classList.contains("theme-light-crimson")
+      || document.body.classList.contains("theme-light-clean")
+      || document.body.classList.contains("theme-light-slate")
+      || document.body.classList.contains("theme-light-sakura")
+      || document.body.className.includes("white")
+      || document.body.className.includes("light")
+    ));
+
   const handleOpenColorPicker = () => {
-    // Read the actual computed accent from CSS — returns rgb(r,g,b) in browsers
-    const computedAccent = getComputedStyle(document.documentElement)
-      .getPropertyValue("--accent")
-      .trim();
-    // Prefer customAccent (already a hex string) → computed accent → default green
-    const startColor = customAccent || (computedAccent ? computedAccent : "#1aff1a");
+    // Read the actual computed accent from CSS
+    const computedAccent = typeof document !== "undefined"
+      ? (getComputedStyle(document.body).getPropertyValue("--accent").trim()
+         || getComputedStyle(document.documentElement).getPropertyValue("--accent").trim())
+      : "";
+    // Prefer customAccent → computed accent → default emerald green
+    const startColor = customAccent || (computedAccent ? computedAccent : (isLightTheme ? "#059669" : "#00ff9d"));
     setPreviousColor(customAccent);
     setPendingColor(startColor);
     if (!customAccent) {
-      // Convert computed rgb(...) to hex so we have a clean value to work with
       const hue = anyColorToHue(startColor);
-      const hexStart = hslToHex(hue, 100, 50);
+      const hexStart = hslToHex(hue, 100, isLightTheme ? 40 : 50);
       setCustomAccent(hexStart);
       setPendingColor(hexStart);
     }
@@ -1237,7 +1265,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
         </div>
       )}
       {/* ─── Top Bar ─── */}
-      <div className="os-topbar" style={{ position: "relative", zIndex: 100 }}>
+      <div className="os-topbar" style={{ position: "relative", zIndex: showSettingsDropdown ? 50 : 2 }}>
         <HudCorners />
         <div className="os-brand">
           <div className="os-brand-mark" aria-hidden="true" style={{ padding: "2px", overflow: "hidden" }}>
@@ -1253,8 +1281,8 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
           </div>
         </div>
 
-        {/* Center: State-aware AI Eyes Animation (Jarvis HUD) */}
-        <div className="os-topbar-center" style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", pointerEvents: "none" }}>
+        {/* Center: State-aware AI Eyes Animation (Jarvis HUD) - centered directly below app title */}
+        <div className="os-topbar-center" style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", display: "flex", justifyContent: "center", alignItems: "center", pointerEvents: "none", zIndex: 10 }}>
           <div
             className={`os-listen-ear ${
               voiceState === "listening"
@@ -1478,7 +1506,9 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                           className="dropdown-item"
                           style={{ color: customAccent ? "var(--accent)" : "var(--text-secondary)" }}
                         >
+                          <Pipette size={13} style={{ color: customAccent ? "var(--accent)" : "var(--text-muted)" }} />
                           <span>Custom accent color</span>
+                          {customAccent && <Check size={13} style={{ marginLeft: "auto" }} />}
                         </button>
 
                         {showColorPicker && (
@@ -1488,19 +1518,23 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                             top: "0px",
                             right: "100%",
                             marginRight: "8px",
-                            width: "200px",
-                            background: "rgba(12, 12, 12, 0.98)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "6px",
+                            width: "210px",
+                            background: isLightTheme ? "rgba(255, 255, 255, 0.98)" : "rgba(13, 17, 15, 0.98)",
+                            backdropFilter: "blur(28px)",
+                            WebkitBackdropFilter: "blur(28px)",
+                            border: `1.5px solid var(--border-focus, ${isLightTheme ? "rgba(0, 0, 0, 0.18)" : "rgba(255, 255, 255, 0.14)"})`,
+                            borderRadius: "var(--radius-lg)",
                             padding: "12px",
-                            boxShadow: "0 12px 40px rgba(0, 0, 0, 0.7)",
+                            boxShadow: isLightTheme
+                              ? "0 4px 12px rgba(0, 0, 0, 0.08), 0 20px 48px -4px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.95)"
+                              : "0 0 1px 1px rgba(255, 255, 255, 0.14), 0 20px 50px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.18)",
                             display: "flex",
                             flexDirection: "column",
                             alignItems: "center",
                             gap: "10px",
                             zIndex: 1100,
                             fontFamily: "var(--font-mono)",
-                            color: "var(--text-secondary)"
+                            color: isLightTheme ? "var(--text-primary)" : "var(--text-secondary)"
                           }}
                           onClick={(e) => e.stopPropagation()}
                         >
@@ -1509,11 +1543,11 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                             <button
                               onClick={() => {
                                 setCustomAccent(null);
-                                setPendingColor("#1aff1a");
+                                setPendingColor(isLightTheme ? "#059669" : "#00ff9d");
                               }}
                               style={{
-                                background: "rgba(255,255,255,0.05)",
-                                border: "1px solid var(--border)",
+                                background: isLightTheme ? "rgba(0, 0, 0, 0.06)" : "rgba(255, 255, 255, 0.06)",
+                                border: `1px solid ${isLightTheme ? "rgba(0, 0, 0, 0.15)" : "var(--border)"}`,
                                 color: "var(--text-primary)",
                                 fontSize: "8px",
                                 padding: "2px 6px",
@@ -1547,7 +1581,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                                 width: "80px",
                                 height: "80px",
                                 borderRadius: "50%",
-                                background: "rgba(12, 12, 12, 0.98)",
+                                background: isLightTheme ? "rgba(255, 255, 255, 0.98)" : "rgba(13, 17, 15, 0.98)",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center"
@@ -1558,16 +1592,16 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                                   width: "48px",
                                   height: "48px",
                                   borderRadius: "50%",
-                                  background: pendingColor || customAccent || "#1aff1a",
-                                  boxShadow: "inset 0 0 8px rgba(0,0,0,0.8)",
-                                  border: "1px solid rgba(255,255,255,0.07)"
+                                  background: pendingColor || customAccent || (isLightTheme ? "#059669" : "#00ff9d"),
+                                  boxShadow: "inset 0 0 8px rgba(0,0,0,0.4)",
+                                  border: `1px solid ${isLightTheme ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.12)"}`
                                 }}
                               />
                             </div>
 
                             {/* Compute coordinates based on HSL angle */}
                             {(() => {
-                              const currentHueColor = pendingColor || customAccent || "#1aff1a";
+                              const currentHueColor = pendingColor || customAccent || (isLightTheme ? "#059669" : "#00ff9d");
                               const currentHue = hexToHue(currentHueColor);
                               const theta = (currentHue * Math.PI) / 180 - Math.PI / 2;
                               const radius = 45;
@@ -1602,11 +1636,11 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                           <input
                             type="text"
                             readOnly
-                            value={(pendingColor || customAccent || "#1AFF1A").toUpperCase()}
+                            value={(pendingColor || customAccent || (isLightTheme ? "#059669" : "#00FF9D")).toUpperCase()}
                             style={{
                               width: "100%",
-                              background: "rgba(0,0,0,0.3)",
-                              border: "1px solid var(--border)",
+                              background: isLightTheme ? "rgba(0,0,0,0.05)" : "rgba(0,0,0,0.35)",
+                              border: `1px solid ${isLightTheme ? "rgba(0,0,0,0.15)" : "var(--border)"}`,
                               borderRadius: "4px",
                               color: "var(--text-primary)",
                               fontFamily: "var(--font-mono)",
@@ -1616,6 +1650,55 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                               outline: "none"
                             }}
                           />
+
+                          {/* Background Base Mode toggle inside color picker */}
+                          <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span style={{ fontSize: "9px", color: "var(--text-muted)", letterSpacing: "0.03em" }}>BACKGROUND</span>
+                            <div style={{ display: "flex", gap: "4px", width: "100%", background: isLightTheme ? "rgba(0,0,0,0.06)" : "rgba(0,0,0,0.3)", padding: "3px", borderRadius: "5px" }}>
+                              <button
+                                onClick={() => setActiveTheme("theme-green-black")}
+                                style={{
+                                  flex: 1,
+                                  background: !isLightTheme ? "rgba(255,255,255,0.15)" : "transparent",
+                                  border: !isLightTheme ? "1px solid var(--accent)" : "1px solid transparent",
+                                  color: !isLightTheme ? "var(--text-primary)" : "var(--text-muted)",
+                                  fontSize: "9px",
+                                  padding: "4px 0",
+                                  borderRadius: "3px",
+                                  cursor: "pointer",
+                                  fontWeight: "bold",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: "4px"
+                                }}
+                              >
+                                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#0a0a0a", border: "1px solid #666" }} />
+                                BLACK
+                              </button>
+                              <button
+                                onClick={() => setActiveTheme("theme-light-emerald")}
+                                style={{
+                                  flex: 1,
+                                  background: isLightTheme ? "rgba(255,255,255,0.95)" : "transparent",
+                                  border: isLightTheme ? "1px solid var(--accent)" : "1px solid transparent",
+                                  color: isLightTheme ? "#111" : "var(--text-muted)",
+                                  fontSize: "9px",
+                                  padding: "4px 0",
+                                  borderRadius: "3px",
+                                  cursor: "pointer",
+                                  fontWeight: "bold",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: "4px"
+                                }}
+                              >
+                                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ffffff", border: "1px solid #bbb" }} />
+                                WHITE
+                              </button>
+                            </div>
+                          </div>
 
                           <div style={{ width: "100%", display: "flex", gap: "8px", marginTop: "4px" }}>
                             <button
@@ -1640,12 +1723,13 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                                 flex: 1,
                                 background: "var(--accent)",
                                 border: "none",
-                                color: "#000",
+                                color: isLightTheme ? "#ffffff" : "#000000",
                                 fontSize: "10px",
                                 padding: "6px 0",
                                 cursor: "pointer",
                                 borderRadius: "4px",
-                                fontWeight: "bold"
+                                fontWeight: "bold",
+                                boxShadow: "0 0 10px var(--accent-glow)"
                               }}
                             >
                               SAVE
@@ -1692,7 +1776,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>Tasks</span>
+                  <span><span className="hud-prefix">//</span> Tasks</span>
                   <button
                     id="json-import-btn"
                     title="Import JSON Task Plan"
@@ -1731,7 +1815,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               <HudCorners />
               {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div className="hud-panel-title">Systems</div>
+                <div className="hud-panel-title"><span className="hud-prefix">//</span> Systems</div>
                 <div style={{ display: "flex", flexDirection: "column", padding: "12px", gap: "8px", overflowY: "auto" }} className="custom-scrollbar">
 
                   {/* Top Part: System Monitor */}
@@ -2023,7 +2107,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                       color: "var(--accent)",
                     }}
                   >
-                    <Bot size={14} />
+                    <span className="os-bot-icon" aria-hidden="true" />
                   </div>
                   {/* Bubble wrapper with Speech Arrow */}
                   <div style={{ position: "relative", display: "flex", flexDirection: "column" }}>
@@ -2205,10 +2289,14 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 </div>
               )}
 
-              <div className="os-composer" style={{ alignItems: "center", gap: "8px", padding: "6px 6px 6px 10px" }}>
-                <VoiceButton voiceState={voiceState} onClick={handleVoiceClick} disabled={!isConnected} />
-                <input
+              <div className="os-composer" style={{ alignItems: "flex-end", gap: "8px", padding: "6px 8px" }}>
+                <div style={{ paddingBottom: "1px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+                  <VoiceButton voiceState={voiceState} onClick={handleVoiceClick} disabled={!isConnected} />
+                </div>
+                <textarea
+                  ref={textareaRef}
                   id="sarthi-text-input"
+                  rows={1}
                   aria-label="Agent command prompt"
                   value={isBusy ? "" : textInput}
                   onChange={(e) => !isBusy && setTextInput(e.target.value)}
@@ -2218,44 +2306,38 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   style={{
                     flex: 1,
                     minWidth: 0,
-                    background: "transparent",
-                    border: "none",
-                    outline: "none",
-                    color: isBusy ? "var(--text-muted)" : "var(--text-primary)",
-                    fontSize: "var(--text-md)",
-                    fontFamily: "var(--font-sans)",
-                    letterSpacing: "-0.005em",
-                    padding: "9px 4px",
                     cursor: isBusy ? "default" : "text",
                   }}
                 />
                 {isBusy ? (
                   // STOP button — shown when agent is active/busy (running task, planning, or speaking)
-                  <motion.button
-                    id="sarthi-stop-btn"
-                    onClick={handleStopTask}
-                    whileHover={{ scale: 1.04 }}
-                    whileTap={{ scale: 0.94 }}
-                    title="Stop task"
-                    aria-label="Stop task"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: "36px",
-                      height: "36px",
-                      borderRadius: "50%",
-                      background: "rgba(255, 69, 58, 0.16)",
-                      color: "var(--danger)",
-                      border: "1px solid rgba(255, 69, 58, 0.4)",
-                      cursor: "pointer",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Square size={14} fill="#ff4444" />
-                  </motion.button>
+                  <div style={{ paddingBottom: "1px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+                    <motion.button
+                      id="sarthi-stop-btn"
+                      onClick={handleStopTask}
+                      whileHover={{ scale: 1.04 }}
+                      whileTap={{ scale: 0.94 }}
+                      title="Stop task"
+                      aria-label="Stop task"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "36px",
+                        height: "36px",
+                        borderRadius: "50%",
+                        background: "rgba(255, 69, 58, 0.16)",
+                        color: "var(--danger)",
+                        border: "1px solid rgba(255, 69, 58, 0.4)",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Square size={14} fill="#ff4444" />
+                    </motion.button>
+                  </div>
                 ) : (
-                  <>
+                  <div style={{ paddingBottom: "1px", display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
                     {/* Hidden file input */}
                     <input
                       ref={fileInputRef}
@@ -2324,7 +2406,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                     >
                       <Send size={16} style={{ transform: "rotate(-12deg)" }} />
                     </motion.button>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
@@ -2365,23 +2447,19 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               <HudCorners />
               {/* <MatrixRainBackground voiceState={voiceState} /> */}
               <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-                <div className="hud-panel-title">Activity</div>
-                <ActivityLogPanel logs={activityLogs} />
-              </div>
-            </div>
-
-            {/* ACTIVE TASK PLAN */}
-            <div className="hud-panel" style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <HudCorners />
-              {/* <MatrixRainBackground voiceState={voiceState} /> */}
-              <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-                  <div className="hud-panel-title">Plan</div>
+                <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span><span className="hud-prefix">//</span> Activity</span>
                   {contentPanel.contentType && (
                     <button
                       onClick={() => setShowContentDrawer(!showContentDrawer)}
                       title={showContentDrawer ? "Close Results" : "View Results"}
+                      className="os-icon-btn"
                       style={{
+                        width: 24,
+                        height: 24,
+                        minWidth: 24,
+                        minHeight: 24,
+                        padding: 0,
                         background: showContentDrawer ? "var(--accent)" : "transparent",
                         border: "1px solid var(--border)",
                         borderRadius: "4px",
@@ -2389,10 +2467,7 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        padding: "4px 8px",
                         cursor: "pointer",
-                        marginRight: "12px",
-                        marginTop: "4px",
                         boxShadow: showContentDrawer ? "0 0 6px var(--accent)" : "none",
                         transition: "all 0.2s ease",
                       }}
@@ -2413,12 +2488,23 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                     </button>
                   )}
                 </div>
+                <ActivityLogPanel logs={activityLogs} />
+              </div>
+            </div>
+
+            {/* ACTIVE TASK PLAN */}
+            <div className="hud-panel" style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <HudCorners />
+              {/* <MatrixRainBackground voiceState={voiceState} /> */}
+              <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+                <div className="hud-panel-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span><span className="hud-prefix">//</span> Plan</span>
+                </div>
                 <div className="activity-scroll-container" style={{ padding: "12px", overflowY: "auto", flex: 1, minHeight: 0 }}>
                   <ActionLog plan={currentPlan} selectedTaskId={selectedTaskId} messages={messages} />
                 </div>
               </div>
             </div>
-
 
             <div className="hud-panel os-status-card" style={{ position: "relative" }}>
               <HudCorners />
@@ -2429,10 +2515,14 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
               </div>
               <div className="os-status-foot">
                 <span className="os-status-clock">{getFormattedTime()}</span>
-                <span className="os-status-meta">
-                  {getFormattedDate()}
-                  {isConnected ? ` · up ${getUptimeString()}` : ""}
-                </span>
+                <div className="os-status-meta" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                  <span>{getFormattedDate()}</span>
+                  {isConnected && (
+                    <span style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
+                      up-time {getUptimeString()}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2444,24 +2534,26 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: "100%", opacity: 0 }}
                   transition={{ type: "spring", damping: 26, stiffness: 280 }}
-                  className="hud-panel"
+                  className="hud-panel os-dialog"
                   style={{
                     position: "absolute",
-                    top: "250px",
+                    top: "180px",
                     bottom: 0,
                     right: 0,
-                    width: "min(380px, 100%)",
-                    background:
-                      "linear-gradient(180deg, var(--glass-tint) 0%, var(--glass-tint-soft) 50%, transparent 100%), var(--bg-secondary)",
-                    border: "1px solid var(--glass-stroke-strong)",
-                    boxShadow: "inset 0 1px 0 var(--glass-sheen), var(--elev-3)",
-                    zIndex: 150,
+                    width: "min(430px, calc(100vw - 40px))",
+                    background: "rgba(14, 18, 16, 0.97)",
+                    backdropFilter: "blur(28px)",
+                    WebkitBackdropFilter: "blur(28px)",
+                    border: "1.5px solid var(--border-focus, color-mix(in srgb, var(--accent) 35%, transparent))",
+                    borderRadius: "var(--radius-lg)",
+                    boxShadow: "0 0 1px 1px rgba(255, 255, 255, 0.14), 0 2px 10px rgba(255, 255, 255, 0.05), 0 24px 60px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.18)",
+                    zIndex: 250,
                     display: "flex",
                     flexDirection: "column",
                     overflow: "hidden",
                   }}
                 >
-                  {/* <MatrixRainBackground voiceState={voiceState} /> */}
+                  <HudCorners />
                   <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
                     {/* Header */}
                     <div className="os-panel-head" style={{ justifyContent: "space-between" }}>
@@ -2503,20 +2595,20 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="remote-dialog-title"
+            className="os-scrim"
             style={{
-              position: "fixed",
-              top: 0, left: 0, right: 0, bottom: 0,
-              background: "rgba(0, 0, 0, 0.05)",
-              display: "flex",
               justifyContent: "flex-end",
               alignItems: "flex-start",
               padding: "54px 12px 12px 12px",
-              zIndex: 2000,
+              zIndex: 9999,
             }}
             onClick={(e) => { if (e.target === e.currentTarget) setShowRemoteModal(false); }}
           >
             <motion.div
-              className="hud-panel"
+              className="hud-panel os-dialog"
               initial={{ x: 250, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 250, opacity: 0 }}
@@ -2525,22 +2617,21 @@ export function AssistantOverlay({ onOpenSettings, onOpenHistory, onOpenCustomiz
                 width: "360px",
                 maxHeight: "calc(100vh - 66px)",
                 overflowY: "auto",
-                background: "rgba(10, 10, 10, 0.98)",
-                border: "1px solid var(--border)",
-                boxShadow: "0 15px 50px rgba(0, 0, 0, 0.8), inset 0 0 1px 1px rgba(255,255,255,0.03)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 gap: "16px",
                 fontFamily: "var(--font-mono)",
                 color: "var(--text-secondary)",
+                position: "relative",
               }}
             >
+              <HudCorners />
               {/* Header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px 14px", borderBottom: "1px solid var(--border)", width: "100%" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <Smartphone size={14} color="var(--accent)" />
-                  <span style={{ fontSize: "13px", fontWeight: "bold", letterSpacing: "0.1em", color: "var(--accent)" }}>REMOTE ACCESS</span>
+                  <span id="remote-dialog-title" style={{ fontSize: "13px", fontWeight: "bold", letterSpacing: "0.1em", color: "var(--accent)" }}>REMOTE ACCESS</span>
                 </div>
                 <button
                   onClick={() => setShowRemoteModal(false)}
