@@ -119,54 +119,75 @@ export default function App() {
       const h = rgb ? rgbToHue(...rgb) : 180; // fallback hue if non-hex
 
       // Detect whether the active theme uses a light background
-      const isLightTheme = document.body.classList.contains("theme-light-clean")
+      const isLightTheme = activeTheme.includes("light")
+        || activeTheme.includes("white")
+        || document.body.classList.contains("theme-light-emerald")
+        || document.body.classList.contains("theme-light-cobalt")
+        || document.body.classList.contains("theme-light-crimson")
+        || document.body.classList.contains("theme-light-clean")
         || document.body.classList.contains("theme-light-slate")
-        || document.body.classList.contains("theme-light-sakura")
-        || document.body.classList.contains("theme-multicolor-light");
+        || document.body.classList.contains("theme-light-sakura");
 
-      // Core accent vars — use hex if available, otherwise keep as-is
-      document.documentElement.style.setProperty("--accent", customAccent);
-      document.documentElement.style.setProperty("--border-accent", customAccent);
-      document.documentElement.style.setProperty("--accent-dim", isLightTheme
+      const setVar = (prop: string, val: string) => {
+        document.body.style.setProperty(prop, val);
+        document.documentElement.style.setProperty(prop, val);
+      };
+
+      // Core accent vars — apply inline to document.body & documentElement so any theme class is overridden
+      setVar("--accent", customAccent);
+      setVar("--border-accent", customAccent);
+      setVar("--border-focus", `hsla(${h}, 100%, 50%, ${isLightTheme ? 0.35 : 0.40})`);
+      setVar("--border-focus-strong", `hsla(${h}, 100%, 55%, ${isLightTheme ? 0.55 : 0.60})`);
+      setVar("--accent-dim", isLightTheme
         ? `hsl(${h}, 90%, 35%)`
         : `hsl(${h}, 100%, 40%)`);
       // Use hsla() so glows work even for accents stored as hsl/named values
-      document.documentElement.style.setProperty("--accent-glow",
-        `hsla(${h}, 100%, 55%, ${isLightTheme ? 0.25 : 0.4})`);
-      document.documentElement.style.setProperty("--accent-glow-lg",
-        `hsla(${h}, 100%, 55%, ${isLightTheme ? 0.1 : 0.15})`);
-      document.documentElement.style.setProperty("--shadow-accent",
-        `0 0 24px hsla(${h}, 100%, 55%, ${isLightTheme ? 0.2 : 0.4})`);
+      setVar("--accent-glow", `hsla(${h}, 100%, 55%, ${isLightTheme ? 0.25 : 0.4})`);
+      setVar("--accent-glow-lg", `hsla(${h}, 100%, 55%, ${isLightTheme ? 0.1 : 0.15})`);
+      setVar("--shadow-accent", `0 0 24px hsla(${h}, 100%, 55%, ${isLightTheme ? 0.2 : 0.4})`);
 
       if (isLightTheme) {
         // Light theme: dark text on light background for readability
-        document.documentElement.style.setProperty("--text-primary",   `hsl(${h}, 30%, 12%)`);
-        document.documentElement.style.setProperty("--text-secondary", `hsl(${h}, 40%, 30%)`);
-        document.documentElement.style.setProperty("--text-muted",     `hsl(${h}, 25%, 45%)`);
-        document.documentElement.style.setProperty("--border", `hsla(${h}, 80%, 50%, 0.25)`);
-        document.documentElement.style.setProperty(
+        setVar("--text-primary",   `hsl(${h}, 30%, 12%)`);
+        setVar("--text-secondary", `hsl(${h}, 40%, 30%)`);
+        setVar("--text-muted",     `hsl(${h}, 25%, 45%)`);
+        setVar("--border", `hsla(${h}, 80%, 50%, 0.25)`);
+        setVar(
           "--bg-body-gradient",
           `radial-gradient(ellipse at 20% 50%, hsl(${h}, 40%, 97%) 0%, hsl(${h}, 20%, 94%) 100%)`
         );
+        setVar("--activity-sys", `hsl(${h}, 85%, 35%)`);
+        setVar("--activity-sarthi", `hsl(${h}, 85%, 28%)`);
+        setVar("--activity-bg", "rgba(0, 0, 0, 0.04)");
+        setVar("--activity-border", `hsla(${h}, 60%, 40%, 0.15)`);
       } else {
         // Dark theme: light text on dark background
-        document.documentElement.style.setProperty("--text-primary",   `hsl(${h}, 60%, 92%)`);
-        document.documentElement.style.setProperty("--text-secondary", `hsl(${h}, 100%, 65%)`);
-        document.documentElement.style.setProperty("--text-muted",     `hsl(${h}, 70%, 55%)`);
-        document.documentElement.style.setProperty("--border", `hsla(${h}, 100%, 40%, 0.3)`);
-        document.documentElement.style.setProperty(
+        setVar("--text-primary",   `hsl(${h}, 60%, 92%)`);
+        setVar("--text-secondary", `hsl(${h}, 100%, 65%)`);
+        setVar("--text-muted",     `hsl(${h}, 70%, 55%)`);
+        setVar("--border", `hsla(${h}, 100%, 40%, 0.3)`);
+        setVar(
           "--bg-body-gradient",
           `radial-gradient(ellipse at 20% 50%, hsla(${h}, 100%, 3%, 0.9) 0%, hsla(${h}, 60%, 1%, 0.98) 70%)`
         );
+        setVar("--activity-sys", `hsl(${h}, 90%, 65%)`);
+        setVar("--activity-sarthi", `hsl(${h}, 90%, 60%)`);
+        setVar("--activity-bg", "rgba(0, 0, 0, 0.28)");
+        setVar("--activity-border", `hsla(${h}, 100%, 50%, 0.20)`);
       }
     } else {
-      // Remove all overrides → let active theme CSS take over
+      // Remove all overrides from both body and documentElement
+      const removeVar = (prop: string) => {
+        document.body.style.removeProperty(prop);
+        document.documentElement.style.removeProperty(prop);
+      };
       [
-        "--accent", "--border-accent", "--accent-dim",
+        "--accent", "--border-accent", "--border-focus", "--border-focus-strong", "--accent-dim",
         "--accent-glow", "--accent-glow-lg", "--shadow-accent",
         "--text-primary", "--text-secondary", "--text-muted",
         "--border", "--bg-body-gradient",
-      ].forEach(v => document.documentElement.style.removeProperty(v));
+        "--activity-sys", "--activity-sarthi", "--activity-bg", "--activity-border"
+      ].forEach(removeVar);
     }
   }, [customAccent, activeTheme]);
 

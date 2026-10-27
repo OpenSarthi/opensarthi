@@ -305,7 +305,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     sessionTotalTokens: 0,
   },
   globalSessionTokens: loadGlobalTokens(),
-  userName: "",
+  userName: typeof window !== "undefined" ? (localStorage.getItem("opensarthi_user_name") || "") : "",
   userSkills: ["general", "desktop_automation", "developer", "home_user"],
   customPrompt: "",
   onboardingCompleted: typeof window !== "undefined" && localStorage.getItem("opensarthi_onboarding_done") === "1",
@@ -771,7 +771,12 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     };
   }),
 
-  setPersonalization: (userName, userSkills, customPrompt) => set({ userName, userSkills, customPrompt }),
+  setPersonalization: (userName, userSkills, customPrompt) => {
+    if (typeof window !== "undefined" && userName) {
+      try { localStorage.setItem("opensarthi_user_name", userName); } catch { /* ignore */ }
+    }
+    set({ userName, userSkills, customPrompt });
+  },
 
   setOnboardingCompleted: (done) => {
     if (typeof window !== "undefined") {
