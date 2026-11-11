@@ -122,7 +122,7 @@ RESPONSE FORMAT (JSON object or null — nothing else):
 {{"tool": "tool_name", "args": {{"key": "value"}}, "description": "brief human description"}}
 """
             result = await asyncio.wait_for(
-                self._agent.run(prompt),
+                self._agent.run(prompt, model_settings={"max_tokens": 150}),
                 timeout=20.0
             )
             self.last_usage = getattr(result, "usage", None)

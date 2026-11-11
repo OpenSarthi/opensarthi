@@ -64,7 +64,7 @@ OUTPUT RULES:
 
 OUTPUT (facts only, or empty):"""
 
-        result = await extractor.run(prompt)
+        result = await extractor.run(prompt, model_settings={"max_tokens": 120})
         
         if ws_handler and getattr(result, "usage", None):
             try:
@@ -93,7 +93,11 @@ OUTPUT (facts only, or empty):"""
     except asyncio.CancelledError:
         pass
     except Exception as e:
-        logger.debug("Passive memory extraction skipped", error=str(e))
+        err_str = str(e).lower()
+        if "429" in err_str or "rate limit" in err_str or "quota" in err_str:
+            logger.warning("Passive memory extraction skipped due to provider rate limit (429)", error=str(e))
+        else:
+            logger.debug("Passive memory extraction skipped", error=str(e))
 
 
 def _content_similar(a: str, b: str, threshold: float = 0.7) -> bool:

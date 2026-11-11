@@ -52,9 +52,14 @@ class ReviewerAgent:
         if not execution_log:
             return
 
-        # Only review tasks that had actual tool calls
+        # Only review tasks that had actual tool calls and at least one meaningful progress
         tool_calls = [s for s in execution_log if s.get("tool")]
         if not tool_calls:
+            return
+
+        has_success = any(s.get("status") == "success" for s in tool_calls)
+        if not has_success and outcome.startswith("FAILED"):
+            logger.info("Skipping self-review on task with zero successful steps")
             return
 
         try:
@@ -117,7 +122,7 @@ Examples of good lessons:
                     dev_logger.log(f"Failed to log self-review prompt: {e}")
 
             result = await asyncio.wait_for(
-                reviewer.run(prompt),
+                reviewer.run(prompt, model_settings={"max_tokens": 180}),
                 timeout=25.0
             )
             raw = result.output.strip()

@@ -220,7 +220,7 @@ class MultiAgentSupervisor:
         tz_name = now.astimezone().tzname() or "Local Time"
 
         user_prompt = f"CURRENT DATE & TIME: {time_str} ({tz_name})\nUSER REQUEST: {goal[:1000]}"
-        result = await self._classifier_agent.run(user_prompt)
+        result = await self._classifier_agent.run(user_prompt, model_settings={"max_tokens": 150})
         raw = result.output.strip()
 
         # Expect JSON: {"domains": [...], "confidence": 0.x, "reason": "..."}
