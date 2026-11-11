@@ -181,7 +181,7 @@ class InstantVision:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 url,
-                params={"key": api_key},
+                headers={"x-goog-api-key": api_key},
                 json=payload,
                 timeout=30,
             )

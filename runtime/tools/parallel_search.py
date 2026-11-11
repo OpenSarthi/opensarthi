@@ -124,41 +124,61 @@ class ParallelSearchEngine:
     async def _search_duckduckgo(self, query: str, max_results: int) -> Dict:
         """Search via DuckDuckGo (no API key required)."""
         import httpx
+        import html
+        import re
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://html.duckduckgo.com/html/",
                 params={"q": query},
-                headers={"User-Agent": "Mozilla/5.0 (compatible; OpenSarthi/1.0)"},
+                headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"},
                 timeout=8,
             )
             response.raise_for_status()
-            # Parse results (simplified)
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(response.text, "html.parser")
+            text = response.text
             results = []
-            for result in soup.select(".result__a")[:max_results]:
-                href = result.get("href", "")
-                title = result.get_text(strip=True)
-                if href and title:
-                    results.append({"title": title, "url": href, "snippet": ""})
+
+            # Try BeautifulSoup if installed, otherwise fallback to stdlib regex parsing
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(text, "html.parser")
+                for result in soup.select(".result__a")[:max_results]:
+                    href = result.get("href", "")
+                    title = result.get_text(strip=True)
+                    if href and title:
+                        results.append({"title": title, "url": href, "snippet": ""})
+            except ImportError:
+                pattern = re.compile(r'<a[^>]+class=[\'"][^\'"]*result__a[^\'"]*[\'"][^>]+href=[\'"](?P<href>[^\'"]+)[\'"][^>]*>(?P<title>.*?)</a>', re.DOTALL)
+                for href, title in pattern.findall(text)[:max_results]:
+                    clean_title = html.unescape(re.sub(r'<[^>]+>', '', title)).strip()
+                    if href and clean_title:
+                        results.append({"title": clean_title, "url": href, "snippet": ""})
+
             return {"success": len(results) > 0, "engine": "duckduckgo", "results": results}
 
     async def _search_gemini(self, query: str, max_results: int) -> Dict:
         """Search via Gemini (uses inline search capability)."""
-        from config import settings, get_active_api_key
-        api_key = get_active_api_key()
-        if not api_key:
+        from config import settings
+        # Only use Gemini if an actual Google Gemini API key is configured
+        api_key = getattr(settings, "gemini_api_key", None)
+        if not api_key and getattr(settings, "provider", "").lower() == "google":
+            from config import get_active_api_key
+            api_key = get_active_api_key()
+        if not api_key or not str(api_key).startswith("AIza"):
             return {"success": False, "engine": "gemini", "results": []}
 
+        # Select a valid Gemini model, NEVER pass an arbitrary Groq or Ollama model
+        gemini_model = "gemini-2.0-flash"
+        if getattr(settings, "provider", "").lower() == "google" and getattr(settings, "cloud_model", "").startswith("gemini"):
+            gemini_model = settings.cloud_model
+
         import httpx
-        # Use Gemini's built-in search via prompt
         prompt = f"Search the web for: {query}\nProvide {max_results} relevant results with title, URL, and brief description."
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.cloud_model}:generateContent"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent"
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 url,
-                params={"key": api_key},
+                headers={"x-goog-api-key": api_key},
                 json={"contents": [{"parts": [{"text": prompt}]}]},
                 timeout=10,
             )

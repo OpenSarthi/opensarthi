@@ -3,7 +3,26 @@ import json
 import time
 import datetime
 import uuid
+import re
+from typing import Any
 from pathlib import Path
+
+def redact_secrets(val: Any) -> Any:
+    """Scrub known API keys and secrets from log strings and data structures."""
+    if isinstance(val, str):
+        text = val
+        text = re.sub(r'gsk_[a-zA-Z0-9_\-]{20,}', '[REDACTED_GROQ_KEY]', text)
+        text = re.sub(r'sk-[a-zA-Z0-9_\-]{20,}', '[REDACTED_OPENAI_KEY]', text)
+        text = re.sub(r'sk-ant-[a-zA-Z0-9_\-]{20,}', '[REDACTED_ANTHROPIC_KEY]', text)
+        text = re.sub(r'AIza[0-9A-Za-z\-_]{35}', '[REDACTED_GOOGLE_KEY]', text)
+        text = re.sub(r'([?&](?:api_)?key=)[^&\s"\'`]+', r'\1[REDACTED]', text)
+        text = re.sub(r'(Bearer\s+)[a-zA-Z0-9_\-\.]{20,}', r'\1[REDACTED]', text)
+        return text
+    elif isinstance(val, dict):
+        return {k: redact_secrets(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [redact_secrets(item) for item in val]
+    return val
 
 # Resolve workspace root dynamically relative to this file's location (runtime/dev_logger.py -> workspace)
 _file_dir = os.path.dirname(os.path.abspath(__file__))
@@ -20,7 +39,7 @@ class DevLogger:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         self.run_dir = os.path.join(LOGS_DIR, "agent_runs", f"run_{timestamp}_{self.run_id}")
         self.log_filepath = os.path.join(self.run_dir, "execution_flow.log")
-        self.goal = goal
+        self.goal = redact_secrets(goal)
         self.model_name = model_name
         self.provider = provider
         self.start_time = time.time()
@@ -31,7 +50,7 @@ class DevLogger:
             os.makedirs(self.run_dir, exist_ok=True)
             self._write_metadata()
             self.log(f"=== OpenSarthi Agentic Run {self.run_id} Started ===")
-            self.log(f"Goal: {goal}")
+            self.log(f"Goal: {self.goal}")
             self.log(f"Model: {model_name} ({provider})")
         except Exception as e:
             # Fallback if logs directory is not writeable (e.g. packaged permissions)
@@ -40,10 +59,11 @@ class DevLogger:
     def log(self, message: str):
         if not self.is_dev_mode:
             return
+        clean_msg = redact_secrets(message)
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         try:
             with open(self.log_filepath, "a", encoding="utf-8") as f:
-                f.write(f"[{timestamp}] {message}\n")
+                f.write(f"[{timestamp}] {clean_msg}\n")
         except Exception:
             pass
 
@@ -69,7 +89,7 @@ class DevLogger:
             return
         try:
             with open(os.path.join(self.run_dir, "system_prompt.txt"), "w", encoding="utf-8") as f:
-                f.write(system_prompt)
+                f.write(redact_secrets(system_prompt))
             self.log("Logged system prompt.")
         except Exception as e:
             self.log(f"Error logging system prompt: {e}")
@@ -80,7 +100,7 @@ class DevLogger:
         try:
             filepath = os.path.join(self.run_dir, f"context_attempt_{attempt}.txt")
             with open(filepath, "w", encoding="utf-8") as f:
-                f.write(context)
+                f.write(redact_secrets(context))
             self.log(f"Logged planning context for attempt {attempt}.")
         except Exception as e:
             self.log(f"Error logging context for attempt {attempt}: {e}")
@@ -91,7 +111,7 @@ class DevLogger:
         try:
             filepath = os.path.join(self.run_dir, f"response_attempt_{attempt}.txt")
             with open(filepath, "w", encoding="utf-8") as f:
-                f.write(response_text)
+                f.write(redact_secrets(response_text))
             self.log(f"Logged LLM response for attempt {attempt}.")
         except Exception as e:
             self.log(f"Error logging LLM response for attempt {attempt}: {e}")
@@ -105,9 +125,9 @@ class DevLogger:
                 "timestamp": datetime.datetime.now().isoformat(),
                 "step_index": step_index,
                 "tool": tool_name,
-                "arguments": args,
+                "arguments": redact_secrets(args),
                 "status": result_status,
-                "observation": result_obs
+                "observation": redact_secrets(result_obs)
             }
             with open(filepath, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record) + "\n")
@@ -123,14 +143,14 @@ class DevLogger:
             if supervisor_prompt:
                 prompt_path = os.path.join(self.run_dir, "supervisor_prompt.txt")
                 with open(prompt_path, "w", encoding="utf-8") as f:
-                    f.write(supervisor_prompt)
+                    f.write(redact_secrets(supervisor_prompt))
 
             filepath = os.path.join(self.run_dir, "supervisor_decision.json")
             record = {
                 "timestamp": datetime.datetime.now().isoformat(),
                 "domains": domains,
                 "confidence": confidence,
-                "reason": reason,
+                "reason": redact_secrets(reason),
                 "allowed_tools": allowed_tools,
                 "dispatch_id": dispatch_id,
                 "tool_count": len(allowed_tools) if allowed_tools else 0,
@@ -144,9 +164,10 @@ class DevLogger:
     def finalize(self, final_response: str):
         if not self.is_dev_mode:
             return
+        clean_final = redact_secrets(final_response)
         duration = time.time() - self.start_time
         self.log(f"=== OpenSarthi Agentic Run Finished. Duration: {duration:.2f}s ===")
-        self.log(f"Final Response: {final_response}")
+        self.log(f"Final Response: {clean_final}")
         try:
             # Update metadata
             meta_path = os.path.join(self.run_dir, "metadata.json")
@@ -154,7 +175,7 @@ class DevLogger:
                 with open(meta_path, "r", encoding="utf-8") as f:
                     meta = json.load(f)
                 meta["duration_seconds"] = duration
-                meta["final_response"] = final_response
+                meta["final_response"] = clean_final
                 meta["end_time"] = time.time()
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(meta, f, indent=2)

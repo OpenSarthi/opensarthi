@@ -91,7 +91,7 @@ async def list_models(
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(
                     "https://generativelanguage.googleapis.com/v1beta/models",
-                    params={"key": api_key},
+                    headers={"x-goog-api-key": api_key},
                 )
             resp.raise_for_status()
             data = resp.json()
@@ -196,7 +196,7 @@ async def validate_api_key(
             async with httpx.AsyncClient(timeout=8.0) as client:
                 resp = await client.get(
                     "https://generativelanguage.googleapis.com/v1beta/models",
-                    params={"key": api_key},
+                    headers={"x-goog-api-key": api_key},
                 )
             if resp.status_code == 200:
                 data = resp.json()

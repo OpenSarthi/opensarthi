@@ -181,7 +181,7 @@ OUTPUT: A single 1-2 sentence summary only. No preamble."""
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 url,
-                params={"key": api_key},
+                headers={"x-goog-api-key": api_key},
                 json={"contents": [{"parts": [{"text": prompt}]}]},
                 timeout=30,
             )
