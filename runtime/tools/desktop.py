@@ -815,6 +815,16 @@ class ClickTool(BaseTool):
 
             success = await _provider.click(int(x), int(y), button, window_id=window_id)
             if not success:
+                try:
+                    from platform_support import get_platform_support
+                    support = get_platform_support()
+                    if not support.can_control_input:
+                        return ToolResult.fail(
+                            f"Click failed: OS does not permit synthetic mouse input in this session ({support.display_server or support.os_name}).",
+                            retryable=False
+                        )
+                except Exception:
+                    pass
                 return ToolResult.fail("Provider click failed", retryable=True)
 
             return ToolResult.ok(
@@ -855,6 +865,16 @@ class TypeTextTool(BaseTool):
                 await _ensure_window_focus(window_id)
             success = await _provider.type_text(text, window_id=window_id)
             if not success:
+                try:
+                    from platform_support import get_platform_support
+                    support = get_platform_support()
+                    if not support.can_control_input:
+                        return ToolResult.fail(
+                            f"Type text failed: OS does not permit synthetic keyboard input in this session ({support.display_server or support.os_name}).",
+                            retryable=False
+                        )
+                except Exception:
+                    pass
                 return ToolResult.fail("Provider typing failed", retryable=True)
 
             return ToolResult.ok(
@@ -889,6 +909,16 @@ class PressKeyTool(BaseTool):
                 await _ensure_window_focus(window_id)
             success = await _provider.press_key(key, window_id=window_id)
             if not success:
+                try:
+                    from platform_support import get_platform_support
+                    support = get_platform_support()
+                    if not support.can_control_input:
+                        return ToolResult.fail(
+                            f"Press key failed: OS does not permit synthetic keyboard input in this session ({support.display_server or support.os_name}).",
+                            retryable=False
+                        )
+                except Exception:
+                    pass
                 return ToolResult.fail("Provider press_key failed", retryable=True)
 
             return ToolResult.ok(

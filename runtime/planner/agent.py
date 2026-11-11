@@ -24,13 +24,11 @@ from tools.desktop import ClickTool, TypeTextTool, PressKeyTool, OpenAppTool, Cl
 from tools.system import ShellTool
 from tools.wait_tools import WaitForWindowTool, WaitForTextTool
 from observation import DesktopSnapshot
+from platform_support import get_platform_prompt_notes
 
-try:
-    from pydantic_ai.models.ollama import OllamaModel
-    local_llm = OllamaModel(settings.local_model)
-except Exception:
-    from pydantic_ai.models.test import TestModel
-    local_llm = TestModel()
+# Lightweight placeholder model for agent construction; the active model is passed dynamically on agent.run()
+from pydantic_ai.models.test import TestModel
+local_llm = TestModel()
 
 class AgentDependencies(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -331,6 +329,10 @@ TASK COMPLETION:
     if skill_sections:
         base += "\n━━━ ACTIVE CONTEXT ━━━\n" + "\n".join(f"• {s}" for s in skill_sections) + "\n"
 
+    platform_notes = get_platform_prompt_notes()
+    if platform_notes:
+        base += "\n━━━ PLATFORM HARDWARE & ENVIRONMENT RESTRICTIONS ━━━\n" + "\n".join(platform_notes) + "\n"
+
     return base
 
 
@@ -569,6 +571,11 @@ HARD CONSTRAINTS:
   • Use exact window titles from CURRENT DESKTOP STATE above
   • If desktop state is stale or missing → call observe_desktop first
 """
+
+        platform_notes = get_platform_prompt_notes()
+        if platform_notes:
+            notes_str = "\n".join(f"  • {n.lstrip('- ')}" for n in platform_notes)
+            context += f"\nPLATFORM RESTRICTIONS:\n{notes_str}\n"
 
     context += """
 ━━━ END OF CONTEXT ━━━
