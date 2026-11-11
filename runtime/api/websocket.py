@@ -201,8 +201,11 @@ class Session:
                 await stop_native_audio()
             except Exception:
                 pass
-            # Start offline voice
-            self.start_listen_loop()
+            # Start offline voice only if continuous listening or wake word is active
+            if getattr(settings, "continuous_listening", False) or getattr(settings, "wake_word_enabled", False):
+                self.start_listen_loop()
+            else:
+                self.stop_listen_loop()
 
     async def send_message(self, msg_type: str, payload: dict, thread_id: str = None):
         if payload is None:
@@ -373,6 +376,8 @@ class Session:
         try:
             self._manual_tts = manual
             await self.send_message("speech_started", {})
+            if hasattr(self.voice_pipeline, "initialize") and not getattr(self.voice_pipeline, "_pipeline_initialized", False):
+                await self.voice_pipeline.initialize()
             await self.voice_pipeline.speak(text)
         finally:
             await self.send_message("speech_completed", {"was_manual": manual})
@@ -1387,6 +1392,8 @@ class Session:
     async def _listen_loop(self):
         """Simulate sending transcript updates."""
         try:
+            if hasattr(self.voice_pipeline, "initialize") and not getattr(self.voice_pipeline, "_pipeline_initialized", False):
+                await self.voice_pipeline.initialize()
             async for transcript_info in self.voice_pipeline.start_listening():
                 if isinstance(transcript_info, dict):
                     transcript = transcript_info["text"]
@@ -1442,7 +1449,7 @@ class ConnectionManager:
             return
         if self._metrics_task is None or self._metrics_task.done():
             self._metrics_task = asyncio.create_task(
-                _metrics_push_loop(self._broadcast_to_all, interval=1.5)
+                _metrics_push_loop(self._broadcast_to_all, interval=5.0)
             )
 
     async def connect(self, websocket: WebSocket):
@@ -1454,13 +1461,8 @@ class ConnectionManager:
         # Start system metrics push loop (starts once, keeps running)
         self._ensure_metrics_loop()
 
-        # Eagerly pre-load voice models in the background to prevent lazy-loading lag spikes and websocket connection timeout
-        async def init_task():
-            try:
-                await session.voice_pipeline.initialize()
-            except Exception as e:
-                logger.error("Failed to initialize voice pipeline models", error=str(e))
-        asyncio.create_task(init_task())
+        # Voice models and microphone calibration are initialized lazily on-demand
+        # when voice interaction or wake-word is active, avoiding startup lag & memory bloat.
         
         # Send current settings on startup
         from config import settings

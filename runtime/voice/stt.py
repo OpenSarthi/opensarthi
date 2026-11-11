@@ -1,11 +1,14 @@
 import asyncio
+import os
+import threading
 import numpy as np
-from typing import Optional
-from faster_whisper import WhisperModel
+from typing import Optional, Any
 import speech_recognition as sr
 import structlog
 
 logger = structlog.get_logger()
+
+_model_lock = threading.Lock()
 
 class FasterWhisperSTT:
     """
@@ -17,23 +20,29 @@ class FasterWhisperSTT:
 
     def __init__(self, language: str = "en"):
         self.language = language
-        self._model: Optional[WhisperModel] = None
+        self._model: Optional[Any] = None
         self.recognizer = sr.Recognizer()
 
     def load(self):
-        """Load the Whisper model (downloads on first use)."""
+        """Load the Whisper model lazily (downloads on first use)."""
         if self._model is not None:
             return
-        try:
-            self._model = WhisperModel(
-                self.MODEL_SIZE,
-                device="cpu",        # Use "cuda" if GPU available
-                compute_type="int8", # Memory efficient
-                cpu_threads=4
-            )
-            print(f"[STT] faster-whisper '{self.MODEL_SIZE}' loaded successfully")
-        except Exception as e:
-            logger.error("Failed to load local faster-whisper model", error=str(e))
+        with _model_lock:
+            if self._model is not None:
+                return
+            try:
+                from faster_whisper import WhisperModel
+                # Bound cpu_threads to 2 to avoid pinning 100% of 4-core mobile CPUs
+                cpu_threads = min(2, max(1, (os.cpu_count() or 2) // 2))
+                self._model = WhisperModel(
+                    self.MODEL_SIZE,
+                    device="cpu",        # Use "cuda" if GPU available
+                    compute_type="int8", # Memory efficient
+                    cpu_threads=cpu_threads
+                )
+                logger.info(f"[STT] faster-whisper '{self.MODEL_SIZE}' loaded successfully (threads={cpu_threads})")
+            except Exception as e:
+                logger.error("Failed to load local faster-whisper model", error=str(e))
 
     def transcribe(self, audio_array: np.ndarray) -> tuple[str, float, str]:
         """

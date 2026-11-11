@@ -36,82 +36,107 @@ class VoicePipeline:
         self.listen_thread = None
         self.stt = FasterWhisperSTT()
 
-        # Instantiate wake detector to avoid warnings and support hot updates
-        from voice.wakeword import WakeWordDetector
-        from config import settings
-        self.wake_detector = WakeWordDetector(
-            phrases=getattr(settings, "wake_words", ["hey sarthi", "hello sarthi"]),
-            threshold=getattr(settings, "wake_word_threshold", 0.5)
-        )
+        # Lazy wake detector: instantiated only on demand to prevent ONNX startup overhead
+        self._wake_detector = None
         # Defect 6 Fix: store pending wake words here so if settings are updated
         # before initialize() is called, the words are not lost.
         self._pending_wake_words: list = []
         self._pipeline_initialized: bool = False
+        self._init_lock = asyncio.Lock()
 
-    async def initialize(self):
-        """Pre-adjust for ambient noise and pre-load local offline STT model."""
-        logger.info("Initializing voice models")
-
-        # Suppress ALSA/JACK stderr noise that floods logs on Linux
-        if platform.system() == "Linux":
+    @property
+    def wake_detector(self):
+        if self._wake_detector is None:
             try:
-                devnull_fd = os.open(os.devnull, os.O_WRONLY)
-                old_stderr = os.dup(2)
-                os.dup2(devnull_fd, 2)
-            except Exception:
-                old_stderr = None
-                devnull_fd = None
-        else:
-            old_stderr = None
-            devnull_fd = None
-
-        try:
-            import pyaudio
-            logger.info("PyAudio imported successfully in pipeline")
-        except Exception:
-            logger.exception("Failed to import pyaudio directly")
-
-        try:
-            with sr.Microphone() as source:
-                self.recognizer.adjust_for_ambient_noise(source, duration=2)
-                # Boost threshold above calibrated ambient floor to reduce false triggers
-                self.recognizer.energy_threshold = max(
-                    self.recognizer.energy_threshold * 1.8,
-                    500  # hard minimum to avoid super-quiet environments triggering
+                from voice.wakeword import WakeWordDetector
+                from config import settings
+                phrases = self._pending_wake_words or getattr(settings, "wake_words", ["hey sarthi", "hello sarthi"])
+                self._wake_detector = WakeWordDetector(
+                    phrases=phrases,
+                    threshold=getattr(settings, "wake_word_threshold", 0.5)
                 )
-                # Prevent the dynamic threshold from drifting too low
-                self.recognizer.dynamic_energy_threshold = True
-                self.recognizer.dynamic_energy_adjustment_damping = 0.25  # slower drift
-                self.recognizer.dynamic_energy_ratio = 1.8  # higher ratio = less sensitive
-                logger.info(f"Microphone initialized and calibrated. Energy threshold: {self.recognizer.energy_threshold:.1f}")
-        except Exception as e:
-            logger.warning(f"Could not initialize microphone: {e}")
-        finally:
-            # Restore stderr
-            if old_stderr is not None:
-                os.dup2(old_stderr, 2)
-                os.close(old_stderr)
-            if devnull_fd is not None:
-                os.close(devnull_fd)
-
-        try:
-            # Pre-load local STT model in background so first-time capture is instantaneous
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self.stt.load)
-            logger.info("Local offline STT model pre-loaded successfully.")
-        except Exception as e:
-            logger.error(f"Could not pre-load STT model: {e}")
-
-        # Defect 6 Fix: re-apply any wake words that were set while the pipeline
-        # was not yet initialized (e.g. user saved settings before activating voice).
-        self._pipeline_initialized = True
-        if self._pending_wake_words:
-            try:
-                self.wake_detector.update_phrases(self._pending_wake_words)
-                logger.info("Applied pending wake words after pipeline init", words=self._pending_wake_words)
                 self._pending_wake_words = []
             except Exception as e:
-                logger.warning("Failed to apply pending wake words on init", error=str(e))
+                logger.warning("Failed to initialize WakeWordDetector", error=str(e))
+                return None
+        return self._wake_detector
+
+    @wake_detector.setter
+    def wake_detector(self, val):
+        self._wake_detector = val
+
+    async def initialize(self):
+        """Pre-adjust for ambient noise and pre-load local offline STT model without blocking event loop."""
+        if self._pipeline_initialized:
+            return
+
+        async with self._init_lock:
+            if self._pipeline_initialized:
+                return
+
+            logger.info("Initializing voice models")
+
+            # Run microphone calibration in worker thread to prevent event loop lag
+            def _calibrate():
+                # Suppress ALSA/JACK stderr noise that floods logs on Linux
+                if platform.system() == "Linux":
+                    try:
+                        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+                        old_stderr = os.dup(2)
+                        os.dup2(devnull_fd, 2)
+                    except Exception:
+                        old_stderr = None
+                        devnull_fd = None
+                else:
+                    old_stderr = None
+                    devnull_fd = None
+
+                try:
+                    import pyaudio
+                    logger.debug("PyAudio available in pipeline")
+                except Exception:
+                    logger.exception("Failed to import pyaudio directly")
+
+                try:
+                    with sr.Microphone() as source:
+                        self.recognizer.adjust_for_ambient_noise(source, duration=1.0)
+                        # Boost threshold above calibrated ambient floor to reduce false triggers
+                        self.recognizer.energy_threshold = max(
+                            self.recognizer.energy_threshold * 1.8,
+                            500  # hard minimum to avoid super-quiet environments triggering
+                        )
+                        self.recognizer.dynamic_energy_threshold = True
+                        self.recognizer.dynamic_energy_adjustment_damping = 0.25
+                        self.recognizer.dynamic_energy_ratio = 1.8
+                        logger.info(f"Microphone initialized and calibrated. Energy threshold: {self.recognizer.energy_threshold:.1f}")
+                except Exception as e:
+                    logger.warning(f"Could not initialize microphone: {e}")
+                finally:
+                    if old_stderr is not None:
+                        os.dup2(old_stderr, 2)
+                        os.close(old_stderr)
+                    if devnull_fd is not None:
+                        os.close(devnull_fd)
+
+            await asyncio.to_thread(_calibrate)
+
+            try:
+                # Pre-load local STT model in background so first-time capture is instantaneous
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.stt.load)
+                logger.info("Local offline STT model pre-loaded successfully.")
+            except Exception as e:
+                logger.error(f"Could not pre-load STT model: {e}")
+
+            self._pipeline_initialized = True
+            if self._pending_wake_words:
+                try:
+                    if self.wake_detector:
+                        self.wake_detector.update_phrases(self._pending_wake_words)
+                        logger.info("Applied pending wake words after pipeline init", words=self._pending_wake_words)
+                    self._pending_wake_words = []
+                except Exception as e:
+                    logger.warning("Failed to apply pending wake words on init", error=str(e))
 
     def _listen_worker(self):
         import pyaudio
