@@ -626,3 +626,22 @@ Token usage is tracked at two levels:
 | **Global (per model)** | Lifetime token usage per model key | Persisted in localStorage |
 
 Token data is extracted from PydanticAI `result.usage` — handles both `request_tokens`/`response_tokens` and `input`/`output` field name variants across PydanticAI versions.
+
+---
+
+## 13. Evidence-Grounded Execution & Verification Flow
+
+### 13.1 Strict Grounding & Anti-Hallucination
+To prevent the assistant from speculating or contradicting its own execution log:
+- **Strict Evidence Ingestion**: The review formatter receives the full structured execution log (tool names, validated args, execution status, and exact outputs/results).
+- **No Speculative UI Inventories**: When reporting on desktop state, the assistant strictly reports elements present in the accessibility tree and OCR results.
+- **Trust Tool Results**: Succeeded tool operations (e.g. `save_note` returning a saved path) must never be described as "simulated". The assistant reports the verified artifact path directly.
+
+### 13.2 Multi-Step Goal Planning
+- **Compound Workflow Decomposition**: For goals involving multiple steps (e.g., "do X, then do Y, and extract Z"), the planner generates all necessary sequential steps rather than a single 1-step plan.
+- **Browser Automation vs System URLs**:
+  - `open_url`: Launches a URL in the desktop default browser for human visual consumption (uncontrolled).
+  - `browser_*` tools (`browser_go_to`, `browser_snapshot`, `browser_get_text`, `browser_type`): Used whenever the task requires automated page interaction, search, or content extraction.
+
+### 13.3 Plan Action Normalization
+Plan parser normalizes LLM outputs that prefix tool names with verbs (e.g. `"action": "Execute browser_go_to"` or `"action": "Run shell"`), stripping action verbs to reliably match registered tool names.

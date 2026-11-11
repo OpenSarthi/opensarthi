@@ -55,6 +55,7 @@ See [`docs/05_android_implementation.md`](../../docs/05_android_implementation.m
 
 - **Memory & Startup Optimization**: The shared Python runtime employs lazy model loading (FasterWhisper, wake words, semantic memory embeddings initialize only when requested). On mobile devices with strict RAM limits, this reduces cold-boot memory pressure and startup latency.
 - **Adaptive Telemetry**: Background telemetry is throttled to 5.0 seconds with delta gating, preserving mobile battery life.
+- **Auxiliary Token Budgeting & Secret Scrubbing**: Helper LLM calls (classifier, healer, memory extraction) are strictly token-budgeted to prevent mobile rate-limit starvation, and runtime secrets are automatically scrubbed from debug streams.
 
 ---
 

@@ -20,6 +20,12 @@ The intelligence layer of OpenSarthi. Runs as a **headless sidecar process** spa
 - **Parallel Search** — Multi-engine (DuckDuckGo, Gemini, Brave) first-wins pattern
 - **Session Memory** — Consumed after use (1-2 sentence summary via flash model)
 - **Google OAuth (Read-Only)** — calendar.readonly + gmail.readonly for briefing & search data with local port 8765 loopback callback listener
+- **Evidence-Grounded Review & Execution** — Strict factual review formatter eliminating hallucinated UI states, reporting verified artifact destinations, and preventing false "simulated" claims for completed tools
+- **Secret Redaction & Header-Only Auth** — Automatic scrubbing of Groq, OpenAI, Anthropic, and Google API keys across dev logs, with HTTP header-only key transmission (`x-goog-api-key`)
+- **ToolResult Contract & Auto-Serialization** — Automatic serialization of structured `result` payloads into `observation` text, ensuring all tool outputs propagate directly into reviewer contexts
+- **Auxiliary LLM Token Budgets** — Tight token caps on classifier, passive memory extractor, healer, and reviewer nodes to prevent rate-limit starvation (Groq 429 TPM)
+- **Plan Action Normalization** — Parser auto-strips English action verbs (`Execute `, `Run `, `Call `) from LLM output steps to match canonical tool names
+- **Enhanced Productivity Tools** — `ListFilesTool` supporting recursive directory audits with file-size grouping; `SaveNoteTool` supporting arbitrary targets (`Downloads`, `Documents`, `Desktop`, absolute paths) with post-write verification
 - **Content Panel Data Types** — briefing, screen_analysis, browser_result, code_output, file_preview, system_status, music, map
 
 ---

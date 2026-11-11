@@ -949,4 +949,23 @@ The Python runtime supports real-time remote execution control from a phone brow
 
 ---
 
+## 19. Secret Redaction, Token Budgets & Tool Result Contracts
+
+### 19.1 Secret Redaction & Secure API Headers
+To prevent accidental credential leaks in traces, network errors, and debug logs:
+- **Header-Only Authentication**: All external HTTP API integrations (including Google Gemini, OpenAI, Anthropic, Brave) pass credentials exclusively via request headers (e.g. `x-goog-api-key: <key>`, `Authorization: Bearer <key>`) and **never** in URL query parameters (`?key=...`).
+- **Log Scrubber (`redact_secrets`)**: All runtime log sinks and development loggers run strings through a central secret redactor that masks Groq (`gsk_...`), OpenAI (`sk-...`), Anthropic (`sk-ant-...`), Google (`AIza...`), and generic auth tokens before saving to disk or emitting to stdout.
+
+### 19.2 Token Budgeting for Auxiliary Agents
+To prevent auxiliary LLM calls from exhausting provider token-per-minute (TPM) limits (e.g., Groq free tier 429 errors):
+- `MultiAgentSupervisor`: `model_settings={"max_tokens": 150}`
+- `HealerAgent`: `model_settings={"max_tokens": 150}`
+- `ReviewerAgent`: `model_settings={"max_tokens": 180}` (skipped entirely if task failed with 0 successful steps)
+- `PassiveMemoryExtractor`: `model_settings={"max_tokens": 120}`
+
+### 19.3 ToolResult Schema & Propagation Contract
+`ToolResult` accepts both `observation` and structured `result` payloads. A Pydantic model validator ensures that if `result` is provided without `observation`, it is automatically formatted as a human-readable and JSON-structured observation string. This guarantees that tools returning rich dictionaries (such as `system_status` or `web_search`) reliably propagate their full output data to the LangGraph state and final response generator.
+
+---
+
 > **Python version: 3.12 exactly.** `faster-whisper`, `kokoro`, `numpy`, `blis` require pre-compiled wheels only available for Python 3.10–3.12.

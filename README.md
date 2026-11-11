@@ -46,6 +46,7 @@ OpenSarthi is an **agentic AI assistant** that executes local commands, automate
 - 🔍 **Parallel Search** — Multi-engine (DuckDuckGo, Gemini, Brave) first-wins pattern for instant answers.
 - 🧠 **Session Memory** — Consumed after use (1-2 sentence summary via flash model) for context efficiency.
 - 🔐 **Google OAuth (Read-Only)** — Calendar.readonly + Gmail.readonly for briefing data, no write access.
+- 🛡️ **Evidence-Grounded Execution & Security** — Header-only API authentication (`x-goog-api-key`), automatic log secret redaction, strict evidence review grounding, tool-result auto-serialization, and plan verb normalization.
 
 <br/>
 
