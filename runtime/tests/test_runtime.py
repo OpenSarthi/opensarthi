@@ -52,6 +52,13 @@ class TestSchemas(unittest.TestCase):
         self.assertTrue(res.ui_changed)
         self.assertEqual(res.confidence, ToolResultConfidence.MEDIUM)
 
+    def test_tool_result_auto_serialize_result(self):
+        res = ToolResult(success=True, result={"cpu_percent": 12.5, "memory_percent": 45.0})
+        self.assertTrue(res.success)
+        self.assertIsNotNone(res.observation)
+        self.assertIn("cpu_percent", res.observation)
+        self.assertIn("12.5", res.observation)
+
     def test_tool_result_fail(self):
         res = ToolResult.fail("Error occurred", retryable=False)
         self.assertFalse(res.success)
@@ -116,6 +123,20 @@ class TestAgentRuntimeCumulativeSteps(unittest.TestCase):
         
         res = runtime._format_final_response("Task processed", steps)
         self.assertEqual(res, "Task processed")
+
+    def test_cleanup_step_action_verb_stripping(self):
+        from agent_runtime import _cleanup_step
+        s1 = {"action": "Execute browser_go_to", "args": {"url": "https://github.com"}}
+        cleaned1 = _cleanup_step(s1)
+        self.assertEqual(cleaned1["tool"], "browser_go_to")
+
+        s2 = {"tool": "Run shell", "args": {"command": "uptime"}}
+        cleaned2 = _cleanup_step(s2)
+        self.assertEqual(cleaned2["tool"], "shell")
+
+        s3 = {"action": "Call system_status()", "args": {}}
+        cleaned3 = _cleanup_step(s3)
+        self.assertEqual(cleaned3["tool"], "system_status")
 
 
 class TestTaskDecomposer(unittest.TestCase):
