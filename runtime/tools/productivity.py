@@ -302,7 +302,7 @@ def _resolve_path(path: str) -> str:
 
 class ListFilesTool(BaseTool):
     name = "list_files"
-    description = "List files and folders at a path. Accepts shortcuts: 'desktop', 'downloads', 'documents', 'home', or any absolute path."
+    description = "List files and folders at a path. Supports shortcuts: 'desktop', 'downloads', 'documents', 'home'. Supports recursive analysis and file-type aggregation."
     risk_level = RiskLevel.SAFE
     domain = ToolDomain.GENERAL
     schema = {
@@ -310,6 +310,7 @@ class ListFilesTool(BaseTool):
         "properties": {
             "path": {"type": "string", "description": "Path or shortcut (default: 'home')"},
             "folders_only": {"type": "boolean", "description": "Only return directories (default: false)"},
+            "recursive": {"type": "boolean", "description": "Recursively scan subdirectories for full inventory, largest files, and category breakdown (default: false)"},
             "limit": {"type": "number", "description": "Max entries to return (default: 50)"},
         },
         "required": [],
@@ -318,6 +319,7 @@ class ListFilesTool(BaseTool):
     async def execute(self, args: dict) -> ToolResult:
         path_arg = args.get("path") or "home"
         folders_only = bool(args.get("folders_only", False))
+        recursive = bool(args.get("recursive", False))
         limit = int(args.get("limit", 50) or 50)
 
         real_path = _resolve_path(path_arg)
@@ -327,6 +329,72 @@ class ListFilesTool(BaseTool):
             return ToolResult.fail(f"Not a directory: {real_path}", retryable=False)
 
         try:
+            if recursive:
+                all_files = []
+                by_ext = {}
+                total_bytes = 0
+                unreadable_dirs = []
+
+                for root, dirs, files in os.walk(real_path, followlinks=False):
+                    # Skip hidden directories
+                    dirs[:] = [d for d in dirs if not d.startswith(".")]
+                    for f in files:
+                        if f.startswith("."):
+                            continue
+                        f_path = os.path.join(root, f)
+                        try:
+                            st = os.stat(f_path)
+                            size = st.st_size
+                            total_bytes += size
+                            all_files.append((size, f_path, f))
+                            ext = os.path.splitext(f)[1].lower() or "(no extension)"
+                            count, ext_bytes = by_ext.get(ext, (0, 0))
+                            by_ext[ext] = (count + 1, ext_bytes + size)
+                        except (PermissionError, FileNotFoundError):
+                            pass
+
+                all_files.sort(key=lambda x: x[0], reverse=True)
+                top_files = all_files[:limit]
+
+                def _fmt_size(b: int) -> str:
+                    if b >= 1024**3:
+                        return f"{b / (1024**3):.2f} GB"
+                    elif b >= 1024**2:
+                        return f"{b / (1024**2):.2f} MB"
+                    elif b >= 1024:
+                        return f"{b / 1024:.1f} KB"
+                    return f"{b} B"
+
+                lines = [
+                    f"**Recursive Directory Analysis:** `{real_path}`",
+                    f"- Total Files: {len(all_files)}",
+                    f"- Total Directory Storage: {_fmt_size(total_bytes)}",
+                    "",
+                    f"### Top {min(limit, len(top_files))} Largest Files:",
+                ]
+                if top_files:
+                    for rank, (sz, fp, fn) in enumerate(top_files, start=1):
+                        lines.append(f"{rank}. **{fn}** ({_fmt_size(sz)}) — `{fp}`")
+                else:
+                    lines.append("- (No files found)")
+
+                lines.append("\n### Storage by File Type:")
+                sorted_exts = sorted(by_ext.items(), key=lambda kv: kv[1][1], reverse=True)
+                for ext, (cnt, sz) in sorted_exts:
+                    lines.append(f"- **{ext}**: {cnt} file{'s' if cnt != 1 else ''} ({_fmt_size(sz)})")
+
+                return ToolResult.ok(
+                    "\n".join(lines),
+                    result={
+                        "total_files": len(all_files),
+                        "total_bytes": total_bytes,
+                        "largest_files": [{"path": fp, "name": fn, "bytes": sz} for sz, fp, fn in top_files],
+                        "storage_by_extension": {ext: {"count": cnt, "bytes": sz} for ext, (cnt, sz) in sorted_exts},
+                    },
+                    confidence=ToolResultConfidence.HIGH,
+                )
+
+            # Non-recursive listing
             entries = sorted(os.scandir(real_path), key=lambda e: (not e.is_dir(), e.name.lower()))
             lines = []
             for e in entries:

@@ -7,7 +7,7 @@ NOTES_DIR = os.path.expanduser("~/opensarthi_notes")
 
 class SaveNoteTool(BaseTool):
     name = "save_note"
-    description = "Create or update a markdown note in the user's local notes folder."
+    description = "Create or update a markdown note. Supports saving to user notes folder or specific destination (e.g. 'Downloads', 'Documents')."
     risk_level = RiskLevel.SAFE
     domain = ToolDomain.GENERAL
     schema = {
@@ -15,6 +15,7 @@ class SaveNoteTool(BaseTool):
         "properties": {
             "title": {"type": "string", "description": "Note title/filename, e.g. 'project_ideas', 'meeting_notes'"},
             "content": {"type": "string", "description": "Note body text (markdown supported)"},
+            "destination": {"type": "string", "description": "Optional destination folder or path (e.g. 'Downloads', '~/Downloads', 'Documents'). Defaults to '~/opensarthi_notes'"},
         },
         "required": ["title", "content"],
     }
@@ -32,17 +33,46 @@ class SaveNoteTool(BaseTool):
         safe_title = "".join([c if c.isalnum() or c in ['-', '_'] else '_' for c in title])
         filename = f"{safe_title}.md"
 
-        try:
+        dest_raw = (args.get("destination") or args.get("folder") or args.get("path") or "").strip()
+        if dest_raw:
+            lowered = dest_raw.lower()
+            if lowered in ("downloads", "download"):
+                target_dir = os.path.expanduser("~/Downloads")
+            elif lowered in ("documents", "document", "docs"):
+                target_dir = os.path.expanduser("~/Documents")
+            elif lowered in ("desktop",):
+                target_dir = os.path.expanduser("~/Desktop")
+            else:
+                target_dir = os.path.expanduser(dest_raw)
+                if not os.path.isabs(target_dir):
+                    target_dir = os.path.join(os.path.expanduser("~"), target_dir)
+
+            if target_dir.endswith(".md") or target_dir.endswith(".txt"):
+                filepath = target_dir
+                os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            else:
+                os.makedirs(target_dir, exist_ok=True)
+                filepath = os.path.join(target_dir, filename)
+        else:
             os.makedirs(NOTES_DIR, exist_ok=True)
             filepath = os.path.join(NOTES_DIR, filename)
-            
+
+        try:
             # Format markdown nicely
             note_content = f"# {title.replace('_', ' ').title()}\n\n{content}\n"
             
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(note_content)
-                
-            return ToolResult.ok(f"Note saved successfully to {filepath}")
+
+            # Deterministic post-write verification
+            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                return ToolResult.ok(
+                    f"Note saved and verified successfully at: {filepath}",
+                    result={"path": filepath, "size_bytes": os.path.getsize(filepath), "verified": True},
+                    confidence=ToolResultConfidence.HIGH
+                )
+            else:
+                return ToolResult.fail(f"File write was attempted but file not verified at {filepath}", retryable=False)
         except Exception as e:
             return ToolResult.fail(str(e))
 
