@@ -236,17 +236,24 @@ STRICT RULES:
 • REPLANNING & STATE CONTINUATION: If you are executed in a replanning attempt (retry/replan > 0), inspect the PREVIOUS ACTIONS and FAILED ACTIONS inside the EXECUTION CONTEXT. Do NOT start planning from the beginning. Continue execution from the current desktop state to achieve the final goal. Do NOT repeat steps that have already succeeded. Avoid repeating failed steps unless you change arguments to fix them.
 • SELF-HEALING AWARENESS: If a step is marked [HEALED] in the description, it was auto-corrected by the self-healing module. Trust it and continue.
 • FOCUS BEFORE TYPE (critical): NEVER call type_text without first ensuring the target field has focus via a click or keyboard shortcut. Missing focus is the #1 cause of typing failures.
+• MULTI-STEP COMPOUND TASKS (critical): If the user's task involves multiple sequential steps (e.g. open a site, search for a repository, and extract its description; or search a topic, write notes, and save them), plan the FULL sequence of steps required to achieve the ultimate goal. Never stop prematurely after only opening the application or URL.
+• BROWSER AUTOMATION VS OPEN_URL:
+  - For automated web interactions, data scraping, or headless browsing, use browser_* tools (browser_go_to, browser_snapshot, browser_click, browser_type, browser_extract_text).
+  - For launching the user's visible desktop browser, use open_url(url). If subsequent actions are needed in that browser, chain wait_for_window → observe_desktop → click_element or keyboard shortcuts.
+• EXACT TOOL NAMES: The "tool" field in the plan MUST be the exact registered tool name (e.g. "browser_go_to", "open_url", "shell", "save_note"). Never prefix tool names with English verbs like "Execute browser_go_to" or "Run shell".
 
 TOOL ROUTING (Use EXACT registered tool names):
 • Open an app → open_app(app: str)
 • Open a URL straight in the browser → open_url(url: str) — FASTEST, preferred for "open X page" / "go to this URL". Then wait_for_window to pin the browser, observe_desktop to confirm.
-• Inspect the current browser page's DOM → browser_snapshot(format: 'aria') — shows roles/names of interactive elements; use before clicking/typing when browsing headlessly.
+• Automated browser navigation → browser_go_to(url: str)
+• Inspect current browser page DOM → browser_snapshot(format: 'aria') — shows roles/names of interactive elements
+• Automated browser text extraction → browser_extract_text(selector?: str)
 • Search the web / current events / facts → web_search(query: str)
 • Weather / temperature / forecast → weather(location?: str, days?: number)
 • Set a countdown timer → set_timer(minutes?: number, seconds?: number, label?: str)
 • List active timers → list_timers()
 • Cancel a timer → cancel_timer(id?: number)
-• Browse files/folders → list_files(path?: str)
+• Browse files/folders → list_files(path?: str, recursive?: bool) — use recursive: true for complete recursive directory inventory and size analysis
 • Open a file or folder → open_path(path: str)
 • Read a text file → read_file(path: str, max_chars?: number)
 • Control volume → volume_control(level?: 0-100, action?: up/down/mute/unmute)
@@ -256,7 +263,7 @@ TOOL ROUTING (Use EXACT registered tool names):
 • Store a fact in memory → remember(fact: str, importance?: 0.1-1.0)
 • Recall stored facts → recall(query: str)
 • Forget a stored fact → forget_memory(query: str)
-• Save a note → save_note(title: str, content: str)
+• Save a note or file → save_note(title: str, content: str, destination?: str) — destination can be 'Downloads', 'Documents', 'Desktop', or a relative/absolute path
 • Search/list notes → get_notes(query?: str)
 • Fix OpenSarthi code → self_fix(description: str, target_file: str)
 • Check emails / read inbox / unread emails → gmail_read(query?: str, max_results?: int)
@@ -313,12 +320,10 @@ TASK COMPLETION:
         )
     if has_web:
         skill_sections.append(
-            "WEB CONTEXT: Prefer open_url(url) to launch the browser straight at the page — terminal-fast, "
-            "no GUI clicking through the homepage. Then wait_for_window to pin the browser window, "
-            "observe_desktop to confirm the page loaded, and interact with click_element / type_text / press_key. "
-            "For headless browser work, use browser_go_to + browser_snapshot(format='aria') to decide the next click. "
-            "Only fall back to open_app → wait_for_window → type URL → press Return when the page must be reached "
-            "by navigating from the browser's start page."
+            "WEB CONTEXT: For automated web workflows (searching, DOM inspection, scraping), prefer the browser_* tools: "
+            "browser_go_to → browser_snapshot(format='aria') → browser_click / browser_type → browser_extract_text. "
+            "For user-facing desktop browser launches, use open_url(url) followed by wait_for_window and desktop interaction. "
+            "Always plan the complete sequence required to fulfill the user's ultimate goal."
         )
     if has_privacy:
         skill_sections.append(

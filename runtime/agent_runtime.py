@@ -151,10 +151,24 @@ def _cleanup_step(s: dict) -> dict:
         tool_canonical_map[r_name.lower()] = r_name
 
     if "tool" in s and isinstance(s["tool"], str):
-        t_raw = s["tool"].strip()
+        t_raw = s["tool"].strip().strip("`'\"")
         cleaned_t = re.sub(r'[^a-zA-Z0-9]', '', t_raw).lower()
         if cleaned_t in tool_canonical_map:
             s["tool"] = tool_canonical_map[cleaned_t]
+        else:
+            # Strip common action prefixes: execute, run, call, use, invoke, perform, trigger, launch, do
+            prefix_pattern = r'^(execute|run|call|use|invoke|perform|trigger|launch|do)[\s_]+'
+            stripped_t = re.sub(prefix_pattern, '', t_raw, flags=re.IGNORECASE).strip()
+            cleaned_stripped = re.sub(r'[^a-zA-Z0-9]', '', stripped_t).lower()
+            if cleaned_stripped in tool_canonical_map:
+                s["tool"] = tool_canonical_map[cleaned_stripped]
+            else:
+                # Handle possible function syntax like `browser_go_to(...)`
+                m = re.match(r'^([a-zA-Z0-9_]+)\s*\(', stripped_t)
+                if m:
+                    candidate = re.sub(r'[^a-zA-Z0-9]', '', m.group(1)).lower()
+                    if candidate in tool_canonical_map:
+                        s["tool"] = tool_canonical_map[candidate]
     elif "tool" not in s:
         for k, v in list(s.items()):
             cleaned_k = re.sub(r'[^a-zA-Z0-9]', '', k).lower()
@@ -341,11 +355,15 @@ class AgentRuntime:
             system_prompt=(
                 f"CURRENT REAL-TIME TEMPORAL CONTEXT: {time_str} ({tz_name})\n"
                 "You are OpenSarthi review agent. Your task is to generate a helpful, user-friendly, and well-formatted final response "
-                "to the user based on the execution log. The user asked for a goal, and we executed several tools (e.g. terminal shell commands, web searches, etc.).\n"
+                "to the user strictly based on the execution log. Tools executed are real system operations on the user's computer.\n"
                 "RULES:\n"
-                "1. DO NOT include generic meta-text like 'Task completed!', '✅ Done!', or 'I have finished this in 1 step'. The user already knows the task is done.\n"
-                "2. Directly present the structured/formatted results (e.g. terminal command stdout, system specs, web search answers) clearly in Markdown.\n"
-                "3. Keep the tone professional, concise, and helpful."
+                "1. STRICT FACTUAL GROUNDING: Ground all statements, metrics, paths, and answers strictly in the Execution Steps Log.\n"
+                "2. NEVER CLAIM ACTIONS WERE SIMULATED: If a tool step succeeded (e.g. save_note, shell, write_file), treat it as a verified real execution. Never describe real tool actions as simulated or mocked.\n"
+                "3. COMPREHENSIVE DATA REPORTING: When presenting tool results (e.g. system_status, list_files, web_search), include all requested categories and data points present in the output. If a specific metric was not reported by the tool, clearly state that specific metric is unavailable rather than claiming all data is missing.\n"
+                "4. DISTINGUISH OBSERVED VS INFERRED: Only report windows, UI elements, or system states that are explicitly confirmed in the tool output. Never speculate on unobserved UI controls or buttons.\n"
+                "5. NO GENERIC META-TEXT: Do not start with generic fluff like 'Task completed!', '✅ Done!', or 'I executed 1 step'. Directly present the results, tables, or findings cleanly in Markdown.\n"
+                "6. ARTIFACT PATHS: When notes or files were saved, state the verified path and confirmation from the tool output.\n"
+                "7. Keep the tone professional, concise, and helpful."
             )
         )
 
@@ -371,7 +389,7 @@ class AgentRuntime:
         )
 
         try:
-            res = await formatter.run(prompt, deps=self.deps)
+            res = await formatter.run(prompt, deps=self.deps, model_settings={"max_tokens": 1000})
             return res.output.strip()
         except Exception as e:
             logger.error("LLM final response generation failed, falling back to manual format", error=str(e))

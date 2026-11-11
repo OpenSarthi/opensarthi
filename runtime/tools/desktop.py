@@ -1630,7 +1630,7 @@ class ObserveDesktopTool(BaseTool):
             except Exception:
                 pass
 
-        # Get focused element via platform accessibility provider
+        # Get focused element and visible UI elements via platform accessibility provider
         try:
             if platform.system() == "Darwin":
                 from providers.macos.accessibility import AccessibilityProvider
@@ -1641,8 +1641,14 @@ class ObserveDesktopTool(BaseTool):
                 focused = a11y.get_focused_element()
                 if focused:
                     lines.append(f"\nFOCUSED ELEMENT: [{focused.role}] '{focused.name}'")
+                if hasattr(a11y, "get_tree_summary"):
+                    tree = a11y.get_tree_summary(max_elements=40)
+                    if tree and "No accessible UI elements found" not in tree:
+                        lines.append(f"\nACCESSIBLE UI ELEMENTS:\n{tree}")
+            else:
+                lines.append("\nNOTE: Accessibility tree (AT-SPI) unavailable or not exposed for this window. Only window-level metadata is available; do not infer internal controls or button labels without direct visual verification.")
         except Exception:
-            pass
+            lines.append("\nNOTE: Accessibility inspection failed. Only window-level metadata is available; do not infer unverified UI controls.")
 
         # Current pinned window
         from window_session import get_session

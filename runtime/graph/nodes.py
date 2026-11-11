@@ -433,12 +433,19 @@ async def plan_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                 logger.info("plan_node: filtered out duplicate steps", count=skipped_count, remaining=len(filtered_steps))
 
             steps_data = []
+            from tools.registry import get as get_tool_for_norm
             for idx, s in enumerate(filtered_steps):
+                norm_tool = s.tool
+                if isinstance(norm_tool, str):
+                    prefix_pattern = r'^(execute|run|call|use|invoke|perform|trigger|launch|do)[\s_]+'
+                    stripped = re.sub(prefix_pattern, '', norm_tool.strip(), flags=re.IGNORECASE).strip()
+                    if get_tool_for_norm(stripped) is not None:
+                        norm_tool = stripped
                 steps_data.append({
                     "index": idx,
-                    "tool": s.tool,
+                    "tool": norm_tool,
                     "args": s.args or {},
-                    "description": s.description or s.tool,
+                    "description": s.description or norm_tool,
                     "status": "pending",
                     "verify_with": s.verify_with,
                     "wait_after": s.wait_after,
@@ -575,6 +582,14 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
         }
 
     tool = get_tool(step.tool)
+    if tool is None and isinstance(step.tool, str):
+        # Fallback tool normalization in case step.tool had an action verb prefix
+        prefix_pattern = r'^(execute|run|call|use|invoke|perform|trigger|launch|do)[\s_]+'
+        cleaned = re.sub(prefix_pattern, '', step.tool.strip(), flags=re.IGNORECASE).strip()
+        candidate = get_tool(cleaned)
+        if candidate is not None:
+            tool = candidate
+            step.tool = tool.name
 
     if tool is None:
         err = f"Unknown tool: {step.tool}"
@@ -719,7 +734,11 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
     if cumulative_idx < len(updated_steps):
         step_update = {**updated_steps[cumulative_idx], "status": status_str}
         if res.success:
-            step_update["result"] = res.observation
+            obs = res.observation
+            if obs is None and hasattr(res, "result") and res.result is not None:
+                import json
+                obs = json.dumps(res.result) if isinstance(res.result, (dict, list)) else str(res.result)
+            step_update["result"] = obs or "Success"
         else:
             step_update["error"] = res.error or "Unknown error"
         updated_steps[cumulative_idx] = step_update
@@ -1030,11 +1049,15 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                 system_prompt=(
                     f"CURRENT REAL-TIME TEMPORAL CONTEXT: {time_str} ({tz_name})\n"
                     "You are OpenSarthi review agent. Your task is to generate a helpful, user-friendly, and well-formatted final response "
-                    "to the user based on the execution log. The user asked for a goal, and we executed several tools (e.g. terminal shell commands, web searches, etc.).\n"
+                    "to the user strictly based on the execution log. Tools executed are real system operations on the user's computer.\n"
                     "RULES:\n"
-                    "1. DO NOT include generic meta-text like 'Task completed!', '✅ Done!', or 'I have finished this in 1 step'. The user already knows the task is done.\n"
-                    "2. Directly present the structured/formatted results (e.g. terminal command stdout, system specs, web search answers) clearly in Markdown.\n"
-                    "3. Keep the tone professional, concise, and helpful."
+                    "1. STRICT FACTUAL GROUNDING: Ground all statements, metrics, paths, and answers strictly in the Execution Steps Log.\n"
+                    "2. NEVER CLAIM ACTIONS WERE SIMULATED: If a tool step succeeded (e.g. save_note, shell, write_file), treat it as a verified real execution. Never describe real tool actions as simulated or mocked.\n"
+                    "3. COMPREHENSIVE DATA REPORTING: When presenting tool results (e.g. system_status, list_files, web_search), include all requested categories and data points present in the output. If a specific metric was not reported by the tool, clearly state that specific metric is unavailable rather than claiming all data is missing.\n"
+                    "4. DISTINGUISH OBSERVED VS INFERRED: Only report windows, UI elements, or system states that are explicitly confirmed in the tool output. Never speculate on unobserved UI controls or buttons.\n"
+                    "5. NO GENERIC META-TEXT: Do not start with generic fluff like 'Task completed!', '✅ Done!', or 'I executed 1 step'. Directly present the results, tables, or findings cleanly in Markdown.\n"
+                    "6. ARTIFACT PATHS: When notes or files were saved, state the verified path and confirmation from the tool output.\n"
+                    "7. Keep the tone professional, concise, and helpful."
                 )
             )
 
@@ -1071,7 +1094,7 @@ async def review_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
                     except Exception as e:
                         logger_instance.log(f"Failed to log review formatter prompt: {e}")
 
-                res = await formatter.run(prompt, deps=deps)
+                res = await formatter.run(prompt, deps=deps, model_settings={"max_tokens": 1000})
                 final = res.output.strip()
 
                 if logger_instance:
