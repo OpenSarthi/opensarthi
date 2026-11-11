@@ -697,6 +697,10 @@ To deliver a production-grade desktop experience aligned with WCAG 2.2 AA and Ap
 - **Task Item Keyboard Accessibility**: `TaskList` cards support full keyboard interaction (`Enter`/`Space` activation, `aria-selected` status, permanent accessible delete triggers).
 - **Responsive Layout Bounds**: Main HUD panels enforce responsive minimum and maximum constraints (`minWidth: 220px`, `maxWidth: 30vw` on left task panel; `minWidth: 200px`, `maxWidth: 28vw` on right activity panel; `minWidth: 360px` on center chat) to prevent layout distortion on compact screens.
 
+### 16.5 GPU Rendering & WebKitGTK Compositing Optimization
+- **Backdrop-Filter Clamping on Linux**: WebKitGTK on Linux (Mesa / Intel Iris Xe) exhibits severe compositing overhead when evaluating high-radius `backdrop-filter: blur(28px)` on large surfaces. High-radius blurs are clamped to lightweight 8px blurs or theme-adaptive solid scrims (`color-mix` with `var(--bg-primary)`), keeping framerates locked at 60 FPS without visual degradation.
+- **Canvas Lifecycle Management**: The background `ParticleBackground` canvas monitors visibility state via `document.hidden` and window blur/minimize events, halting its `requestAnimationFrame` loop when the window is hidden or unfocused and immediately resuming when interactive.
+
 ---
 
 ## 17. Frontend Implementation Status

@@ -106,6 +106,7 @@ flowchart TD
     EXECUTE --> ROUTE_EXEC{route_after_execute}
     ROUTE_EXEC -->|next step| EXECUTE
     ROUTE_EXEC -->|all done| REVIEW
+    ROUTE_EXEC -->|platform unsupported| REVIEW
     ROUTE_EXEC -->|step failed| HEAL[heal_node\nHeuristic or LLM diagnosis]
     ROUTE_EXEC -->|unrecoverable| REPLAN[replan_node\nIncrement retry_count]
     ROUTE_EXEC -->|cancelled| END_C([END])
@@ -214,12 +215,19 @@ If heuristics cannot match the error pattern, HealerAgent calls the LLM with:
 - Current desktop screenshot
 - A prompt asking for a corrected step
 
-### Healing Retries Cap (Safety Limit)
+### Healing Retries Cap (Safety Limit) & Platform Capability Detection
 
-To prevent infinite healing loops:
+To prevent infinite healing loops and eliminate 100% CPU lockups:
 - **Per-step cap:** Maximum **2 heal attempts** per `step_index`, tracked in `OpenSarthiState.heal_attempts: dict[int, int]`
-- **Fallback:** On the 3rd failure, healing is bypassed → `replan_node` rewrites the entire plan
+- **Platform Capability Detection:** Deterministic platform restrictions (e.g. synthetic input blocked on Wayland sessions without proper daemon setup) are detected upfront via `PlatformSupport`. When an action cannot be performed on the current platform, `retryable=False` is set immediately. The graph bypasses healing/replanning loops and routes directly to review to deliver a clear, actionable explanation to the user.
+- **Fallback:** On the 3rd failure of a retryable error, healing is bypassed → `replan_node` rewrites the entire plan
 - **Replan limit:** Maximum **5 full replans** (`max_retries=5`); after that the task is abandoned
+
+### Non-Blocking Desktop Observation
+Observation runs synchronously off the event loop:
+- `mss` screen grab, PIL LANCZOS downscaling to 1280px, mouse cursor overlay drawing, and base64 PNG encoding are wrapped in `asyncio.to_thread` worker threads.
+- `observe_node` supports demand-driven screenshots, avoiding expensive screen captures for metadata-only turns.
+- Invalidation cache (`CACHE_TTL = 2.0s`) avoids re-capturing screenshots across rapid query turns while invalidating immediately after mutating desktop actions.
 
 ### Self-Improving: ReviewerAgent (Post-Task)
 

@@ -723,7 +723,7 @@ Sent when a LangGraph node transitions (runs or completes).
 
 ### `system_metrics`
 
-Periodic (every 2s) OS metrics broadcast from the Python backend. Includes system utilization stats and active mobile dashboard status.
+Periodic (adaptive: 5s idle cadence, gated on meaningful delta >= 2% or 15s heartbeat) OS metrics broadcast from the Python backend. Includes system utilization stats and active mobile dashboard status.
 
 ```json
 {

@@ -39,11 +39,13 @@ AgentRuntime              LangGraph Graph
 
 1. Load settings from `~/.config/opensarthi/.env` via `pydantic-settings`
 2. Initialize SQLite database (`db.py`)
-3. Initialize `MemoryManager` (loads `SentenceTransformer` **only** if `long_term_memory_enabled=True`)
-4. Boot voice pipeline (`VoicePipeline.initialize()`) in background thread
-5. Start local OAuth2 loopback server on port `8765` for Google OAuth redirect callbacks
-6. Bind to a free OS port → print `PORT:<n>` to stdout (Tauri reads this)
-7. Start Uvicorn ASGI server
+3. Initialize `MemoryManager` (semantic embedding model `SentenceTransformer` is lazy-loaded on demand during semantic search/storage, never blocking startup)
+4. Defer voice pipeline initialization until explicit user activation or continuous listening toggle (eliminating startup CPU thread saturation and memory bloat)
+5. Initialize tool registry with lazy module loading for heavy tools
+6. Initialize platform capability detector (`platform_support.py`) for Wayland/X11/Win32/Darwin runtime awareness
+7. Start local OAuth2 loopback server on port `8765` for Google OAuth redirect callbacks
+8. Bind to a free OS port → print `PORT:<n>` to stdout (Tauri reads this)
+9. Start Uvicorn ASGI server
 
 ### HTTP Endpoints
 
@@ -491,22 +493,17 @@ Audio playback → resume STT + 300ms
 
 ### FasterWhisperSTT (`voice/stt.py`)
 
-- Loads `faster-whisper` model lazily on first speech event
-- Runs on CPU (no GPU required)
+- Loads `faster-whisper` model lazily on first speech event or when voice listening starts (never at startup or WebSocket connect)
+- Thread bounded (`cpu_threads=2`) to prevent 100% CPU lockups on 4-core mobile CPUs
+- Hybrid STT: tries key-free Google Web Speech first; falls back to local offline Faster-Whisper
 - Returns timestamped word segments
 
 ### Wake Word Detector (`voice/wakeword.py`)
 
 - Uses `openwakeword` library
+- Initialized only on demand when `wake_word_enabled=True`
 - Configurable phrases and detection threshold via settings
 - Phrases hot-updated when settings change (no restart needed)
-
-### Kokoro-82M Offline TTS & Voice Personas
-
-- **6 Named Personas**: `JARVIS` (am_adam), `NOVA` (am_echo), `ATLAS` (am_eric), `ARIA` (af_heart), `LUNA` (af_jessica), `SARTHI` (hf_alpha).
-- **Layer 0 (Kokoro Offline)**: Fast, natural offline ONNX synthesis without cloud API latency or fees.
-- **Layer 1 (gTTS Fallback)**: Resilient fallback using Google TTS localized accents.
-- **Layer 2 (edge-tts Fallback)**: Fallback voice streaming.
 
 ### Anti-Echo Protection
 
@@ -528,29 +525,50 @@ During `is_speaking=True`, VAD results are discarded even if speech is detected.
 
 ```python
 class DesktopSnapshot:
-    active_window: WindowInfo    # title, app_name, bounds
-    windows: list[WindowInfo]    # all open windows
-    screenshot_path: str         # path to temp JPEG file
-    screenshot_b64: str          # base64-encoded JPEG
+    active_window_title: str     # active window title
+    focused_element_role: str    # focused UI role
+    focused_element_text: str    # focused UI text
+    screen_text_summary: str     # accessibility / OCR text
+    accessibility_tree: dict     # hierarchical UI tree
+    screenshot_path: str         # path to temp PNG file
+    screenshot_base64: str       # base64-encoded PNG (downscaled <= 1280px)
 ```
+
+### Non-Blocking & Demand-Driven Architecture
+- **Worker Thread Execution**: Screenshot grabbing via `mss`, PIL image manipulation (LANCZOS downscaling to 1280px, cursor overlay rendering), PNG encoding, and base64 string conversion run inside `asyncio.to_thread` worker threads. The asyncio event loop thread is never blocked.
+- **Demand-Driven Capture**: The `snapshot(include_screenshot=True, force_fresh=False)` interface allows metadata-only queries to bypass the capture pipeline completely when only active window or accessibility info is required.
+- **Automatic Cache Invalidation**: `DesktopObserver.invalidate_cache()` is called immediately following any mutating tool action, ensuring that replanning passes receive fresh desktop state while consecutive read queries reuse cached snapshots within `CACHE_TTL = 2.0s`.
 
 ### Platform-Specific Implementation
 
-| OS | Active Window | Input Automation |
-|----|--------------|-----------------|
-| Linux X11 | `xdotool getactivewindow` | `xdotool` |
-| Linux Wayland | AT-SPI via `observer/screen.py` | `ydotool` |
-| Windows | `win32gui.GetForegroundWindow` | `pyautogui` |
-
-### Screenshot & Snapshot Caching
-
-Uses `mss` to capture the entire virtual desktop space (union of all displays via monitor 0) to support multi-monitor setups, ensuring complete screenshot context for OCR and vision models. To assist the AI's visual understanding, Sarthi programmatically draws a red target indicator showing the current/last mouse pointer coordinate. Under Wayland (where global mouse position querying is blocked by security boundaries), Sarthi retrieves the pointer position from the active window session context to maintain reliable cross-platform cursor visualization.
-
-**Snapshot Caching (`CACHE_TTL = 2.0s`)**: `ObserverPipeline` caches observation results for up to 2 seconds. When the agent loop replans or queries the screen in rapid succession without screen mutations, it reuses the cached snapshot and skips redundant OCR and screenshot disk operations, significantly accelerating step turnaround time.
+| OS / Protocol | Active Window | Input Automation | Capability Guard |
+|---------------|--------------|-----------------|------------------|
+| Linux X11 | `xdotool getactivewindow` | `xdotool` | Supported |
+| Linux Wayland | AT-SPI (`observer/screen.py`) | `ydotool` | Guarded via `PlatformSupport` (fails fast if unsupported) |
+| Windows | `GetForegroundWindow` | `pyautogui` | Supported |
+| macOS | AppleScript / Accessibility | PyAutoGUI / AppleScript | Gated by OS permissions |
 
 ---
 
-## 10. Configuration System (`config.py`)
+## 10. Platform Capability Support (`platform_support.py`)
+
+To prevent the agent from entering continuous healing and replanning loops when an operating system prohibits an action (such as Wayland blocking cross-client synthetic keystrokes or mouse clicks without specialized daemon access), `PlatformSupport` automatically discovers the machine's actual runtime capabilities at startup:
+- `can_control_input`: Whether synthetic typing and clicking are permitted in the current session.
+- `can_capture_screen`: Whether screen recording / capture is allowed.
+- `can_focus_windows`: Whether another process window can be raised/focused.
+- Limits are injected directly into planner prompts and tool execution guards so unsupported operations fail fast with actionable guidance instead of triggering cascading multi-turn LLM retries.
+
+---
+
+## 11. System Telemetry & Adaptive Polling (`tools/system_monitor.py`)
+
+- `metrics_push_loop`: Pushes hardware metrics (`cpu`, `mem`, `net_kbps`, `gpu`, `temp`, `mobile_status`) across WebSocket to the desktop HUD and mobile remote dashboard.
+- **Adaptive Cadence**: 5.0-second interval during idle state (reduced from fixed 1.5s), avoiding persistent CPU wakeups and excessive JSON serialization.
+- **Delta Gating**: Emits updates when metric values change meaningfully (CPU/RAM delta >= 2%, network throughput delta, or device connectivity change), with a forced heartbeat refresh every 15 seconds to ensure accuracy.
+
+---
+
+## 12. Configuration System (`config.py`)
 
 All settings stored in a `.env` file using `pydantic-settings`:
 
