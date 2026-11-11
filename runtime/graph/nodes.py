@@ -258,7 +258,10 @@ async def observe_node(state: OpenSarthiState, config: RunnableConfig) -> dict:
 
     from observation import DesktopObserver
     observer = DesktopObserver()
-    snapshot = await observer.snapshot()
+    model = config["configurable"].get("model")
+    from llm import screenshots_for_model
+    need_screenshot = screenshots_for_model(model) if model else True
+    snapshot = await observer.snapshot(include_screenshot=need_screenshot)
 
     recalled_memories = []
     preferences = []
@@ -727,6 +730,12 @@ async def execute_step_node(state: OpenSarthiState, config: RunnableConfig) -> d
     if res.success:
         sig = _normalise_step_sig(step.tool, step.args or {}, step.description or step.tool)
         new_completed.append(f"{sig}:::{step.description or step.tool}")
+        # Invalidate screen observation cache after mutating actions so subsequent steps/replanning observe fresh state
+        try:
+            from observation import invalidate_observation_cache
+            invalidate_observation_cache()
+        except Exception:
+            pass
         # Handle wait_after
         if step.wait_after:
             await asyncio.sleep(step.wait_after)

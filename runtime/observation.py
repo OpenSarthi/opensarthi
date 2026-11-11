@@ -59,6 +59,14 @@ def _get_shared_observer_pipeline():
     return _shared_observer_pipeline
 
 
+def invalidate_observation_cache():
+    """Invalidate the shared observer cache — call after a tool mutates screen state."""
+    try:
+        _get_shared_observer_pipeline().invalidate_cache()
+    except Exception:
+        pass
+
+
 class DesktopObserver:
     """
     Collects desktop state snapshots. Uses:
@@ -68,56 +76,57 @@ class DesktopObserver:
     """
 
     def __init__(self):
-        self._a11y = AccessibilityProvider()
+        self._a11y_instance = None
         self._pipeline = _get_shared_observer_pipeline()
+
+    @property
+    def _a11y(self):
+        if self._a11y_instance is None:
+            self._a11y_instance = AccessibilityProvider()
+        return self._a11y_instance
 
     def invalidate_cache(self):
         """Invalidate the observer cache — call after a tool mutates screen state."""
-        self._pipeline.invalidate_cache()
+        invalidate_observation_cache()
 
-    async def snapshot(self, force_fresh: bool = False) -> DesktopSnapshot:
+    async def snapshot(self, force_fresh: bool = False, include_screenshot: bool = True) -> DesktopSnapshot:
         snap = DesktopSnapshot()
 
-        # Execute unified observer pipeline
-        obs_res = await self._pipeline.observe(force_fresh=force_fresh)
+        # Execute unified observer pipeline non-blockingly
+        obs_res = await self._pipeline.observe(force_fresh=force_fresh, include_screenshot=include_screenshot)
         snap.active_window_title = obs_res.active_window
 
-        # Encode screenshot to base64 if available.
-        # Downscale wide/multi-monitor captures before encoding: the base64 sits
-        # in LangGraph checkpoint state and goes to the vision model, and a full
-        # 8K capture would be several MB. 1280px wide is ample for GUI context.
+        # Encode screenshot to base64 if available (already downscaled <= 1280px in capture_screenshot)
         if obs_res.screenshot_bytes:
             import base64
-            import io
-            encoded = obs_res.screenshot_bytes
-            size = None
-            try:
-                from PIL import Image
-                img = Image.open(io.BytesIO(obs_res.screenshot_bytes))
-                width, height = img.size
-                size = (width, height)
-                max_w = 1280
-                if width > max_w:
-                    new_height = int(height * (max_w / width))
-                    img = img.resize((max_w, new_height), Image.LANCZOS)
-                    buf = io.BytesIO()
-                    img.save(buf, format="PNG")
-                    encoded = buf.getvalue()
-                    size = img.size
-            except Exception:
-                pass
-            snap.screenshot_base64 = base64.b64encode(encoded).decode("utf-8")
-            snap.screenshot_size = size
 
-            # Save to temporary path
-            try:
-                temp_dir = tempfile.gettempdir()
-                screenshot_file = os.path.join(temp_dir, f"opensarthi_snap_{int(time.time())}.png")
-                with open(screenshot_file, "wb") as f:
-                    f.write(encoded)
-                snap.screenshot_path = screenshot_file
-            except Exception:
-                pass
+            def _process_screenshot_data(raw_bytes: bytes):
+                size = None
+                try:
+                    from PIL import Image
+                    import io
+                    with Image.open(io.BytesIO(raw_bytes)) as img:
+                        size = img.size
+                except Exception:
+                    pass
+
+                b64 = base64.b64encode(raw_bytes).decode("utf-8")
+
+                path = None
+                try:
+                    temp_dir = tempfile.gettempdir()
+                    screenshot_file = os.path.join(temp_dir, f"opensarthi_snap_{int(time.time())}.png")
+                    with open(screenshot_file, "wb") as f:
+                        f.write(raw_bytes)
+                    path = screenshot_file
+                except Exception:
+                    pass
+                return b64, size, path
+
+            b64_str, size_val, path_val = await asyncio.to_thread(_process_screenshot_data, obs_res.screenshot_bytes)
+            snap.screenshot_base64 = b64_str
+            snap.screenshot_size = size_val
+            snap.screenshot_path = path_val
 
         # 2. AT-SPI focused element (primary — fast, Linux only)
         if self._a11y.available:

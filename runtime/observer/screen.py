@@ -10,13 +10,8 @@ def _detect_display() -> str:
         return "wayland"
     return "x11"
 
-async def capture_screenshot() -> Optional[bytes]:
-    """Capture screen and return PNG bytes."""
-    # Android: mss/pyautogui/PIL are unavailable. Use the accessibility-service
-    # takeScreenshot (API 30+) when possible, else fall back to the screencap
-    # shell utility.
-    if os.environ.get("OPENSARTHI_PLATFORM") == "android":
-        return await _android_screenshot()
+def _sync_capture_desktop(max_width: int = 1280) -> Optional[tuple[bytes, tuple[int, int]]]:
+    """Synchronous desktop capture and resize run in worker thread to prevent event loop blocking."""
     try:
         import mss
         import mss.tools
@@ -31,6 +26,7 @@ async def capture_screenshot() -> Optional[bytes]:
             
             # Convert raw RGB to PIL Image
             pil_img = Image.frombytes("RGB", img.size, img.rgb)
+            orig_w, orig_h = img.size
             
             try:
                 # Retrieve the last mouse coordinates from the agent window session
@@ -40,17 +36,10 @@ async def capture_screenshot() -> Optional[bytes]:
                 if session.last_mouse_x is not None and session.last_mouse_y is not None:
                     mx, my = session.last_mouse_x, session.last_mouse_y
                 else:
-                    # Fallback to pyautogui for X11/Windows/Mac
                     mx, my = pyautogui.position()
                     source = "pyautogui"
                     
-                width, height = img.size
-                if 0 <= mx < width and 0 <= my < height:
-                    try:
-                        import structlog
-                        structlog.get_logger().info("Drawing cursor target highlight on screenshot", x=mx, y=my, source=source)
-                    except Exception:
-                        pass
+                if 0 <= mx < orig_w and 0 <= my < orig_h:
                     draw = ImageDraw.Draw(pil_img)
                     r = 12
                     # Draw a bright red target ring
@@ -60,19 +49,38 @@ async def capture_screenshot() -> Optional[bytes]:
                     # Draw crosshair lines extending slightly beyond the ring
                     draw.line([mx - r - 4, my, mx + r + 4, my], fill=(255, 0, 0), width=2)
                     draw.line([mx, my - r - 4, mx, my + r + 4], fill=(255, 0, 0), width=2)
-            except Exception as e:
-                try:
-                    import structlog
-                    structlog.get_logger().warning("Failed to draw cursor target on screenshot", error=str(e))
-                except Exception:
-                    pass
-                
+            except Exception:
+                pass
+
+            # Downscale wide captures directly before PNG compression to avoid redundant compress/decompress
+            if orig_w > max_width:
+                new_h = int(orig_h * (max_width / orig_w))
+                pil_img = pil_img.resize((max_width, new_h), Image.Resampling.BILINEAR)
+
+            final_size = pil_img.size
             # Convert back to PNG bytes
             output = io.BytesIO()
             pil_img.save(output, format="PNG")
-            return output.getvalue()
+            return output.getvalue(), final_size
     except Exception:
         return None
+
+async def capture_screenshot(max_width: int = 1280) -> Optional[bytes]:
+    """Capture screen non-blockingly and return PNG bytes."""
+    # Android: mss/pyautogui/PIL are unavailable. Use the accessibility-service
+    # takeScreenshot (API 30+) when possible, else fall back to the screencap
+    # shell utility.
+    if os.environ.get("OPENSARTHI_PLATFORM") == "android":
+        return await _android_screenshot()
+    res = await asyncio.to_thread(_sync_capture_desktop, max_width)
+    return res[0] if res else None
+
+async def capture_screenshot_with_size(max_width: int = 1280) -> Optional[tuple[bytes, tuple[int, int]]]:
+    """Capture screen non-blockingly and return (PNG bytes, (width, height))."""
+    if os.environ.get("OPENSARTHI_PLATFORM") == "android":
+        bytes_data = await _android_screenshot()
+        return (bytes_data, (1080, 2400)) if bytes_data else None
+    return await asyncio.to_thread(_sync_capture_desktop, max_width)
 
 async def _android_screenshot() -> Optional[bytes]:
     """Capture the Android screen to PNG bytes.

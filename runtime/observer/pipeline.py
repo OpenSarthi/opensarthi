@@ -32,7 +32,7 @@ class ObserverPipeline:
         self._last_result: Optional[ObservationResult] = None
         self._last_capture_time: float = 0.0
 
-    async def observe(self, force_fresh: bool = False) -> ObservationResult:
+    async def observe(self, force_fresh: bool = False, include_screenshot: bool = True) -> ObservationResult:
         now = time.monotonic()
         age = now - self._last_capture_time
 
@@ -41,6 +41,7 @@ class ObserverPipeline:
             not force_fresh
             and self._last_result is not None
             and age < self.CACHE_TTL
+            and (not include_screenshot or self._last_result.screenshot_bytes is not None)
         ):
             return self._last_result
 
@@ -48,7 +49,8 @@ class ObserverPipeline:
 
         # Fast path — always capture active window; screenshot only if needed
         result.active_window = await get_active_window()
-        result.screenshot_bytes = await capture_screenshot()
+        if include_screenshot:
+            result.screenshot_bytes = await capture_screenshot()
 
         # Slow path — OCR (expensive, pytesseract is CPU-intensive)
         if self.use_ocr and result.screenshot_bytes:

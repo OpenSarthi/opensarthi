@@ -8,6 +8,7 @@ Requires: python-gi (PyGObject) + at-spi2-core
 """
 
 import asyncio
+import os
 import subprocess
 from typing import Optional, List
 from dataclasses import dataclass
@@ -42,24 +43,39 @@ class AccessibilityProvider:
 
     def __init__(self):
         self._available = False
+        self._loaded = False
         self._desktop = None
-        self._load()
 
-    def _load(self):
+    def _ensure_loaded(self):
+        if self._loaded:
+            return
+        self._loaded = True
+        # Check if D-Bus session bus exists to avoid atspi hard abort
+        has_bus = bool(os.environ.get("DBUS_SESSION_BUS_ADDRESS"))
+        if not has_bus:
+            try:
+                user_bus = f"/run/user/{os.getuid()}/bus"
+                has_bus = os.path.exists(user_bus)
+            except Exception:
+                has_bus = False
+        if not has_bus:
+            self._available = False
+            return
+
         try:
             import gi
             gi.require_version("Atspi", "2.0")
             from gi.repository import Atspi
             self._Atspi = Atspi
             self._desktop = Atspi.get_desktop(0)
-            self._available = True
-            print("[AT-SPI] Accessibility provider loaded")
-        except Exception as e:
-            print(f"[AT-SPI] Not available: {e}")
+            self._available = self._desktop is not None
+        except Exception:
             self._available = False
 
     @property
     def available(self) -> bool:
+        if not self._loaded:
+            self._ensure_loaded()
         return self._available
 
     def get_focused_element(self) -> Optional[UIElement]:
