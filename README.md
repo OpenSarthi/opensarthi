@@ -288,6 +288,11 @@ Before making code edits, check **[SKILLS.md](SKILLS.md)** — the single source
 - **Safety Gating**: Modifying, deleting, or shell operations require user authorization unless marked as `SAFE`.
 - **Typing Animations**: Word-by-word streaming must use the `Session.stream_text()` websocket protocol.
 - **Speed-First Architecture**: Native audio streaming (<500ms), two-phase briefing (instant greeting), instant vision ack, parallel search (first-wins), session memory consumed after use.
+- **Resource Discipline & Cold Boot**: Heavy modules (FasterWhisper STT, microphone calibration, wake word detector, and SentenceTransformer semantic embeddings) are initialized lazily on-demand on first actual usage, eliminating CPU lockups on startup and connection.
+- **Non-Blocking Perception**: Screen capture, scaling (<=1280px), and Base64 serialization are offloaded to background threads with adaptive cache invalidation.
+- **Adaptive System Telemetry**: 5-second adaptive metric cadence with delta-gating and 15s heartbeats, preventing continuous WebSocket serialization overhead.
+- **Platform Capability Detection**: Gracefully detects display server capabilities (Wayland vs X11 vs Win32 vs macOS) to fail-fast on impossible synthetic input actions rather than entering repetitive healing/replanning cycles.
+- **Render Engine Optimization**: Clamped blur filters (`backdrop-filter: blur(6px)`) on Linux WebKitGTK and canvas animation lifecycle management (pausing loops on `document.hidden` and throttling idle frame rates).
 - **Read-Only OAuth**: Google Calendar.readonly + Gmail.readonly for briefing data — no write scopes.
 - **Multi-Agent Supervisor**: Routes to WebAgent, CalendarAgent, MailAgent, CodeAgent, BrowserAgent, MusicAgent, SocialAgent.
 - **Content Panel**: 4th panel for rich content (briefing, screen analysis, browser results, code output, file preview, system status, music, map).

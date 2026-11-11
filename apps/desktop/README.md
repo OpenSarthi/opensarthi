@@ -101,6 +101,14 @@ When in overlay mode and no task is running, shows:
 
 ---
 
+## ⚡ UI Performance & Rendering Invariants
+
+- **Linux WebKitGTK Blur Clamping**: On Linux (`body.platform-linux`), backdrop blurs on modal dialogs, drawers, and menus are clamped to 6px (`backdrop-filter: blur(6px) !important;`) to prevent compositor pipeline stalls and software rasterization fallbacks.
+- **Canvas Animation Lifecycle**: Both `ParticleBackground` and `MatrixRainBackground` monitor page visibility (`document.hidden` and `visibilitychange`), pausing animation loops when the window is hidden. During `idle`, canvas rendering is frame-paced to ~30 FPS on high-refresh monitors (100Hz/144Hz), eliminating unnecessary GPU/CPU workload.
+- **Adaptive Telemetry Rendering**: UI receives throttled system telemetry packets every 5.0 seconds (gated on metric deltas), eliminating high-frequency DOM/state thrashing.
+
+---
+
 ## 🎯 Onboarding & Personalisation (`OnboardingView.tsx`)
 
 ### Cold-Start Mode

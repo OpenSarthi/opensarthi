@@ -777,7 +777,7 @@ These are rules that **must not be violated**. Breaking them will cause subtle b
 
 1. **Python 3.14+ breaks everything.** No pre-compiled wheels for `faster-whisper`, `kokoro`, `numpy`. Stick to 3.12.
 
-2. **`xdotool` only works on X11.** On Wayland, `ydotool` is used but `click()` is a no-op stub. Don't write tests that assume clicking works on Wayland.
+2. **Wayland vs X11 capability gating:** OpenSarthi uses `runtime/platform_support.py` to detect display server and input capabilities. On Wayland without a running `ydotoold` daemon, `ClickTool`, `TypeTextTool`, and `PressKeyTool` return fail-fast with `retryable=False`, and `get_platform_prompt_notes()` informs the planner upfront to use terminal/URL tools rather than entering cascading healing/replanning cycles.
 
 3. **The `_provider` in `desktop.py` is module-level.** It's set once at import time. If the display server changes (e.g., switching from X11 to Wayland session), the provider won't update until restart.
 
@@ -798,6 +798,13 @@ These are rules that **must not be violated**. Breaking them will cause subtle b
 11. **Auto-collapse loop on plan updates**: When updating execution states during graph runs, do not trigger collapsibility overrides, as this will lead to a visual auto-collapse flicker loop between replans.
 
 12. **Google OAuth token persistence**: Credentials are stored at `~/.config/opensarthi/google_tokens.json` (defined as `TOKEN_FILE` in `runtime/tools/google_tools.py`). This file persists across restarts. The OAuth client credentials (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`) are saved in `~/.config/opensarthi/.env`. Both must be present for Google Calendar/Gmail tools to work without re-authorizing.
+
+13. **Performance, Startup & Resource Invariants**:
+    - **Lazy Voice Stack**: `FasterWhisperSTT`, microphone ambient calibration, and `OpenWakeWord` ONNX models are initialized lazily upon first voice activity, eliminating cold boot delays and WebSocket connection stalls.
+    - **Non-blocking Observation**: Screen capture via `mss`, image scaling (<=1280px), and Base64 serialization are executed in worker threads via `asyncio.to_thread`. Screen observation cache is invalidated via `invalidate_observation_cache()` upon mutating tool completion.
+    - **Adaptive System Telemetry**: Telemetry pushes on an adaptive 5.0s interval with delta-threshold filtering (CPU >= 2.0%, Mem >= 1.5%, Net >= 50 KB/s) and a 15s heartbeat fallback.
+    - **Lazy Semantic Memory**: `SentenceTransformer` embeddings and models in `long_term.py` are loaded lazily on first semantic search or storage operation.
+    - **Frontend Render Optimization**: On Linux WebKitGTK (`body.platform-linux`), backdrop blurs on modal dialogs and dropdown menus are clamped to 6px. Canvas particle backgrounds pause rendering on `document.hidden` and throttle idle frames to ~30 FPS on high-refresh displays.
 
 ---
 

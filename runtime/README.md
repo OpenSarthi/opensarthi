@@ -13,6 +13,10 @@ The intelligence layer of OpenSarthi. Runs as a **headless sidecar process** spa
 - **Multimodal Screenshots to LLM** — Desktop screenshots downscaled to 1280px PNG and injected as `ImageUrl` for vision-capable models
 - **Two-Phase Morning Briefing** — Phase 1: instant greeting (<1s, no tools); Phase 2: full briefing + Content Panel
 - **Instant Vision Acknowledgment** — Immediate "looking" state while screen analysis runs in background
+- **Lazy Voice & Model Loading** — FasterWhisper STT, microphone ambient calibration, and SentenceTransformer semantic embeddings are initialized on-demand, enabling sub-2s cold boot and zero WebSocket connect lag
+- **Non-Blocking Observation** — Threaded screen capture (`mss`), image downscaling (≤1280px), and Base64 serialization off the event loop with `invalidate_observation_cache()`
+- **Adaptive System Telemetry** — 5-second adaptive broadcast cadence with delta-gating and 15s heartbeat fallback, eliminating high-frequency WebSocket flooding
+- **Platform Capability Discovery** — Automatic display server detection (Wayland vs X11 vs Win32 vs macOS) with fail-fast input constraints to prevent repetitive heal/replan loops
 - **Parallel Search** — Multi-engine (DuckDuckGo, Gemini, Brave) first-wins pattern
 - **Session Memory** — Consumed after use (1-2 sentence summary via flash model)
 - **Google OAuth (Read-Only)** — calendar.readonly + gmail.readonly for briefing & search data with local port 8765 loopback callback listener
