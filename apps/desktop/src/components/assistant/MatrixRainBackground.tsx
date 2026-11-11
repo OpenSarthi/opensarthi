@@ -63,6 +63,10 @@ export function MatrixRainBackground({ voiceState }: MatrixRainBackgroundProps) 
     let timeAccumulator = 0;
 
     const draw = (now: number) => {
+      if (document.hidden) {
+        return;
+      }
+
       const deltaTime = now - lastTime;
       lastTime = now;
 
@@ -124,11 +128,21 @@ export function MatrixRainBackground({ voiceState }: MatrixRainBackgroundProps) 
       animationFrameId = requestAnimationFrame(draw);
     };
 
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        cancelAnimationFrame(animationFrameId);
+        lastTime = performance.now();
+        animationFrameId = requestAnimationFrame(draw);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     animationFrameId = requestAnimationFrame(draw);
 
     return () => {
       cancelAnimationFrame(animationFrameId);
       ro.disconnect();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [activeTheme]);
 

@@ -484,6 +484,17 @@ body.platform-linux .os-scrim {
   -webkit-backdrop-filter: blur(4px);
 }
 
+/* Linux/WebKitGTK: clamp expensive backdrop blur filters on overlays and menus to prevent compositor stalls */
+body.platform-linux .os-dialog,
+body.platform-linux .os-modal,
+body.platform-linux .hud-modal-panel,
+body.platform-linux .runtime-console-drawer,
+body.platform-linux .settings-dropdown-menu,
+body.platform-linux .dropdown-submenu {
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+}
+
 body[class*="theme-light"],
 body[class*="theme-white"] {
   --border-focus: color-mix(in srgb, var(--accent) 30%, transparent);

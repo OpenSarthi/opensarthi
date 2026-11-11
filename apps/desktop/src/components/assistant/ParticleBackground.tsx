@@ -209,9 +209,25 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
       }))
     );
 
+    let lastRenderTime = performance.now();
+
     /* ── draw one frame ── */
-    const draw = () => {
+    const draw = (nowTimestamp?: number) => {
+      if (document.hidden) {
+        return;
+      }
+
       const vs = vsRef.current;
+      const now = nowTimestamp ?? performance.now();
+
+      // On high-refresh monitors (100Hz/144Hz), throttle idle frames to ~30 FPS (~33ms)
+      // to eliminate unnecessary CPU/GPU load while keeping smooth animation.
+      if (vs === "idle" && (now - lastRenderTime) < 32) {
+        frameRef.current = requestAnimationFrame(draw);
+        return;
+      }
+      lastRenderTime = now;
+
       time += 0.012;
       globalRotY += 0.006;  // ~1 full Y drift per ~17s — clearly visible rotation
 
@@ -686,12 +702,22 @@ export function ParticleBackground({ voiceState }: ParticleBackgroundProps) {
       frameRef.current = requestAnimationFrame(draw);
     };
 
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        cancelAnimationFrame(frameRef.current);
+        lastRenderTime = performance.now();
+        frameRef.current = requestAnimationFrame(draw);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     cancelAnimationFrame(frameRef.current);
-    draw();
+    frameRef.current = requestAnimationFrame(draw);
 
     return () => {
       cancelAnimationFrame(frameRef.current);
       ro.disconnect();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [activeTheme]);
 
