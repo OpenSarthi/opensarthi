@@ -40,7 +40,8 @@ async def extract_and_store_facts(
         time_str = now.strftime("%A, %B %d, %Y %I:%M %p")
         tz_name = now.astimezone().tzname() or "Local Time"
 
-        extractor = PydanticAgent(model=model)
+        from pydantic_ai import Agent
+        extractor = Agent(model=model)
         prompt = f"""You are a fact extractor for a personal AI assistant.
 CURRENT DATE & TIME: {time_str} ({tz_name})
 

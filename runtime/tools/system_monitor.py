@@ -630,19 +630,39 @@ def get_system_metrics() -> dict:
     }
 
 
-async def metrics_push_loop(broadcast_fn, interval: float = 1.5):
+async def metrics_push_loop(broadcast_fn, interval: float = 5.0):
     """
-    Background asyncio task. Calls get_system_metrics() every `interval` seconds
-    and passes the result to `broadcast_fn(event, data)`.
+    Adaptive background asyncio task. Calls get_system_metrics() every `interval` seconds
+    and passes the result to `broadcast_fn(event, data)` when metrics change meaningfully
+    or on a periodic heartbeat (15s), preventing idle CPU wakeups and UI thrashing.
     """
     # Prime the net counter
     await asyncio.to_thread(_get_net_kbps)
     await asyncio.sleep(interval)
 
+    last_metrics = {}
+    last_push_time = 0.0
+
     while True:
         try:
             metrics = await asyncio.to_thread(get_system_metrics)
-            await broadcast_fn("system_metrics", metrics)
+            now = time.monotonic()
+            
+            # Check for meaningful change:
+            # CPU change >= 2.0%, Mem change >= 1.5%, Net change >= 50 KB/s,
+            # mobile device status change, or heartbeat every 15s
+            cpu_changed = abs(metrics.get("cpu", 0.0) - last_metrics.get("cpu", 0.0)) >= 2.0
+            mem_changed = abs(metrics.get("mem", 0.0) - last_metrics.get("mem", 0.0)) >= 1.5
+            net_changed = abs(metrics.get("net_kbps", 0.0) - last_metrics.get("net_kbps", 0.0)) >= 50.0
+            mobile_changed = metrics.get("mobile_status") != last_metrics.get("mobile_status")
+            heartbeat_due = (now - last_push_time) >= 15.0
+
+            if cpu_changed or mem_changed or net_changed or mobile_changed or heartbeat_due:
+                await broadcast_fn("system_metrics", metrics)
+                last_metrics = metrics
+                last_push_time = now
+        except asyncio.CancelledError:
+            break
         except Exception:
             pass
         await asyncio.sleep(interval)

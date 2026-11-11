@@ -26,12 +26,13 @@ class LongTermMemory:
     def __init__(self):
         self._init_sqlite()
         self._encoder = None
-        self._use_semantic = False
-        self._try_load_encoder()
+        self._use_semantic = None  # Lazy-loaded on first semantic query
 
     def _try_load_encoder(self):
-        """Try to load the local sentence-transformers model. Non-fatal if unavailable."""
+        """Try to load the local sentence-transformers model lazily. Non-fatal if unavailable."""
         global _cached_encoder
+        if self._encoder is not None:
+            return
         from config import settings
         if not getattr(settings, "long_term_memory_enabled", True):
             import structlog
@@ -50,6 +51,7 @@ class LongTermMemory:
             structlog.get_logger().info("Semantic memory activated (all-MiniLM-L6-v2)")
             self._migrate_embedding_column()
         except Exception as e:
+            self._use_semantic = False
             import structlog
             structlog.get_logger().info(
                 "Semantic memory unavailable — falling back to keyword search",
@@ -91,6 +93,8 @@ class LongTermMemory:
 
     def _encode(self, text: str):
         """Encode text to embedding vector. Returns numpy array or None."""
+        if self._use_semantic is None:
+            self._try_load_encoder()
         if not self._use_semantic or self._encoder is None:
             return None
         try:
@@ -110,6 +114,8 @@ class LongTermMemory:
     async def store(self, entry: MemoryEntry) -> None:
         """Store memory entry with optional embedding."""
         import asyncio
+        if self._use_semantic is None:
+            self._try_load_encoder()
         embedding_bytes = None
         if self._use_semantic:
             try:
@@ -148,6 +154,8 @@ class LongTermMemory:
         Results are sorted by relevance.
         """
         import asyncio
+        if self._use_semantic is None:
+            self._try_load_encoder()
 
         if self._use_semantic:
             try:
