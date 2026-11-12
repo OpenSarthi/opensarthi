@@ -18,6 +18,11 @@
 <a href="https://github.com/OpenSarthi/opensarthi/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-7B2FFE?style=for-the-badge&logo=apache&logoColor=white&labelColor=0D1117" alt="License"/></a>&nbsp;
 <a href="mailto:kumarkartik147359@gmail.com"><img src="https://img.shields.io/badge/Gmail-EA4335?style=for-the-badge&logo=gmail&logoColor=white&labelColor=0D1117" alt="Email"/></a>
 
+<br/><br/>
+
+<!-- HERO DEMO SHOWCASE -->
+<img src="assets/opensarthi-dashboard-preview.png" alt="OpenSarthi Desktop & Android Multi-Agent AI Assistant Demo" width="100%"/>
+
 </div>
 
 <br/>
@@ -63,6 +68,7 @@ opensarthi/
 ├── apps/
 │   ├── desktop/          # Tauri + React desktop overlay client (Linux/Windows/macOS)
 │   └── android/          # Capacitor + React Android native app wrapper
+├── assets/               # Product showcase, dashboard previews, and media assets
 ├── runtime/              # FastAPI + LangGraph Python sidecar (agent brain)
 ├── docs/                 # Architectural & protocol design specifications
 ├── SKILLS.md             # Developer guidelines & capabilities source-of-truth
